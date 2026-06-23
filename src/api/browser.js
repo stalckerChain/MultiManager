@@ -5,6 +5,8 @@ const fs = require('fs');
 const path = require('path');
 const { getDatabase, createProfileQueries, createProxyQueries, createLogQueries } = require('../db');
 const { checkProxy, rotateProxy } = require('../proxy');
+const { injectCookies, getProfileDir } = require('../cookie/inject');
+const { createProfileLogger } = require('../logger');
 
 const router = express.Router();
 
@@ -27,6 +29,9 @@ router.post('/:id/start', async (req, res) => {
 
   profileQueries.updateStatus(req.params.id, 'starting');
   logQueries.add(req.params.id, 'info', 'Запуск профиля...');
+
+  const profileLogger = createProfileLogger(req.params.id);
+  profileLogger.info({ profileId: req.params.id }, 'Начало запуска профиля');
 
   if (profile.proxy_id) {
     const proxy = proxyQueries.getById(profile.proxy_id);
@@ -62,13 +67,19 @@ router.post('/:id/start', async (req, res) => {
     }
   }
 
+  const profileDir = getProfileDir(req.params.id);
+  const user_data_dir = path.join(profileDir, 'BrowserData');
+
+  injectCookies(req.params.id);
+  profileLogger.info({ profileId: req.params.id, profileDir: user_data_dir }, 'Куки инжектированы');
+
   const args = [
     '--fingerprint-seed=' + profile.fingerprint_seed,
     '--user-agent=' + profile.user_agent,
     '--resolution=' + profile.screen_resolution,
     '--cores=' + profile.hardware_cores,
     '--memory=' + profile.hardware_memory,
-    `--user-data-dir=/tmp/profile_${req.params.id}`,
+    `--user-data-dir=${user_data_dir}`,
   ];
 
   if (profile.proxy_id) {
@@ -93,10 +104,12 @@ router.post('/:id/start', async (req, res) => {
   profileQueries.updatePid(req.params.id, child.pid);
   profileQueries.updateStatus(req.params.id, 'running');
   logQueries.add(req.params.id, 'info', `Браузер запущен, PID: ${child.pid}`);
+  profileLogger.info({ profileId: req.params.id, pid: child.pid }, 'Браузер запущен');
 
   child.on('error', (err) => {
     profileQueries.updateStatus(req.params.id, 'stopped');
     logQueries.add(req.params.id, 'error', 'Ошибка запуска', { error: err.message });
+    profileLogger.error({ profileId: req.params.id, error: err.message }, 'Ошибка запуска');
     runningProfiles.delete(req.params.id);
   });
 
@@ -104,6 +117,7 @@ router.post('/:id/start', async (req, res) => {
     profileQueries.updateStatus(req.params.id, 'stopped');
     profileQueries.updatePid(req.params.id, null);
     logQueries.add(req.params.id, 'info', 'Браузер завершен');
+    profileLogger.info({ profileId: req.params.id }, 'Браузер завершен');
     runningProfiles.delete(req.params.id);
   });
 
@@ -184,8 +198,8 @@ router.post('/:id/clean', (req, res) => {
     return res.status(409).json({ error: 'Невозможно очистить кэш запущенного профиля' });
   }
 
-  const profileDir = `/tmp/profile_${req.params.id}`;
-  const cacheDirs = ['Cache', 'Code Cache', 'GPUCache'];
+  const profileDir = getProfileDir(req.params.id);
+  const cacheDirs = ['BrowserData/Cache', 'BrowserData/Code Cache', 'BrowserData/GPUCache'];
   
   for (const dir of cacheDirs) {
     const cachePath = path.join(profileDir, dir);
