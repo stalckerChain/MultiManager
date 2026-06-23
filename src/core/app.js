@@ -4,6 +4,7 @@ const profilesRouter = require('../api/profiles');
 const proxiesRouter = require('../api/proxies');
 const cookiesRouter = require('../api/cookies');
 const browserRouter = require('../api/browser');
+const multiControlRouter = require('../api/multi-control');
 
 const app = express();
 
@@ -18,6 +19,7 @@ app.use('/api/profiles', profilesRouter);
 app.use('/api/proxies', proxiesRouter);
 app.use('/api/cookies', cookiesRouter);
 app.use('/api/browser', browserRouter);
+app.use('/api/multi-control', multiControlRouter);
 
 app.use((err, req, res, next) => {
   console.error(err.stack);
