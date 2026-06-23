@@ -1,0 +1,96 @@
+{
+  "app": {
+    "title": "MultiManager"
+  },
+  "nav": {
+    "profiles": "Profiles",
+    "proxies": "Proxies",
+    "extensions": "Extensions",
+    "settings": "Settings"
+  },
+  "profiles": {
+    "title": "Profile Manager",
+    "create": "Create Profile",
+    "createOneClick": "1-Click Generate",
+    "search": "Search profiles...",
+    "bulkStart": "Start Selected",
+    "bulkStop": "Stop Selected",
+    "bulkDelete": "Delete Selected",
+    "bulkClean": "Clean Cache",
+    "columns": {
+      "number": "#",
+      "name": "Name",
+      "proxy": "Proxy",
+      "fingerprint": "Fingerprint",
+      "status": "Status",
+      "actions": "Actions"
+    },
+    "status": {
+      "stopped": "Stopped",
+      "starting": "Starting...",
+      "running": "Running"
+    },
+    "modal": {
+      "basic": "Basic",
+      "proxy": "Proxy",
+      "advanced": "Advanced",
+      "name": "Profile Name",
+      "tags": "Tags",
+      "platform": "Platform",
+      "generate": "Generate Fingerprint",
+      "selectProxy": "Select Proxy",
+      "noProxy": "No Proxy",
+      "extensions": "Extensions",
+      "notes": "Notes",
+      "save": "Save",
+      "cancel": "Cancel"
+    }
+  },
+  "proxies": {
+    "title": "Proxy Manager",
+    "add": "Add Proxy",
+    "checkSelected": "Check Selected",
+    "deleteUnused": "Delete Unused",
+    "bulkImport": "Bulk Import",
+    "columns": {
+      "status": "Status",
+      "geo": "GEO",
+      "type": "Type",
+      "connection": "Connection",
+      "rotation": "Rotation",
+      "ping": "Ping",
+      "profiles": "Profiles"
+    }
+  },
+  "extensions": {
+    "title": "Extensions Manager",
+    "add": "Add Extension",
+    "empty": "No extensions installed"
+  },
+  "settings": {
+    "title": "Settings",
+    "server": "Server",
+    "port": "Port",
+    "token": "API Token",
+    "theme": "Theme",
+    "language": "Language",
+    "themes": {
+      "dark": "Dark",
+      "light": "Light",
+      "system": "System"
+    }
+  },
+  "common": {
+    "start": "Start",
+    "stop": "Stop",
+    "delete": "Delete",
+    "clean": "Clean",
+    "save": "Save",
+    "cancel": "Cancel",
+    "confirm": "Confirm",
+    "loading": "Loading...",
+    "noData": "No data",
+    "success": "Success",
+    "error": "Error"
+  }
+}

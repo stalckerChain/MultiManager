@@ -1,0 +1,96 @@
+{
+  "app": {
+    "title": "MultiManager"
+  },
+  "nav": {
+    "profiles": "Профили",
+    "proxies": "Прокси",
+    "extensions": "Расширения",
+    "settings": "Настройки"
+  },
+  "profiles": {
+    "title": "Менеджер профилей",
+    "create": "Создать профиль",
+    "createOneClick": "Генерация в 1 клик",
+    "search": "Поиск профилей...",
+    "bulkStart": "Запустить выбранные",
+    "bulkStop": "Остановить выбранные",
+    "bulkDelete": "Удалить выбранные",
+    "bulkClean": "Очистить кэш",
+    "columns": {
+      "number": "№",
+      "name": "Название",
+      "proxy": "Прокси",
+      "fingerprint": "Отпечаток",
+      "status": "Статус",
+      "actions": "Действия"
+    },
+    "status": {
+      "stopped": "Остановлен",
+      "starting": "Запуск...",
+      "running": "Работает"
+    },
+    "modal": {
+      "basic": "Основные",
+      "proxy": "Прокси",
+      "advanced": "Дополнительно",
+      "name": "Имя профиля",
+      "tags": "Теги",
+      "platform": "Платформа",
+      "generate": "Сгенерировать отпечаток",
+      "selectProxy": "Выбрать прокси",
+      "noProxy": "Без прокси",
+      "extensions": "Расширения",
+      "notes": "Заметки",
+      "save": "Сохранить",
+      "cancel": "Отмена"
+    }
+  },
+  "proxies": {
+    "title": "Менеджер прокси",
+    "add": "Добавить прокси",
+    "checkSelected": "Проверить выбранные",
+    "deleteUnused": "Удалить неиспользуемые",
+    "bulkImport": "Массовый импорт",
+    "columns": {
+      "status": "Статус",
+      "geo": "ГЕО",
+      "type": "Тип",
+      "connection": "Подключение",
+      "rotation": "Ротация",
+      "ping": "Пинг",
+      "profiles": "Профили"
+    }
+  },
+  "extensions": {
+    "title": "Менеджер расширений",
+    "add": "Добавить расширение",
+    "empty": "Расширения не установлены"
+  },
+  "settings": {
+    "title": "Настройки",
+    "server": "Сервер",
+    "port": "Порт",
+    "token": "API Токен",
+    "theme": "Тема",
+    "language": "Язык",
+    "themes": {
+      "dark": "Тёмная",
+      "light": "Светлая",
+      "system": "Системная"
+    }
+  },
+  "common": {
+    "start": "Старт",
+    "stop": "Стоп",
+    "delete": "Удалить",
+    "clean": "Очистить",
+    "save": "Сохранить",
+    "cancel": "Отмена",
+    "confirm": "Подтвердить",
+    "loading": "Загрузка...",
+    "noData": "Нет данных",
+    "success": "Успешно",
+    "error": "Ошибка"
+  }
+}

@@ -6,14 +6,14 @@ const crypto = require('crypto');
 
 const args = process.argv.slice(2);
 const tokenArg = args.find(arg => arg.startsWith('--api-token='));
+const portArg = args.find(arg => arg.startsWith('--port='));
 const token = tokenArg ? tokenArg.split('=')[1] : crypto.randomBytes(32).toString('hex');
+const port = portArg ? parseInt(portArg.split('=')[1], 10) : (process.env.PORT || 3000);
 
 setToken(token);
 initDatabase();
 
-const PORT = process.env.PORT || 3000;
-
-app.listen(PORT, '127.0.0.1', () => {
-  logger.info(`Core-движок запущен на http://127.0.0.1:${PORT}`);
+app.listen(port, '127.0.0.1', () => {
+  logger.info(`Core-движок запущен на http://127.0.0.1:${port}`);
   logger.info(`API Token: ${token}`);
 });

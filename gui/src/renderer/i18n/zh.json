@@ -1,0 +1,96 @@
+{
+  "app": {
+    "title": "MultiManager"
+  },
+  "nav": {
+    "profiles": "配置文件",
+    "proxies": "代理",
+    "extensions": "扩展",
+    "settings": "设置"
+  },
+  "profiles": {
+    "title": "配置文件管理器",
+    "create": "创建配置文件",
+    "createOneClick": "一键生成",
+    "search": "搜索配置文件...",
+    "bulkStart": "启动选中",
+    "bulkStop": "停止选中",
+    "bulkDelete": "删除选中",
+    "bulkClean": "清理缓存",
+    "columns": {
+      "number": "编号",
+      "name": "名称",
+      "proxy": "代理",
+      "fingerprint": "指纹",
+      "status": "状态",
+      "actions": "操作"
+    },
+    "status": {
+      "stopped": "已停止",
+      "starting": "启动中...",
+      "running": "运行中"
+    },
+    "modal": {
+      "basic": "基本",
+      "proxy": "代理",
+      "advanced": "高级",
+      "name": "配置名称",
+      "tags": "标签",
+      "platform": "平台",
+      "generate": "生成指纹",
+      "selectProxy": "选择代理",
+      "noProxy": "无代理",
+      "extensions": "扩展",
+      "notes": "备注",
+      "save": "保存",
+      "cancel": "取消"
+    }
+  },
+  "proxies": {
+    "title": "代理管理器",
+    "add": "添加代理",
+    "checkSelected": "检查选中",
+    "deleteUnused": "删除未使用",
+    "bulkImport": "批量导入",
+    "columns": {
+      "status": "状态",
+      "geo": "地区",
+      "type": "类型",
+      "connection": "连接",
+      "rotation": "轮换",
+      "ping": "延迟",
+      "profiles": "配置文件"
+    }
+  },
+  "extensions": {
+    "title": "扩展管理器",
+    "add": "添加扩展",
+    "empty": "未安装扩展"
+  },
+  "settings": {
+    "title": "设置",
+    "server": "服务器",
+    "port": "端口",
+    "token": "API 令牌",
+    "theme": "主题",
+    "language": "语言",
+    "themes": {
+      "dark": "深色",
+      "light": "浅色",
+      "system": "跟随系统"
+    }
+  },
+  "common": {
+    "start": "启动",
+    "stop": "停止",
+    "delete": "删除",
+    "clean": "清理",
+    "save": "保存",
+    "cancel": "取消",
+    "confirm": "确认",
+    "loading": "加载中...",
+    "noData": "暂无数据",
+    "success": "成功",
+    "error": "错误"
+  }
+}
