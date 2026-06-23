@@ -45,6 +45,7 @@
       <slot />
     </main>
 
+    <LogPanel />
     <StatusBar />
   </div>
 </template>
@@ -56,6 +57,7 @@ import { useI18n } from 'vue-i18next';
 import { useAppStore } from '../stores/app.js';
 import { useWebSocket } from '../composables/useWebSocket.js';
 import StatusBar from './StatusBar.vue';
+import LogPanel from './LogPanel.vue';
 
 const { t } = useI18n();
 const router = useRouter();
