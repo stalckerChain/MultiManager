@@ -5,6 +5,7 @@ const proxiesRouter = require('../api/proxies');
 const cookiesRouter = require('../api/cookies');
 const browserRouter = require('../api/browser');
 const multiControlRouter = require('../api/multi-control');
+const windowArrangerRouter = require('../api/window-arranger');
 const { setupWebSocket } = require('./websocket');
 
 const app = express();
@@ -21,6 +22,7 @@ app.use('/api/proxies', proxiesRouter);
 app.use('/api/cookies', cookiesRouter);
 app.use('/api/browser', browserRouter);
 app.use('/api/multi-control', multiControlRouter);
+app.use('/api/window-arranger', windowArrangerRouter);
 
 app.use((err, req, res, next) => {
   console.error(err.stack);
