@@ -6,15 +6,32 @@ const { getDatabase, createProfileQueries } = require('../db');
 const execAsync = promisify(exec);
 const router = express.Router();
 
+async function getScreenSize() {
+  const platform = process.platform;
+
+  try {
+    if (platform === 'darwin') {
+      const script = `osascript -e 'tell application "Finder" to get bounds of window of desktop'`;
+      const { stdout } = await execAsync(script);
+      const parts = stdout.trim().split(',').map(Number);
+      return { width: parts[2] - parts[0], height: parts[3] - parts[1] };
+    } else if (platform === 'linux') {
+      const { stdout } = await execAsync('xdpyinfo | grep dimensions');
+      const match = stdout.match(/(\d+)x(\d+)/);
+      return match ? { width: parseInt(match[1]), height: parseInt(match[2]) } : { width: 1920, height: 1080 };
+    }
+  } catch {}
+
+  return { width: 1920, height: 1080 };
+}
+
 async function getRunningWindows() {
   const platform = process.platform;
   let windows = [];
 
   try {
     if (platform === 'linux') {
-      const { stdout } = await execAsync(
-        "xdotool search --name '' 2>/dev/null | head -20"
-      );
+      const { stdout } = await execAsync("xdotool search --name '' 2>/dev/null | head -20");
       const pids = stdout.trim().split('\n').filter(Boolean);
       for (const pid of pids) {
         try {
@@ -28,10 +45,8 @@ async function getRunningWindows() {
           windows.push({
             id: pid,
             name: name.trim(),
-            x: get('X'),
-            y: get('Y'),
-            width: get('WIDTH'),
-            height: get('HEIGHT'),
+            x: get('X'), y: get('Y'),
+            width: get('WIDTH'), height: get('HEIGHT'),
           });
         } catch {}
       }
@@ -47,10 +62,37 @@ async function getRunningWindows() {
         });
       }
     } else if (platform === 'darwin') {
-      const { stdout } = await execAsync(
-        `osascript -e 'tell application "System Events" to get {name, position, size} of every window of every process whose visible is true'`
-      );
-      // Parse AppleScript output
+      const script = `
+        set output to ""
+        tell application "System Events"
+          repeat with proc in (every process whose visible is true)
+            set procName to name of proc
+            repeat with win in (every window of proc)
+              set winPos to position of win
+              set winSize to size of win
+              set output to output & procName & "|" & name of win & "|" & (item 1 of winPos) & "|" & (item 2 of winPos) & "|" & (item 1 of winSize) & "|" & (item 2 of winSize) & linefeed
+            end repeat
+          end repeat
+        end tell
+        return output
+      `.replace(/\n/g, ' ');
+
+      const { stdout } = await execAsync(`osascript -e '${script.replace(/'/g, "'\\''")}'`);
+      const lines = stdout.trim().split('\n').filter(Boolean);
+
+      for (const line of lines) {
+        const parts = line.split('|');
+        if (parts.length >= 6) {
+          windows.push({
+            id: parts[0],
+            name: `${parts[0]} - ${parts[1]}`,
+            x: parseInt(parts[2]) || 0,
+            y: parseInt(parts[3]) || 0,
+            width: parseInt(parts[4]) || 800,
+            height: parseInt(parts[5]) || 600,
+          });
+        }
+      }
     }
   } catch (err) {
     console.error('Error getting windows:', err.message);
@@ -78,9 +120,44 @@ async function moveWindow(windowId, x, y, width, height) {
         [WinAPI]::MoveWindow([IntPtr]${parseInt(windowId)}, ${x}, ${y}, ${width}, ${height}, $true)
       "`;
       await execAsync(ps);
+    } else if (platform === 'darwin') {
+      const safeWindowId = windowId.replace(/"/g, '\\"');
+      const positionScript = `tell application "System Events" to set position of window 1 of process "${safeWindowId}" to {${x}, ${y}}`;
+      await execAsync(`osascript -e '${positionScript}'`);
+
+      const sizeScript = `tell application "System Events" to set size of window 1 of process "${safeWindowId}" to {${width}, ${height}}`;
+      await execAsync(`osascript -e '${sizeScript}'`);
     }
   } catch (err) {
     console.error('Error moving window:', err.message);
+  }
+}
+
+async function focusWindow(windowId) {
+  const platform = process.platform;
+
+  try {
+    if (platform === 'linux') {
+      await execAsync(`xdotool windowactivate ${windowId}`);
+    } else if (platform === 'darwin') {
+      const safeWindowId = windowId.replace(/"/g, '\\"');
+      const script = `tell application "${safeWindowId}" to activate`;
+      await execAsync(`osascript -e '${script}'`);
+    } else if (platform === 'win32') {
+      const ps = `powershell -Command "
+        Add-Type @'
+        using System;
+        using System.Runtime.InteropServices;
+        public class WinAPI {
+          [DllImport(\\"user32.dll\\")] public static extern bool SetForegroundWindow(IntPtr h);
+        }
+'@
+        [WinAPI]::SetForegroundWindow([IntPtr]${parseInt(windowId)})
+      "`;
+      await execAsync(ps);
+    }
+  } catch (err) {
+    console.error('Error focusing window:', err.message);
   }
 }
 
@@ -100,26 +177,21 @@ router.post('/grid', async (req, res) => {
       return res.json({ arranged: 0 });
     }
 
+    const screen = await getScreenSize();
     const cols = Math.ceil(Math.sqrt(windows.length));
     const rows = Math.ceil(windows.length / cols);
-
-    const screenWidth = 1920;
-    const screenHeight = 1080;
-    const cellWidth = Math.floor(screenWidth / cols);
-    const cellHeight = Math.floor(screenHeight / rows);
+    const cellWidth = Math.floor(screen.width / cols);
+    const cellHeight = Math.floor(screen.height / rows);
 
     let arranged = 0;
     for (let i = 0; i < windows.length; i++) {
       const col = i % cols;
       const row = Math.floor(i / cols);
-      const x = col * cellWidth;
-      const y = row * cellHeight;
-
-      await moveWindow(windows[i].id, x, y, cellWidth, cellHeight);
+      await moveWindow(windows[i].id, col * cellWidth, row * cellHeight, cellWidth, cellHeight);
       arranged++;
     }
 
-    res.json({ arranged, cols, rows });
+    res.json({ arranged, cols, rows, screen });
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
@@ -133,17 +205,12 @@ router.post('/cascade', async (req, res) => {
     }
 
     const offset = 30;
-    const startX = 100;
-    const startY = 100;
     const width = 1200;
     const height = 800;
 
     let arranged = 0;
     for (let i = 0; i < windows.length; i++) {
-      const x = startX + (i * offset);
-      const y = startY + (i * offset);
-
-      await moveWindow(windows[i].id, x, y, width, height);
+      await moveWindow(windows[i].id, 100 + (i * offset), 100 + (i * offset), width, height);
       arranged++;
     }
 
@@ -155,10 +222,7 @@ router.post('/cascade', async (req, res) => {
 
 router.post('/focus/:windowId', async (req, res) => {
   try {
-    const platform = process.platform;
-    if (platform === 'linux') {
-      await execAsync(`xdotool windowactivate ${req.params.windowId}`);
-    }
+    await focusWindow(req.params.windowId);
     res.json({ focused: req.params.windowId });
   } catch (err) {
     res.status(500).json({ error: err.message });
