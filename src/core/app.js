@@ -1,5 +1,9 @@
 const express = require('express');
 const { authMiddleware } = require('../api/auth');
+const profilesRouter = require('../api/profiles');
+const proxiesRouter = require('../api/proxies');
+const cookiesRouter = require('../api/cookies');
+const browserRouter = require('../api/browser');
 
 const app = express();
 
@@ -8,6 +12,16 @@ app.use(authMiddleware);
 
 app.get('/health', (req, res) => {
   res.json({ status: 'ok' });
+});
+
+app.use('/api/profiles', profilesRouter);
+app.use('/api/proxies', proxiesRouter);
+app.use('/api/cookies', cookiesRouter);
+app.use('/api/browser', browserRouter);
+
+app.use((err, req, res, next) => {
+  console.error(err.stack);
+  res.status(500).json({ error: 'Внутренняя ошибка сервера' });
 });
 
 module.exports = { app };
