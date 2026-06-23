@@ -80,6 +80,8 @@
     </a-table>
 
     <ProfileModal v-model:open="modalOpen" :profile="editingProfile" @save="handleSave" />
+    <CookieImportModal v-model:open="cookieImportOpen" :profile-id="cookieImportProfileId"
+      @imported="profilesStore.fetchAll()" />
   </div>
 </template>
 
@@ -89,7 +91,9 @@ import { useI18n } from 'vue-i18next';
 import { useProfilesStore } from '../stores/profiles.js';
 import { useBrowserStore } from '../stores/browser.js';
 import { useWebSocket } from '../composables/useWebSocket.js';
+import client from '../api/client.js';
 import ProfileModal from './ProfileModal.vue';
+import CookieImportModal from './CookieImportModal.vue';
 
 const { t } = useI18n();
 const profilesStore = useProfilesStore();
@@ -100,6 +104,8 @@ const search = ref('');
 const selectedRowKeys = ref([]);
 const modalOpen = ref(false);
 const editingProfile = ref(null);
+const cookieImportOpen = ref(false);
+const cookieImportProfileId = ref(null);
 
 const columns = [
   { title: '#', dataIndex: 'number', key: 'number', width: 60 },
@@ -173,10 +179,30 @@ function handleContext({ key }, record) {
     case 'edit': showEditModal(record); break;
     case 'regenerate': profilesStore.regenerate(record.id); break;
     case 'clean': browserStore.clean(record.id); break;
+    case 'importCookies':
+      cookieImportProfileId.value = record.id;
+      cookieImportOpen.value = true;
+      break;
+    case 'exportCookies': exportCookies(record); break;
     case 'delete':
       profilesStore.remove(record.id);
       break;
   }
+}
+
+async function exportCookies(record) {
+  try {
+    const { data } = await client.get(`/api/cookies/${record.id}/export`, {
+      params: { format: 'json' },
+    });
+    const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `cookies_${record.name || record.id}.json`;
+    a.click();
+    URL.revokeObjectURL(url);
+  } catch {}
 }
 
 async function bulkStart() {
