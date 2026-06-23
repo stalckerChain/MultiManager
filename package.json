@@ -7,6 +7,8 @@
     "start": "node src/index.js",
     "dev": "node --watch src/index.js",
     "test": "vitest run",
+    "test:api": "node tests/integration/api-real.test.js",
+    "test:all": "vitest run --reporter=verbose && node tests/integration/api-real.test.js",
     "test:watch": "vitest",
     "lint": "eslint src/",
     "typecheck": "tsc --noEmit"
