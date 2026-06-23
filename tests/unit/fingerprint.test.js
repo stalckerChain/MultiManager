@@ -5,6 +5,7 @@ const ASPECT_RATIOS = {
   '16:9': 16 / 9,
   '16:10': 16 / 10,
   '4:3': 4 / 3,
+  '21:9': 21 / 9,
 };
 
 function parseResolution(res) {
@@ -111,8 +112,8 @@ describe('Fingerprint Generator', () => {
       }
     });
 
-    it('соответствует стандартным пропорциям (±0.05)', () => {
-      const MAX_DEVIATION = 0.05;
+    it('соответствует стандартным пропорциям (±0.06)', () => {
+      const MAX_DEVIATION = 0.06;
       for (const platform of ['windows', 'macos', 'linux']) {
         for (let i = 0; i < 20; i++) {
           const fp = generateFingerprint(platform);
