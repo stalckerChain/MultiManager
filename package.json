@@ -1,0 +1,31 @@
+{
+  "name": "multimanager",
+  "version": "0.1.0",
+  "description": "MVP кроссплатформенного антидетект-браузера с API для ИИ",
+  "main": "src/index.js",
+  "scripts": {
+    "start": "node src/index.js",
+    "dev": "node --watch src/index.js",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "lint": "eslint src/",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "better-sqlite3": "^11.7.0",
+    "express": "^4.21.0",
+    "pino": "^9.6.0",
+    "pino-pretty": "^13.0.0",
+    "uuid": "^11.1.0",
+    "tree-kill": "^1.2.2"
+  },
+  "devDependencies": {
+    "vitest": "^3.1.1",
+    "eslint": "^9.23.0",
+    "typescript": "^5.8.2",
+    "@types/node": "^22.14.0"
+  },
+  "engines": {
+    "node": ">=20.0.0"
+  }
+}
