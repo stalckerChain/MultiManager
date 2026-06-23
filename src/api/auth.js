@@ -1,11 +1,11 @@
-let apiToken = null;
+const state = { apiToken: null };
 
 function setToken(token) {
-  apiToken = token;
+  state.apiToken = token;
 }
 
 function getToken() {
-  return apiToken;
+  return state.apiToken;
 }
 
 function authMiddleware(req, res, next) {
@@ -17,7 +17,7 @@ function authMiddleware(req, res, next) {
 
   const token = authHeader.slice(7);
   
-  if (token !== apiToken) {
+  if (token !== state.apiToken) {
     return res.status(401).json({ error: 'Invalid token' });
   }
 
