@@ -41,7 +41,8 @@ MultiManager/
 │   │   ├── profiles.js       # CRUD профилей
 │   │   ├── proxies.js        # CRUD прокси + проверка
 │   │   ├── cookies.js        # Импорт/экспорт куки
-│   │   └── browser.js        # Управление браузером
+│   │   ├── browser.js        # Управление браузером
+│   │   └── multi-control.js  # Синхронизация окон
 │   ├── db/
 │   │   ├── index.js          # Инициализация SQLite
 │   │   ├── schema.js         # Таблицы и индексы
@@ -54,6 +55,8 @@ MultiManager/
 │   │   └── index.js          # Парсинг JSON/Netscape
 │   ├── typing/
 │   │   └── index.js          # Human-like ввод
+│   ├── multi-control/
+│   │   └── index.js          # Синхронизация окон (CDP)
 │   ├── logger/
 │   │   └── index.js          # Pino логгер
 │   └── utils/

@@ -351,6 +351,180 @@ Authorization: Bearer <token>
 
 ---
 
+## Multi-Control (Синхронизация окон)
+
+Система трансляции действий из главного окна во все slave-окна через CDP. Координаты мыши буферизируются с throttling 25мс.
+
+### GET /api/multi-control/status
+
+Получить статус multi-control.
+
+**Ответ (200):**
+```json
+{
+  "active": true,
+  "masterId": "f81d4fae-...",
+  "slaveCount": 3,
+  "slaves": ["uuid-1", "uuid-2", "uuid-3"]
+}
+```
+
+---
+
+### POST /api/multi-control/start
+
+Запустить multi-control. Устанавливает master-профиль.
+
+**Тело запроса:**
+```json
+{
+  "masterId": "f81d4fae-..."
+}
+```
+
+**Ответ (200):**
+```json
+{
+  "status": "active",
+  "masterId": "f81d4fae-..."
+}
+```
+
+---
+
+### POST /api/multi-control/stop
+
+Остановить multi-control. Отвязывает всех slave.
+
+**Ответ (200):**
+```json
+{
+  "status": "stopped"
+}
+```
+
+---
+
+### POST /api/multi-control/slave/add
+
+Добавить slave-профиль.
+
+**Тело запроса:**
+```json
+{
+  "profileId": "uuid-slave-1"
+}
+```
+
+**Ответ (200):**
+```json
+{
+  "status": "added",
+  "profileId": "uuid-slave-1",
+  "slaveCount": 1
+}
+```
+
+**Ответ (409):** `{ "error": "Multi-control не активен" }`
+
+---
+
+### POST /api/multi-control/slave/remove
+
+Удалить slave-профиль.
+
+**Тело запроса:**
+```json
+{
+  "profileId": "uuid-slave-1"
+}
+```
+
+**Ответ (200):**
+```json
+{
+  "status": "removed",
+  "profileId": "uuid-slave-1"
+}
+```
+
+---
+
+### POST /api/multi-control/mouse/move
+
+Транслировать движение мыши (буферизуется, throttling 25мс).
+
+**Тело запроса:**
+```json
+{
+  "x": 500,
+  "y": 300
+}
+```
+
+---
+
+### POST /api/multi-control/mouse/click
+
+Транслировать клик (mousePressed + mouseReleased).
+
+**Тело запроса:**
+```json
+{
+  "x": 500,
+  "y": 300,
+  "button": "left",
+  "clickCount": 1
+}
+```
+
+---
+
+### POST /api/multi-control/mouse/scroll
+
+Транслировать скролл.
+
+**Тело запроса:**
+```json
+{
+  "x": 500,
+  "y": 300,
+  "deltaX": 0,
+  "deltaY": -100
+}
+```
+
+---
+
+### POST /api/multi-control/keyboard/type
+
+Транслировать текст на все slave-окна.
+
+**Тело запроса:**
+```json
+{
+  "text": "Hello, world!"
+}
+```
+
+---
+
+### POST /api/multi-control/keyboard/key
+
+Транслировать нажатие клавиши (keyDown + keyUp).
+
+**Тело запроса:**
+```json
+{
+  "key": "Enter",
+  "code": "Enter",
+  "windowsVirtualKeyCode": 13,
+  "nativeVirtualKeyCode": 13
+}
+```
+
+---
+
 ## Статусы профиля
 
 | Статус | Описание |
