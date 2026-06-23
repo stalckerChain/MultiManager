@@ -5,6 +5,7 @@ const proxiesRouter = require('../api/proxies');
 const cookiesRouter = require('../api/cookies');
 const browserRouter = require('../api/browser');
 const multiControlRouter = require('../api/multi-control');
+const { setupWebSocket } = require('./websocket');
 
 const app = express();
 
@@ -26,4 +27,4 @@ app.use((err, req, res, next) => {
   res.status(500).json({ error: 'Внутренняя ошибка сервера' });
 });
 
-module.exports = { app };
+module.exports = { app, setupWebSocket };

@@ -7,6 +7,7 @@ const { getDatabase, createProfileQueries, createProxyQueries, createLogQueries 
 const { checkProxy, rotateProxy } = require('../proxy');
 const { injectCookies, getProfileDir } = require('../cookie/inject');
 const { createProfileLogger } = require('../logger');
+const { broadcastStatus } = require('../core/websocket');
 
 const router = express.Router();
 
@@ -28,6 +29,7 @@ router.post('/:id/start', async (req, res) => {
   }
 
   profileQueries.updateStatus(req.params.id, 'starting');
+  broadcastStatus(req.params.id, 'starting');
   logQueries.add(req.params.id, 'info', 'Запуск профиля...');
 
   const profileLogger = createProfileLogger(req.params.id);
@@ -44,6 +46,7 @@ router.post('/:id/start', async (req, res) => {
           logQueries.add(req.params.id, 'info', 'Ротация прокси выполнена');
         } catch (err) {
           profileQueries.updateStatus(req.params.id, 'stopped');
+          broadcastStatus(req.params.id, 'stopped');
           logQueries.add(req.params.id, 'error', 'Ошибка ротации прокси', { error: err.message });
           return res.status(502).json({ error: 'Ошибка ротации прокси', details: err.message });
         }
@@ -58,6 +61,7 @@ router.post('/:id/start', async (req, res) => {
 
       if (!checkResult.ok) {
         profileQueries.updateStatus(req.params.id, 'stopped');
+        broadcastStatus(req.params.id, 'stopped');
         logQueries.add(req.params.id, 'error', 'Прокси недоступен', { error: checkResult.error });
         return res.status(412).json({ error: 'Прокси недоступен', details: checkResult.error });
       }
@@ -103,11 +107,13 @@ router.post('/:id/start', async (req, res) => {
 
   profileQueries.updatePid(req.params.id, child.pid);
   profileQueries.updateStatus(req.params.id, 'running');
+  broadcastStatus(req.params.id, 'running', child.pid);
   logQueries.add(req.params.id, 'info', `Браузер запущен, PID: ${child.pid}`);
   profileLogger.info({ profileId: req.params.id, pid: child.pid }, 'Браузер запущен');
 
   child.on('error', (err) => {
     profileQueries.updateStatus(req.params.id, 'stopped');
+    broadcastStatus(req.params.id, 'stopped');
     logQueries.add(req.params.id, 'error', 'Ошибка запуска', { error: err.message });
     profileLogger.error({ profileId: req.params.id, error: err.message }, 'Ошибка запуска');
     runningProfiles.delete(req.params.id);
@@ -115,6 +121,7 @@ router.post('/:id/start', async (req, res) => {
 
   child.on('exit', () => {
     profileQueries.updateStatus(req.params.id, 'stopped');
+    broadcastStatus(req.params.id, 'stopped');
     profileQueries.updatePid(req.params.id, null);
     logQueries.add(req.params.id, 'info', 'Браузер завершен');
     profileLogger.info({ profileId: req.params.id }, 'Браузер завершен');
@@ -163,6 +170,7 @@ router.post('/:id/stop', (req, res) => {
   }
 
   profileQueries.updateStatus(req.params.id, 'stopped');
+  broadcastStatus(req.params.id, 'stopped');
   profileQueries.updatePid(req.params.id, null);
   runningProfiles.delete(req.params.id);
 

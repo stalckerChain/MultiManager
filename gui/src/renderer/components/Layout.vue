@@ -21,6 +21,9 @@
             </a-menu>
           </template>
         </a-dropdown>
+        <span :class="connected ? 'text-green-400' : 'text-red-400'" class="text-xs">
+          {{ connected ? '● WS' : '○ WS' }}
+        </span>
         <a-dropdown>
           <a-button size="small" ghost>{{ t(`settings.themes.${appStore.theme}`) }}</a-button>
           <template #overlay>
@@ -50,12 +53,14 @@ import { computed } from 'vue';
 import { useRouter, useRoute } from 'vue-router';
 import { useI18n } from 'vue-i18next';
 import { useAppStore } from '../stores/app.js';
+import { useWebSocket } from '../composables/useWebSocket.js';
 import StatusBar from './StatusBar.vue';
 
 const { t } = useI18n();
 const router = useRouter();
 const route = useRoute();
 const appStore = useAppStore();
+const { connected } = useWebSocket();
 
 const selectedKeys = computed(() => [route.name]);
 
