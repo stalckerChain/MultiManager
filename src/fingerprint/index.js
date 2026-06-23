@@ -9,6 +9,9 @@ const FINGERPRINT_DB = {
     resolutions: ['2560x1600', '1920x1080', '1440x900', '2560x1440'],
     cores: [8, 10, 12],
     memory: [16, 24, 32],
+    colorDepth: [24, 32],
+    platform: 'MacIntel',
+    userAgentPattern: /Macintosh; Intel Mac OS X/,
   },
   windows: {
     userAgents: [
@@ -18,6 +21,9 @@ const FINGERPRINT_DB = {
     resolutions: ['1920x1080', '2560x1440', '1366x768', '1536x864'],
     cores: [4, 6, 8, 12, 16],
     memory: [8, 16, 32],
+    colorDepth: [24, 32],
+    platform: 'Win32',
+    userAgentPattern: /Windows NT 10\.0/,
   },
   linux: {
     userAgents: [
@@ -27,6 +33,9 @@ const FINGERPRINT_DB = {
     resolutions: ['1920x1080', '2560x1440', '1366x768'],
     cores: [4, 8, 16],
     memory: [8, 16, 32],
+    colorDepth: [24, 32],
+    platform: 'Linux x86_64',
+    userAgentPattern: /X11; Linux x86_64/,
   },
 };
 
@@ -46,6 +55,7 @@ function generateFingerprint(platform = 'windows') {
     screen_resolution: randomPick(config.resolutions),
     hardware_cores: randomPick(config.cores),
     hardware_memory: randomPick(config.memory),
+    color_depth: randomPick(config.colorDepth),
     fingerprint_seed: uuidv4(),
   };
 }
