@@ -1,5 +1,6 @@
 const express = require('express');
 const { authMiddleware } = require('../api/auth');
+const { logger } = require('../logger');
 const profilesRouter = require('../api/profiles');
 const proxiesRouter = require('../api/proxies');
 const cookiesRouter = require('../api/cookies');
@@ -29,7 +30,7 @@ app.use('/api/extensions', extensionsRouter);
 app.use('/api/logs', logsRouter);
 
 app.use((err, req, res, next) => {
-  console.error(err.stack);
+  logger.error({ err: err.message, stack: err.stack }, 'Unhandled server error');
   res.status(500).json({ error: 'Внутренняя ошибка сервера' });
 });
 

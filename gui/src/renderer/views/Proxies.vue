@@ -24,14 +24,14 @@
         </template>
         <template v-if="column.key === 'actions'">
           <a-space>
-            <a-button size="small" @click="checkProxy(record.id)">Check</a-button>
+            <a-button size="small" :loading="checkLoading === record.id" @click="checkProxy(record.id)">Check</a-button>
             <a-button size="small" danger @click="proxiesStore.remove(record.id)">Delete</a-button>
           </a-space>
         </template>
       </template>
     </a-table>
 
-    <a-modal v-model:open="addModal" title="Add Proxy" @ok="handleAddProxy">
+    <a-modal v-model:open="addModal" title="Add Proxy" @ok="handleAddProxy" :confirm-loading="addLoading">
       <a-form layout="vertical">
         <a-form-item label="Type">
           <a-select v-model:value="newProxy.type">
@@ -59,7 +59,7 @@
       </a-form>
     </a-modal>
 
-    <a-modal v-model:open="importModal" title="Bulk Import" @ok="handleImport">
+    <a-modal v-model:open="importModal" title="Bulk Import" @ok="handleImport" :confirm-loading="importLoading">
       <a-textarea v-model:value="importText" :rows="8"
         placeholder="socks5://user:pass@host1:1080&#10;http://host2:8080&#10;IP:Port:User:Pass" />
     </a-modal>
@@ -68,6 +68,7 @@
 
 <script setup>
 import { ref, reactive, onMounted } from 'vue';
+import { message } from 'ant-design-vue';
 import { useTranslation } from 'i18next-vue';
 import { useProxiesStore } from '../stores/proxies.js';
 
@@ -77,6 +78,9 @@ const proxiesStore = useProxiesStore();
 const addModal = ref(false);
 const importModal = ref(false);
 const importText = ref('');
+const addLoading = ref(false);
+const importLoading = ref(false);
+const checkLoading = ref(null);
 const newProxy = reactive({
   type: 'socks5', host: '', port: 1080, username: '', password: '',
 });
@@ -105,18 +109,46 @@ function showImportModal() {
 }
 
 async function handleAddProxy() {
-  await proxiesStore.create({ ...newProxy });
-  addModal.value = false;
+  addLoading.value = true;
+  try {
+    await proxiesStore.create({ ...newProxy });
+    addModal.value = false;
+    message.success('Прокси добавлен');
+  } catch (err) {
+    message.error(err.message || 'Ошибка добавления прокси');
+  } finally {
+    addLoading.value = false;
+  }
 }
 
 async function handleImport() {
-  await proxiesStore.importBulk(importText.value);
-  importModal.value = false;
+  importLoading.value = true;
+  try {
+    const result = await proxiesStore.importBulk(importText.value);
+    importModal.value = false;
+    message.success(`Импортировано прокси: ${result.count}`);
+  } catch (err) {
+    message.error(err.message || 'Ошибка импорта прокси');
+  } finally {
+    importLoading.value = false;
+  }
 }
 
 async function checkProxy(id) {
-  await proxiesStore.check(id);
-  await proxiesStore.fetchAll();
+  checkLoading.value = id;
+  try {
+    const result = await proxiesStore.check(id);
+    if (result.ok) {
+      message.success(`Прокси работает. IP: ${result.ip}`);
+    } else {
+      message.warning(`Прокси недоступен: ${result.error}`);
+    }
+    await proxiesStore.fetchAll();
+  } catch (err) {
+    message.error(err.message || 'Ошибка проверки прокси');
+  } finally {
+    checkLoading.value = null;
+  }
 }
 
 function deleteUnused() {

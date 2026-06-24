@@ -25,23 +25,31 @@ const appDir = getAppDir();
 ensureDir(appDir);
 ensureDir(path.join(appDir, 'logs'));
 
+const targets = [
+  {
+    target: 'pino/file',
+    options: { destination: path.join(appDir, 'logs', 'core.log'), mkdir: true },
+    level: 'info',
+  },
+  {
+    target: 'pino/file',
+    options: { destination: 1 },
+    level: 'info',
+  },
+];
+
+if (process.env.NODE_ENV !== 'production') {
+  targets.unshift({
+    target: 'pino-pretty',
+    options: {},
+    level: 'info',
+  });
+}
+
 const logger = pino({
   level: process.env.LOG_LEVEL || 'info',
-  transport: process.env.NODE_ENV !== 'production' ? { target: 'pino-pretty' } : undefined,
-}, pino.transport({
-  targets: [
-    {
-      target: 'pino/file',
-      options: { destination: path.join(appDir, 'logs', 'core.log'), mkdir: true },
-      level: 'info',
-    },
-    {
-      target: 'pino/file',
-      options: { destination: 1 },
-      level: 'info',
-    },
-  ],
-}));
+  transport: { targets },
+});
 
 function createProfileLogger(profileId) {
   const logsDir = path.join(appDir, 'logs');

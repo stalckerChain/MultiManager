@@ -2,6 +2,7 @@ const express = require('express');
 const { exec } = require('child_process');
 const { promisify } = require('util');
 const { getDatabase, createProfileQueries } = require('../db');
+const { logger } = require('../logger');
 
 const execAsync = promisify(exec);
 const router = express.Router();
@@ -19,11 +20,68 @@ async function getScreenSize() {
       const { stdout } = await execAsync('xdpyinfo | grep dimensions');
       const match = stdout.match(/(\d+)x(\d+)/);
       return match ? { width: parseInt(match[1]), height: parseInt(match[2]) } : { width: 1920, height: 1080 };
+    } else if (platform === 'win32') {
+      const ps = `powershell -Command "[System.Windows.Forms.Screen]::PrimaryScreen.Bounds | Select-Object Width, Height | ConvertTo-Json"`;
+      const { stdout } = await execAsync(ps);
+      const data = JSON.parse(stdout);
+      return { width: data.Width || 1920, height: data.Height || 1080 };
     }
   } catch {}
 
   return { width: 1920, height: 1080 };
 }
+
+const WIN_GET_WINDOWS_PS = `
+Add-Type @"
+using System;
+using System.Runtime.InteropServices;
+using System.Text;
+using System.Collections.Generic;
+public class WinEnum {
+    public delegate bool EnumWindowsProc(IntPtr hWnd, IntPtr lParam);
+    [DllImport("user32.dll")] public static extern bool EnumWindows(EnumWindowsProc lpEnumFunc, IntPtr lParam);
+    [DllImport("user32.dll")] public static extern bool IsWindowVisible(IntPtr hWnd);
+    [DllImport("user32.dll")] public static extern int GetWindowText(IntPtr hWnd, StringBuilder lpString, int nMaxCount);
+    [DllImport("user32.dll")] public static extern int GetWindowTextLength(IntPtr hWnd);
+    [DllImport("user32.dll")] public static extern uint GetWindowThreadProcessId(IntPtr hWnd, out uint lpdwProcessId);
+    [DllImport("user32.dll")] public static extern bool GetWindowRect(IntPtr hWnd, out RECT lpRect);
+    [DllImport("user32.dll")] public static extern bool MoveWindow(IntPtr hWnd, int X, int Y, int nWidth, int nHeight, bool bRepaint);
+    [DllImport("user32.dll")] public static extern bool SetForegroundWindow(IntPtr hWnd);
+    [StructLayout(LayoutKind.Sequential)]
+    public struct RECT { public int Left, Top, Right, Bottom; }
+}
+"@
+
+$results = @()
+[WinEnum]::EnumWindows({
+    param($hWnd, $lParam)
+    if ([WinEnum]::IsWindowVisible($hWnd)) {
+        $len = [WinEnum]::GetWindowTextLength($hWnd)
+        if ($len -gt 0) {
+            $sb = New-Object System.Text.StringBuilder ($len + 1)
+            [WinEnum]::GetWindowText($hWnd, $sb, $sb.Capacity) | Out-Null
+            $title = $sb.ToString()
+            if ($title -match 'Cloak|chromium|chrome|Chromium|CloakBrowser') {
+                $pid = 0
+                [WinEnum]::GetWindowThreadProcessId($hWnd, [ref]$pid) | Out-Null
+                $rect = New-Object WinEnum+RECT
+                [WinEnum]::GetWindowRect($hWnd, [ref]$rect) | Out-Null
+                $results += @{
+                    handle = [string]$hWnd.ToInt64()
+                    pid = [string]$pid
+                    name = $title
+                    x = $rect.Left
+                    y = $rect.Top
+                    width = $rect.Right - $rect.Left
+                    height = $rect.Bottom - $rect.Top
+                }
+            }
+        }
+    }
+    return $true
+})
+$results | ConvertTo-Json -Compress
+`;
 
 async function getRunningWindows() {
   const platform = process.platform;
@@ -51,15 +109,19 @@ async function getRunningWindows() {
         } catch {}
       }
     } else if (platform === 'win32') {
-      const ps = `powershell -Command "Get-Process | Where-Object {$_.MainWindowTitle -ne ''} | Select-Object Id, MainWindowTitle, MainWindowHandle | ConvertTo-Json"`;
-      const { stdout } = await execAsync(ps);
-      const procs = JSON.parse(stdout);
-      for (const proc of (Array.isArray(procs) ? procs : [procs])) {
-        windows.push({
-          id: String(proc.Id),
-          name: proc.MainWindowTitle,
-          x: 0, y: 0, width: 1920, height: 1080,
-        });
+      const { stdout } = await execAsync(WIN_GET_WINDOWS_PS);
+      if (stdout.trim()) {
+        const procs = JSON.parse(stdout);
+        for (const proc of (Array.isArray(procs) ? procs : [procs])) {
+          windows.push({
+            id: proc.handle,
+            name: proc.name,
+            x: proc.x || 0,
+            y: proc.y || 0,
+            width: proc.width || 800,
+            height: proc.height || 600,
+          });
+        }
       }
     } else if (platform === 'darwin') {
       const script = `
@@ -95,7 +157,7 @@ async function getRunningWindows() {
       }
     }
   } catch (err) {
-    console.error('Error getting windows:', err.message);
+    logger.error({ err: err.message }, 'Error getting windows');
   }
 
   return windows;
@@ -109,16 +171,16 @@ async function moveWindow(windowId, x, y, width, height) {
       await execAsync(`xdotool windowmove ${windowId} ${x} ${y}`);
       await execAsync(`xdotool windowsize ${windowId} ${width} ${height}`);
     } else if (platform === 'win32') {
-      const ps = `powershell -Command "
-        Add-Type @'
-        using System;
-        using System.Runtime.InteropServices;
-        public class WinAPI {
-          [DllImport(\\"user32.dll\\")] public static extern bool MoveWindow(IntPtr h, int x, int y, int w, int h2, bool r);
-        }
-'@
-        [WinAPI]::MoveWindow([IntPtr]${parseInt(windowId)}, ${x}, ${y}, ${width}, ${height}, $true)
-      "`;
+      const ps = `
+Add-Type @"
+using System;
+using System.Runtime.InteropServices;
+public class WinAPI {
+    [DllImport("user32.dll")] public static extern bool MoveWindow(IntPtr h, int x, int y, int w, int h2, bool r);
+}
+"@
+[WinAPI]::MoveWindow([IntPtr]${parseInt(windowId)}, ${x}, ${y}, ${width}, ${height}, $true)
+`;
       await execAsync(ps);
     } else if (platform === 'darwin') {
       const safeWindowId = windowId.replace(/"/g, '\\"');
@@ -129,7 +191,7 @@ async function moveWindow(windowId, x, y, width, height) {
       await execAsync(`osascript -e '${sizeScript}'`);
     }
   } catch (err) {
-    console.error('Error moving window:', err.message);
+    logger.error({ err: err.message }, 'Error moving window');
   }
 }
 
@@ -144,20 +206,20 @@ async function focusWindow(windowId) {
       const script = `tell application "${safeWindowId}" to activate`;
       await execAsync(`osascript -e '${script}'`);
     } else if (platform === 'win32') {
-      const ps = `powershell -Command "
-        Add-Type @'
-        using System;
-        using System.Runtime.InteropServices;
-        public class WinAPI {
-          [DllImport(\\"user32.dll\\")] public static extern bool SetForegroundWindow(IntPtr h);
-        }
-'@
-        [WinAPI]::SetForegroundWindow([IntPtr]${parseInt(windowId)})
-      "`;
+      const ps = `
+Add-Type @"
+using System;
+using System.Runtime.InteropServices;
+public class WinAPI {
+    [DllImport("user32.dll")] public static extern bool SetForegroundWindow(IntPtr h);
+}
+"@
+[WinAPI]::SetForegroundWindow([IntPtr]${parseInt(windowId)})
+`;
       await execAsync(ps);
     }
   } catch (err) {
-    console.error('Error focusing window:', err.message);
+    logger.error({ err: err.message }, 'Error focusing window');
   }
 }
 

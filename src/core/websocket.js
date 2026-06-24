@@ -1,4 +1,5 @@
 const { WebSocketServer } = require('ws');
+const { logger } = require('../logger');
 
 let wss = null;
 const clients = new Set();
@@ -8,11 +9,11 @@ function setupWebSocket(server) {
 
   wss.on('connection', (ws) => {
     clients.add(ws);
-    console.log(`WebSocket client connected. Total: ${clients.size}`);
+    logger.info({ total: clients.size }, 'WebSocket client connected');
 
     ws.on('close', () => {
       clients.delete(ws);
-      console.log(`WebSocket client disconnected. Total: ${clients.size}`);
+      logger.info({ total: clients.size }, 'WebSocket client disconnected');
     });
 
     ws.on('error', () => {

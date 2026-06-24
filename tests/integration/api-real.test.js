@@ -1,8 +1,12 @@
-const http = require('http');
-const crypto = require('crypto');
+import { describe, it, expect, beforeAll, afterAll } from 'vitest';
+import http from 'http';
+import crypto from 'crypto';
 
 const TEST_TOKEN = crypto.randomBytes(16).toString('hex');
 const PORT = 3999;
+
+let server;
+let db;
 
 function request(method, path, body) {
   return new Promise((resolve, reject) => {
@@ -34,148 +38,124 @@ function request(method, path, body) {
   });
 }
 
-let server;
-let db;
+function rawRequest(path, headers = {}) {
+  return new Promise((resolve, reject) => {
+    const req = http.request({
+      hostname: '127.0.0.1',
+      port: PORT,
+      path,
+      method: 'GET',
+      headers,
+    }, (res) => {
+      let body = '';
+      res.on('data', c => body += c);
+      res.on('end', () => resolve({ status: res.statusCode, body }));
+    });
+    req.on('error', reject);
+    req.end();
+  });
+}
 
-async function setup() {
+beforeAll(async () => {
   const { setToken } = require('../../src/api/auth');
   const { initDatabase } = require('../../src/db');
+  const { app } = require('../../src/core/app');
 
   setToken(TEST_TOKEN);
   db = initDatabase();
-
-  const { app } = require('../../src/core/app');
   await new Promise(resolve => { server = app.listen(PORT, '127.0.0.1', resolve); });
-}
+});
 
-async function teardown() {
+afterAll(async () => {
   await new Promise(resolve => server.close(resolve));
   db.close();
-}
+});
 
-function assert(condition, msg) {
-  if (!condition) throw new Error(`ASSERT FAILED: ${msg}`);
-}
-
-async function test(name, fn) {
-  try {
-    await fn();
-    console.log(`  ✓ ${name}`);
-  } catch (err) {
-    console.log(`  ✗ ${name}`);
-    console.log(`    ${err.message}`);
-    process.exitCode = 1;
-  }
-}
-
-async function run() {
-  console.log('API Integration Tests\n');
-
-  await setup();
-
-  // --- Health ---
-  console.log('Health Check:');
-  await test('GET /health returns ok', async () => {
+describe('Health Check', () => {
+  it('GET /health returns ok', async () => {
     const res = await request('GET', '/health');
-    assert(res.status === 200, `status ${res.status}`);
-    assert(res.body.status === 'ok', `body ${JSON.stringify(res.body)}`);
+    expect(res.status).toBe(200);
+    expect(res.body.status).toBe('ok');
+  });
+});
+
+describe('Authentication', () => {
+  it('rejects request without token', async () => {
+    const res = await rawRequest('/health');
+    expect(res.status).toBe(401);
   });
 
-  // --- Auth ---
-  console.log('Authentication:');
-  await test('rejects request without token', async () => {
-    const res = await new Promise((resolve, reject) => {
-      http.get({ hostname: '127.0.0.1', port: PORT, path: '/health' }, (res) => {
-        let body = '';
-        res.on('data', c => body += c);
-        res.on('end', () => resolve({ status: res.statusCode }));
-      }).on('error', reject);
-    });
-    assert(res.status === 401, `status ${res.status}`);
+  it('rejects wrong token', async () => {
+    const res = await rawRequest('/health', { 'Authorization': 'Bearer wrong-token' });
+    expect(res.status).toBe(401);
   });
+});
 
-  await test('rejects wrong token', async () => {
-    const res = await new Promise((resolve, reject) => {
-      const req = http.request({
-        hostname: '127.0.0.1', port: PORT, path: '/health',
-        headers: { 'Authorization': 'Bearer wrong-token' },
-      }, (res) => {
-        let body = '';
-        res.on('data', c => body += c);
-        res.on('end', () => resolve({ status: res.statusCode, body: JSON.parse(body) }));
-      });
-      req.on('error', reject);
-      req.end();
-    });
-    assert(res.status === 401, `status ${res.status}`);
-  });
-
-  // --- Profiles ---
-  console.log('Profiles:');
+describe('Profiles', () => {
   let createdProfileId;
 
-  await test('POST /api/profiles creates profile', async () => {
+  it('POST /api/profiles creates profile', async () => {
     const res = await request('POST', '/api/profiles', {
       name: 'Test Profile',
       platform: 'windows',
       tags: ['test'],
       notes: 'Automated test',
     });
-    assert(res.status === 201, `status ${res.status}`);
-    assert(res.body.id, 'missing id');
-    assert(res.body.name === 'Test Profile', `name ${res.body.name}`);
-    assert(res.body.platform === 'windows', `platform ${res.body.platform}`);
-    assert(res.body.status === 'stopped', `status ${res.body.status}`);
-    assert(res.body.fingerprint_seed, 'missing fingerprint_seed');
-    assert(res.body.user_agent, 'missing user_agent');
+    expect(res.status).toBe(201);
+    expect(res.body.id).toBeTruthy();
+    expect(res.body.name).toBe('Test Profile');
+    expect(res.body.platform).toBe('windows');
+    expect(res.body.status).toBe('stopped');
+    expect(res.body.fingerprint_seed).toBeTruthy();
+    expect(res.body.user_agent).toBeTruthy();
     createdProfileId = res.body.id;
   });
 
-  await test('POST /api/profiles returns 400 without platform', async () => {
+  it('POST /api/profiles returns 400 without platform', async () => {
     const res = await request('POST', '/api/profiles', { name: 'Bad' });
-    assert(res.status === 400, `status ${res.status}`);
+    expect(res.status).toBe(400);
   });
 
-  await test('GET /api/profiles returns list', async () => {
+  it('GET /api/profiles returns list', async () => {
     const res = await request('GET', '/api/profiles');
-    assert(res.status === 200, `status ${res.status}`);
-    assert(Array.isArray(res.body), 'not array');
-    assert(res.body.length >= 1, `length ${res.body.length}`);
+    expect(res.status).toBe(200);
+    expect(Array.isArray(res.body)).toBe(true);
+    expect(res.body.length).toBeGreaterThanOrEqual(1);
   });
 
-  await test('GET /api/profiles/:id returns profile', async () => {
+  it('GET /api/profiles/:id returns profile', async () => {
     const res = await request('GET', `/api/profiles/${createdProfileId}`);
-    assert(res.status === 200, `status ${res.status}`);
-    assert(res.body.id === createdProfileId, 'id mismatch');
-    assert(res.body.name === 'Test Profile', `name ${res.body.name}`);
+    expect(res.status).toBe(200);
+    expect(res.body.id).toBe(createdProfileId);
+    expect(res.body.name).toBe('Test Profile');
   });
 
-  await test('GET /api/profiles/:id returns 404 for unknown', async () => {
+  it('GET /api/profiles/:id returns 404 for unknown', async () => {
     const res = await request('GET', '/api/profiles/nonexistent');
-    assert(res.status === 404, `status ${res.status}`);
+    expect(res.status).toBe(404);
   });
 
-  await test('PUT /api/profiles/:id updates profile', async () => {
+  it('PUT /api/profiles/:id updates profile', async () => {
     const res = await request('PUT', `/api/profiles/${createdProfileId}`, {
       name: 'Updated Profile',
       tags: ['updated'],
     });
-    assert(res.status === 200, `status ${res.status}`);
-    assert(res.body.name === 'Updated Profile', `name ${res.body.name}`);
+    expect(res.status).toBe(200);
+    expect(res.body.name).toBe('Updated Profile');
   });
 
-  await test('POST /api/profiles/:id/regenerate changes fingerprint', async () => {
+  it('POST /api/profiles/:id/regenerate changes fingerprint', async () => {
     const before = await request('GET', `/api/profiles/${createdProfileId}`);
     const res = await request('POST', `/api/profiles/${createdProfileId}/regenerate`);
-    assert(res.status === 200, `status ${res.status}`);
-    assert(res.body.fingerprint_seed !== before.body.fingerprint_seed, 'seed unchanged');
+    expect(res.status).toBe(200);
+    expect(res.body.fingerprint_seed).not.toBe(before.body.fingerprint_seed);
   });
+});
 
-  // --- Proxies ---
-  console.log('Proxies:');
+describe('Proxies', () => {
   let createdProxyId;
 
-  await test('POST /api/proxies creates proxy', async () => {
+  it('POST /api/proxies creates proxy', async () => {
     const res = await request('POST', '/api/proxies', {
       type: 'socks5',
       host: 'proxy.example.com',
@@ -183,173 +163,206 @@ async function run() {
       username: 'user',
       password: 'pass',
     });
-    assert(res.status === 201, `status ${res.status}`);
-    assert(res.body.id, 'missing id');
-    assert(res.body.host === 'proxy.example.com', `host ${res.body.host}`);
-    assert(res.body.port === 1080, `port ${res.body.port}`);
+    expect(res.status).toBe(201);
+    expect(res.body.id).toBeTruthy();
+    expect(res.body.host).toBe('proxy.example.com');
+    expect(res.body.port).toBe(1080);
     createdProxyId = res.body.id;
   });
 
-  await test('POST /api/proxies/import bulk imports', async () => {
+  it('POST /api/proxies/import bulk imports', async () => {
     const res = await request('POST', '/api/proxies/import', {
       text: 'socks5://u1:p1@host1:1080\nhttp://host2:8080\nhttps://user:pass@host3:443',
     });
-    assert(res.status === 201, `status ${res.status}`);
-    assert(res.body.count === 3, `count ${res.body.count}`);
-    assert(res.body.proxies.length === 3, 'proxies length');
+    expect(res.status).toBe(201);
+    expect(res.body.count).toBe(3);
+    expect(res.body.proxies.length).toBe(3);
   });
 
-  await test('GET /api/proxies returns list', async () => {
+  it('GET /api/proxies returns list', async () => {
     const res = await request('GET', '/api/proxies');
-    assert(res.status === 200, `status ${res.status}`);
-    assert(res.body.length >= 4, `length ${res.body.length}`);
+    expect(res.status).toBe(200);
+    expect(res.body.length).toBeGreaterThanOrEqual(4);
   });
 
-  await test('PUT /api/proxies/:id updates proxy', async () => {
+  it('PUT /api/proxies/:id updates proxy', async () => {
     const res = await request('PUT', `/api/proxies/${createdProxyId}`, {
       host: 'new-proxy.com',
       port: 9090,
     });
-    assert(res.status === 200, `status ${res.status}`);
-    assert(res.body.host === 'new-proxy.com', `host ${res.body.host}`);
+    expect(res.status).toBe(200);
+    expect(res.body.host).toBe('new-proxy.com');
+  });
+});
+
+describe('Cookies', () => {
+  let profileId;
+
+  beforeAll(async () => {
+    const res = await request('POST', '/api/profiles', {
+      name: 'Cookie Test Profile',
+      platform: 'windows',
+    });
+    profileId = res.body.id;
   });
 
-  // --- Cookies ---
-  console.log('Cookies:');
+  afterAll(async () => {
+    await request('DELETE', `/api/profiles/${profileId}`);
+  });
 
-  await test('POST /api/cookies/:profileId/import imports cookies', async () => {
-    const res = await request('POST', `/api/cookies/${createdProfileId}/import`, {
+  it('POST /api/cookies/:profileId/import imports cookies', async () => {
+    const res = await request('POST', `/api/cookies/${profileId}/import`, {
       format: 'json',
       content: JSON.stringify([
         { name: 'session', value: 'abc123', domain: '.example.com' },
         { name: 'token', value: 'xyz', domain: '.test.com' },
       ]),
     });
-    assert(res.status === 200, `status ${res.status}`);
-    assert(res.body.count === 2, `count ${res.body.count}`);
+    expect(res.status).toBe(200);
+    expect(res.body.count).toBe(2);
   });
 
-  await test('GET /api/cookies/:profileId returns cookies', async () => {
-    const res = await request('GET', `/api/cookies/${createdProfileId}`);
-    assert(res.status === 200, `status ${res.status}`);
-    assert(res.body.length === 2, `length ${res.body.length}`);
+  it('GET /api/cookies/:profileId returns cookies', async () => {
+    const res = await request('GET', `/api/cookies/${profileId}`);
+    expect(res.status).toBe(200);
+    expect(res.body.length).toBe(2);
   });
 
-  await test('GET /api/cookies/:profileId/export?format=netscape returns text', async () => {
-    const res = await new Promise((resolve, reject) => {
-      http.get({
-        hostname: '127.0.0.1', port: PORT,
-        path: `/api/cookies/${createdProfileId}/export?format=netscape`,
-        headers: { 'Authorization': `Bearer ${TEST_TOKEN}` },
-      }, (res) => {
-        let body = '';
-        res.on('data', c => body += c);
-        res.on('end', () => resolve({ status: res.statusCode, body }));
-      }).on('error', reject);
+  it('GET /api/cookies/:profileId/export?format=netscape returns text', async () => {
+    const res = await rawRequest(
+      `/api/cookies/${profileId}/export?format=netscape`,
+      { 'Authorization': `Bearer ${TEST_TOKEN}` }
+    );
+    expect(res.status).toBe(200);
+    expect(res.body).toContain('.example.com');
+    expect(res.body).toContain('session');
+    expect(res.body).toContain('\t');
+  });
+
+  it('DELETE /api/cookies/:profileId clears cookies', async () => {
+    const res = await request('DELETE', `/api/cookies/${profileId}`);
+    expect(res.status).toBe(204);
+    const check = await request('GET', `/api/cookies/${profileId}`);
+    expect(check.body.length).toBe(0);
+  });
+});
+
+describe('Browser', () => {
+  let profileId;
+
+  beforeAll(async () => {
+    const res = await request('POST', '/api/profiles', {
+      name: 'Browser Test Profile',
+      platform: 'windows',
     });
-    assert(res.status === 200, `status ${res.status}`);
-    assert(res.body.includes('.example.com'), 'missing domain');
-    assert(res.body.includes('session'), 'missing session cookie');
-    assert(res.body.includes('\t'), 'missing tab separator (Netscape format)');
+    profileId = res.body.id;
   });
 
-  await test('DELETE /api/cookies/:profileId clears cookies', async () => {
-    const res = await request('DELETE', `/api/cookies/${createdProfileId}`);
-    assert(res.status === 204, `status ${res.status}`);
-    const check = await request('GET', `/api/cookies/${createdProfileId}`);
-    assert(check.body.length === 0, `still ${check.body.length} cookies`);
+  afterAll(async () => {
+    await request('DELETE', `/api/profiles/${profileId}`);
   });
 
-  // --- Browser ---
-  console.log('Browser:');
-
-  await test('GET /api/browser/:id/status returns status', async () => {
-    const res = await request('GET', `/api/browser/${createdProfileId}/status`);
-    assert(res.status === 200, `status ${res.status}`);
-    assert(res.body.status === 'stopped', `browser status ${res.body.status}`);
+  it('GET /api/browser/:id/status returns status', async () => {
+    const res = await request('GET', `/api/browser/${profileId}/status`);
+    expect(res.status).toBe(200);
+    expect(res.body.status).toBe('stopped');
   });
 
-  await test('POST /api/browser/:id/clean blocked when stopped', async () => {
-    const res = await request('POST', `/api/browser/${createdProfileId}/clean`);
-    assert(res.status === 200, `status ${res.status}`);
-    assert(res.body.status === 'cleaned', `result ${res.body.status}`);
+  it('POST /api/browser/:id/clean works when stopped', async () => {
+    const res = await request('POST', `/api/browser/${profileId}/clean`);
+    expect(res.status).toBe(200);
+    expect(res.body.status).toBe('cleaned');
   });
 
-  await test('POST /api/browser/:id/stop returns 409 when already stopped', async () => {
-    const res = await request('POST', `/api/browser/${createdProfileId}/stop`);
-    assert(res.status === 409, `status ${res.status}`);
+  it('POST /api/browser/:id/stop returns 409 when already stopped', async () => {
+    const res = await request('POST', `/api/browser/${profileId}/stop`);
+    expect(res.status).toBe(409);
+  });
+});
+
+describe('Multi-Control', () => {
+  let profileId;
+
+  beforeAll(async () => {
+    const res = await request('POST', '/api/profiles', {
+      name: 'MultiControl Test Profile',
+      platform: 'windows',
+    });
+    profileId = res.body.id;
   });
 
-  // --- Multi-Control ---
-  console.log('Multi-Control:');
+  afterAll(async () => {
+    await request('POST', '/api/multi-control/stop').catch(() => {});
+    await request('DELETE', `/api/profiles/${profileId}`).catch(() => {});
+  });
 
-  await test('GET /api/multi-control/status returns status', async () => {
+  it('GET /api/multi-control/status returns inactive', async () => {
     const res = await request('GET', '/api/multi-control/status');
-    assert(res.status === 200, `status ${res.status}`);
-    assert(res.body.active === false, `active ${res.body.active}`);
+    expect(res.status).toBe(200);
+    expect(res.body.active).toBe(false);
   });
 
-  await test('POST /api/multi-control/start activates', async () => {
+  it('POST /api/multi-control/start activates', async () => {
     const res = await request('POST', '/api/multi-control/start', {
-      masterId: createdProfileId,
+      masterId: profileId,
     });
-    assert(res.status === 200, `status ${res.status}`);
-    assert(res.body.status === 'active', `status ${res.body.status}`);
+    expect(res.status).toBe(200);
+    expect(res.body.status).toBe('active');
   });
 
-  await test('POST /api/multi-control/slave/add adds slave', async () => {
+  it('POST /api/multi-control/slave/add adds slave', async () => {
     const res = await request('POST', '/api/multi-control/slave/add', {
       profileId: 'slave-uuid-1',
     });
-    assert(res.status === 200, `status ${res.status}`);
-    assert(res.body.slaveCount === 1, `slaveCount ${res.body.slaveCount}`);
+    expect(res.status).toBe(200);
+    expect(res.body.slaveCount).toBe(1);
   });
 
-  await test('GET /api/multi-control/status shows slaves', async () => {
+  it('GET /api/multi-control/status shows slaves', async () => {
     const res = await request('GET', '/api/multi-control/status');
-    assert(res.body.slaveCount === 1, `slaveCount ${res.body.slaveCount}`);
-    assert(res.body.slaves.includes('slave-uuid-1'), 'missing slave');
+    expect(res.body.slaveCount).toBe(1);
+    expect(res.body.slaves).toContain('slave-uuid-1');
   });
 
-  await test('POST /api/multi-control/slave/remove removes slave', async () => {
+  it('POST /api/multi-control/slave/remove removes slave', async () => {
     const res = await request('POST', '/api/multi-control/slave/remove', {
       profileId: 'slave-uuid-1',
     });
-    assert(res.status === 200, `status ${res.status}`);
-    assert(res.body.status === 'removed', `status ${res.body.status}`);
+    expect(res.status).toBe(200);
+    expect(res.body.status).toBe('removed');
   });
 
-  await test('POST /api/multi-control/stop deactivates', async () => {
+  it('POST /api/multi-control/stop deactivates', async () => {
     const res = await request('POST', '/api/multi-control/stop');
-    assert(res.status === 200, `status ${res.status}`);
-    assert(res.body.status === 'stopped', `status ${res.body.status}`);
+    expect(res.status).toBe(200);
+    expect(res.body.status).toBe('stopped');
   });
 
-  await test('POST /api/multi-control/slave/add returns 409 when inactive', async () => {
+  it('POST /api/multi-control/slave/add returns 409 when inactive', async () => {
     const res = await request('POST', '/api/multi-control/slave/add', {
       profileId: 'slave-uuid-2',
     });
-    assert(res.status === 409, `status ${res.status}`);
+    expect(res.status).toBe(409);
+  });
+});
+
+describe('Cleanup', () => {
+  it('DELETE /api/profiles/:id deletes profile', async () => {
+    const create = await request('POST', '/api/profiles', {
+      name: 'To Delete',
+      platform: 'linux',
+    });
+    const id = create.body.id;
+
+    const res = await request('DELETE', `/api/profiles/${id}`);
+    expect(res.status).toBe(204);
+
+    const check = await request('GET', `/api/profiles/${id}`);
+    expect(check.status).toBe(404);
   });
 
-  // --- Cleanup ---
-  console.log('Cleanup:');
-
-  await test('DELETE /api/profiles/:id deletes profile', async () => {
-    const res = await request('DELETE', `/api/profiles/${createdProfileId}`);
-    assert(res.status === 204, `status ${res.status}`);
-    const check = await request('GET', `/api/profiles/${createdProfileId}`);
-    assert(check.status === 404, `still exists: ${check.status}`);
-  });
-
-  await test('DELETE /api/profiles/:id returns 404 for unknown', async () => {
+  it('DELETE /api/profiles/:id returns 404 for unknown', async () => {
     const res = await request('DELETE', '/api/profiles/nonexistent');
-    assert(res.status === 404, `status ${res.status}`);
+    expect(res.status).toBe(404);
   });
-
-  await teardown();
-
-  console.log('\nDone.');
-}
-
-run().catch(err => { console.error(err); process.exit(1); });
+});
