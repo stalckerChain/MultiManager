@@ -68,9 +68,10 @@ MultiManager/
 │   ├── postcss.config.js     # PostCSS плагины
 │   └── src/
 │       ├── main/             # Electron Main Process
-│       │   ├── index.js      # Создание окна, IPC-обработчики,.lifecycle
+│       │   ├── index.js      # Создание окна, IPC-обработчики, логирование
 │       │   ├── tray.js       # Системный трей (контекстное меню)
 │       │   ├── core-manager.js # Fork Core-движка, динамические порты
+│       │   ├── browser-manager.js # Проверка/установка CloakBrowser
 │       │   └── updater.js    # Автообновления через electron-updater
 │       ├── preload/          # Изолированный контекстный мост IPC
 │       │   └── index.js      #暴露 electronAPI (getPort, getToken, quitApp, события)
@@ -102,7 +103,8 @@ MultiManager/
 │           ├── components/   # Переиспользуемые компоненты
 │           │   ├── Layout.vue
 │           │   ├── StatusBar.vue
-│           │   └── LogPanel.vue
+│           │   ├── LogPanel.vue
+│           │   └── BrowserDownload.vue # Модалка установки CloakBrowser
 │           ├── composables/  # Vue Composables
 │           └── api/          # HTTP-клиент для запросов к Core
 └── tests/                    # Инфраструктура тестирования
@@ -142,6 +144,34 @@ npm test
 ```bash
 npm start -- --api-token=YOUR_SECRET_TOKEN --port=3005
 ```
+
+### Сборка Windows Installer
+
+```bash
+# Требования: Node.js >=20, Visual Studio Build Tools (workload "Desktop development with C++")
+cd gui
+npm install
+npx vite build
+npx electron-builder --win
+# Результат: gui/release/MultiManager Setup 0.1.0.exe
+```
+
+### Установка CloakBrowser
+
+CloakBrowser — stealth Chromium, управляется через npm-пакет `cloakbrowser`:
+
+```bash
+# Установка/обновление CloakBrowser
+npx cloakbrowser install
+
+# Проверка версии и пути
+npx cloakbrowser info
+
+# Обновление до последней версии
+npx cloakbrowser update
+```
+
+При первом запуске GUI автоматически проверяет наличие CloakBrowser и предлагает установить.
 
 ### Скрипты
 

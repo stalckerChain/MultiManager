@@ -41,10 +41,10 @@
 <script setup>
 import { ref } from 'vue';
 import { EyeOutlined, EyeInvisibleOutlined } from '@ant-design/icons-vue';
-import { useI18n } from 'vue-i18next';
+import { useTranslation } from 'i18next-vue';
 import { useAppStore } from '../stores/app.js';
 
-const { t } = useI18n();
+const { t } = useTranslation();
 const appStore = useAppStore();
 const showToken = ref(false);
 const theme = ref(appStore.theme);

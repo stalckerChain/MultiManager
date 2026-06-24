@@ -57,11 +57,11 @@
 
 <script setup>
 import { ref, watch, reactive } from 'vue';
-import { useI18n } from 'vue-i18next';
+import { useTranslation } from 'i18next-vue';
 import { useProxiesStore } from '../stores/proxies.js';
 import client from '../api/client.js';
 
-const { t } = useI18n();
+const { t } = useTranslation();
 const proxiesStore = useProxiesStore();
 
 const props = defineProps({

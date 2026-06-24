@@ -87,7 +87,7 @@
 
 <script setup>
 import { ref, computed, onMounted } from 'vue';
-import { useI18n } from 'vue-i18next';
+import { useTranslation } from 'i18next-vue';
 import { useProfilesStore } from '../stores/profiles.js';
 import { useBrowserStore } from '../stores/browser.js';
 import { useWebSocket } from '../composables/useWebSocket.js';
@@ -95,7 +95,7 @@ import client from '../api/client.js';
 import ProfileModal from './ProfileModal.vue';
 import CookieImportModal from './CookieImportModal.vue';
 
-const { t } = useI18n();
+const { t } = useTranslation();
 const profilesStore = useProfilesStore();
 const browserStore = useBrowserStore();
 const { connected } = useWebSocket();

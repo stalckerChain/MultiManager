@@ -5,7 +5,7 @@ import 'ant-design-vue/dist/reset.css';
 import './style.css';
 import App from './App.vue';
 import router from './router.js';
-import { i18n } from './i18n/index.js';
+import { i18nPlugin, i18next } from './i18n/index.js';
 
 const app = createApp(App);
 const pinia = createPinia();
@@ -13,6 +13,6 @@ const pinia = createPinia();
 app.use(pinia);
 app.use(router);
 app.use(Antd);
-app.use(i18n);
+app.use(i18nPlugin, { i18next });
 
 app.mount('#app');

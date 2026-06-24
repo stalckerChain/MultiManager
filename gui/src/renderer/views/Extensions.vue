@@ -50,12 +50,12 @@
 
 <script setup>
 import { ref, onMounted } from 'vue';
-import { useI18n } from 'vue-i18next';
+import { useTranslation } from 'i18next-vue';
 import { FolderOpenOutlined, ToolOutlined, DeleteOutlined } from '@ant-design/icons-vue';
 import { message, Modal } from 'ant-design-vue';
 import client from '../api/client.js';
 
-const { t } = useI18n();
+const { t } = useTranslation();
 
 const extensions = ref([]);
 const loading = ref(false);

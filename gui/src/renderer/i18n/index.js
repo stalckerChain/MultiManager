@@ -17,6 +17,6 @@ i18next.init({
   },
 });
 
-export const i18n = I18NextVue;
-
+export const i18nPlugin = I18NextVue;
+export { i18next };
 export default i18next;

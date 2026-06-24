@@ -53,13 +53,13 @@
 <script setup>
 import { computed } from 'vue';
 import { useRouter, useRoute } from 'vue-router';
-import { useI18n } from 'vue-i18next';
+import { useTranslation } from 'i18next-vue';
 import { useAppStore } from '../stores/app.js';
 import { useWebSocket } from '../composables/useWebSocket.js';
 import StatusBar from './StatusBar.vue';
 import LogPanel from './LogPanel.vue';
 
-const { t } = useI18n();
+const { t } = useTranslation();
 const router = useRouter();
 const route = useRoute();
 const appStore = useAppStore();

@@ -5,6 +5,7 @@
         <router-view />
       </Layout>
     </div>
+    <BrowserDownload />
   </a-config-provider>
 </template>
 
@@ -12,6 +13,7 @@
 import { computed, onMounted } from 'vue';
 import { theme } from 'ant-design-vue';
 import Layout from './components/Layout.vue';
+import BrowserDownload from './components/BrowserDownload.vue';
 import { useAppStore } from './stores/app.js';
 import { useTheme } from './composables/useTheme.js';
 

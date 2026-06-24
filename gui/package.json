@@ -11,15 +11,24 @@
     "electron:build": "vite build && electron-builder"
   },
   "dependencies": {
+    "adm-zip": "^0.5.17",
     "ant-design-vue": "^4.2.6",
     "axios": "^1.7.9",
+    "better-sqlite3": "^11.7.0",
+    "cloakbrowser": "^0.4.3",
     "electron-updater": "^6.3.9",
+    "express": "^4.21.0",
     "i18next": "^24.2.2",
     "i18next-vue": "^5.0.0",
     "pinia": "^2.3.0",
+    "pino": "^9.6.0",
+    "pino-pretty": "^13.0.0",
+    "tree-kill": "^1.2.2",
+    "uuid": "^11.1.0",
     "vue": "^3.5.13",
     "vue-i18next": "^0.9.4",
-    "vue-router": "^4.5.0"
+    "vue-router": "^4.5.0",
+    "ws": "^8.21.0"
   },
   "devDependencies": {
     "@vitejs/plugin-vue": "^5.2.3",
@@ -38,7 +47,20 @@
     "files": [
       "dist/**/*",
       "src/main/**/*",
-      "src/preload/**/*"
+      "src/preload/**/*",
+      "backend/**/*"
+    ],
+    "extraResources": [
+      {
+        "from": "../src",
+        "to": "backend/src",
+        "filter": [
+          "**/*"
+        ]
+      }
+    ],
+    "asarUnpack": [
+      "**/*.node"
     ],
     "directories": {
       "output": "release"

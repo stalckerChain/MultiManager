@@ -1,4 +1,4 @@
-import { ref, onMounted, onUnmounted } from 'vue';
+import { ref, watch, onUnmounted } from 'vue';
 import { useAppStore } from '../stores/app.js';
 import { useProfilesStore } from '../stores/profiles.js';
 
@@ -12,8 +12,10 @@ export function useWebSocket() {
 
   function connect() {
     if (!appStore.port) return;
+    if (ws && ws.readyState === WebSocket.OPEN) return;
 
     const url = `ws://127.0.0.1:${appStore.port}/ws`;
+    console.log('[WS] Connecting to', url);
     ws = new WebSocket(url);
 
     ws.onopen = () => {
@@ -89,7 +91,13 @@ export function useWebSocket() {
     }
   }
 
-  onMounted(() => connect());
+  watch(() => appStore.port, (newPort) => {
+    if (newPort) {
+      disconnect();
+      connect();
+    }
+  });
+
   onUnmounted(() => disconnect());
 
   return { connected, send, connect, disconnect };
