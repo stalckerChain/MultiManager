@@ -15,7 +15,7 @@
     </div>
 
     <div v-else-if="extensions.length === 0" class="text-center text-slate-500 py-20">
-      <ExtensionOutlined class="text-4xl mb-3" />
+      <ToolOutlined class="text-4xl mb-3" />
       <div>{{ t('extensions.empty') }}</div>
       <div class="text-sm mt-2">Add Chrome extensions by selecting a folder</div>
     </div>
@@ -51,7 +51,7 @@
 <script setup>
 import { ref, onMounted } from 'vue';
 import { useI18n } from 'vue-i18next';
-import { FolderOpenOutlined, ExtensionOutlined, DeleteOutlined } from '@ant-design/icons-vue';
+import { FolderOpenOutlined, ToolOutlined, DeleteOutlined } from '@ant-design/icons-vue';
 import { message, Modal } from 'ant-design-vue';
 import client from '../api/client.js';
 

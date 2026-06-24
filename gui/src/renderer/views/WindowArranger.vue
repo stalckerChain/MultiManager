@@ -4,10 +4,10 @@
       <h1 class="text-xl font-bold">Window Arranger</h1>
       <div class="flex items-center gap-2">
         <a-button type="primary" @click="arrangeGrid">
-          <LayoutGridOutlined /> Grid
+          <AppstoreOutlined /> Grid
         </a-button>
         <a-button @click="arrangeCascade">
-          <StackOutlined /> Cascade
+          <BlockOutlined /> Cascade
         </a-button>
         <a-button @click="refreshWindows">
           <ReloadOutlined /> Refresh
@@ -68,7 +68,7 @@
 
 <script setup>
 import { ref, computed, onMounted } from 'vue';
-import { LayoutGridOutlined, StackOutlined, ReloadOutlined } from '@ant-design/icons-vue';
+import { AppstoreOutlined, BlockOutlined, ReloadOutlined } from '@ant-design/icons-vue';
 import client from '../api/client.js';
 
 const windows = ref([]);
