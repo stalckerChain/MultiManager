@@ -525,6 +525,186 @@ Authorization: Bearer <token>
 
 ---
 
+## Расширения
+
+### GET /api/extensions
+
+Получить список установленных расширений.
+
+**Ответ (200):**
+```json
+[
+  {
+    "id": "my-extension",
+    "name": "My Extension",
+    "version": "1.0.0",
+    "description": "Extension description",
+    "enabled": true,
+    "path": "/path/to/extension"
+  }
+]
+```
+
+---
+
+### POST /api/extensions
+
+Установить расширение из директории на диске.
+
+**Тело запроса:**
+```json
+{
+  "name": "my-extension",
+  "path": "/path/to/unpacked/extension"
+}
+```
+
+**Ответ (201):** Установленное расширение
+
+---
+
+### DELETE /api/extensions/:id
+
+Удалить расширение.
+
+**Ответ (204):** Успешное удаление
+
+---
+
+### POST /api/extensions/:id/toggle
+
+Переключить активность расширения.
+
+**Ответ (200):**
+```json
+{
+  "id": "my-extension",
+  "enabled": true
+}
+```
+
+---
+
+## Логи
+
+### GET /api/logs
+
+Получить последние записи системного лога (core.log).
+
+**Параметры:** `limit` (по умолчанию 100)
+
+**Ответ (200):** Массив записей лога
+
+---
+
+### GET /api/logs/tail
+
+Получить последние N байт системного лога.
+
+**Параметры:** `bytes` (по умолчанию 10240)
+
+**Ответ (200):**
+```json
+{
+  "content": "...",
+  "size": 51200
+}
+```
+
+---
+
+### GET /api/logs/profile/:profileId
+
+Получить логи конкретного профиля.
+
+**Параметры:** `limit` (по умолчанию 100)
+
+**Ответ (200):** Массив записей лога
+
+---
+
+### GET /api/logs/files
+
+Получить список всех файлов логов.
+
+**Ответ (200):**
+```json
+[
+  {
+    "name": "core.log",
+    "size": 51200,
+    "modified": "2024-01-01T00:00:00.000Z"
+  }
+]
+```
+
+---
+
+## Управление окнами (Window Arranger)
+
+### GET /api/window-arranger/windows
+
+Получить список текущих окон на экране.
+
+**Ответ (200):**
+```json
+[
+  {
+    "id": "12345",
+    "name": "CloakBrowser - Profile 1",
+    "x": 0,
+    "y": 0,
+    "width": 1920,
+    "height": 1080
+  }
+]
+```
+
+---
+
+### POST /api/window-arranger/grid
+
+Расставить все окна в сетку (tile mode).
+
+**Ответ (200):**
+```json
+{
+  "arranged": 4,
+  "cols": 2,
+  "rows": 2,
+  "screen": { "width": 1920, "height": 1080 }
+}
+```
+
+---
+
+### POST /api/window-arranger/cascade
+
+Расставить окна каскадом (внахлест со смещением 30px).
+
+**Ответ (200):**
+```json
+{
+  "arranged": 4,
+  "offset": 30
+}
+```
+
+---
+
+### POST /api/window-arranger/focus/:windowId
+
+Перевести фокус на указанное окно.
+
+**Ответ (200):**
+```json
+{
+  "focused": "12345"
+}
+```
+
+---
+
 ## Статусы профиля
 
 | Статус | Описание |

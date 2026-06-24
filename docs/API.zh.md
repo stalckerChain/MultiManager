@@ -491,6 +491,186 @@ Authorization: Bearer <token>
 
 ---
 
+## 扩展
+
+### GET /api/extensions
+
+获取已安装扩展列表。
+
+**响应 (200)：**
+```json
+[
+  {
+    "id": "my-extension",
+    "name": "My Extension",
+    "version": "1.0.0",
+    "description": "扩展描述",
+    "enabled": true,
+    "path": "/path/to/extension"
+  }
+]
+```
+
+---
+
+### POST /api/extensions
+
+从磁盘目录安装扩展。
+
+**请求体：**
+```json
+{
+  "name": "my-extension",
+  "path": "/path/to/unpacked/extension"
+}
+```
+
+**响应 (201)：** 已安装的扩展
+
+---
+
+### DELETE /api/extensions/:id
+
+删除扩展。
+
+**响应 (204)：** 删除成功
+
+---
+
+### POST /api/extensions/:id/toggle
+
+切换扩展启用状态。
+
+**响应 (200)：**
+```json
+{
+  "id": "my-extension",
+  "enabled": true
+}
+```
+
+---
+
+## 日志
+
+### GET /api/logs
+
+获取最近的系统日志条目（core.log）。
+
+**参数：** `limit`（默认 100）
+
+**响应 (200)：** 日志条目数组
+
+---
+
+### GET /api/logs/tail
+
+获取系统日志最后 N 字节。
+
+**参数：** `bytes`（默认 10240）
+
+**响应 (200)：**
+```json
+{
+  "content": "...",
+  "size": 51200
+}
+```
+
+---
+
+### GET /api/logs/profile/:profileId
+
+获取特定配置文件的日志。
+
+**参数：** `limit`（默认 100）
+
+**响应 (200)：** 日志条目数组
+
+---
+
+### GET /api/logs/files
+
+获取所有日志文件列表。
+
+**响应 (200)：**
+```json
+[
+  {
+    "name": "core.log",
+    "size": 51200,
+    "modified": "2024-01-01T00:00:00.000Z"
+  }
+]
+```
+
+---
+
+## 窗口排列器
+
+### GET /api/window-arranger/windows
+
+获取当前屏幕上的窗口列表。
+
+**响应 (200)：**
+```json
+[
+  {
+    "id": "12345",
+    "name": "CloakBrowser - Profile 1",
+    "x": 0,
+    "y": 0,
+    "width": 1920,
+    "height": 1080
+  }
+]
+```
+
+---
+
+### POST /api/window-arranger/grid
+
+将所有窗口排列为网格（平铺模式）。
+
+**响应 (200)：**
+```json
+{
+  "arranged": 4,
+  "cols": 2,
+  "rows": 2,
+  "screen": { "width": 1920, "height": 1080 }
+}
+```
+
+---
+
+### POST /api/window-arranger/cascade
+
+将窗口排列为层叠式（重叠，偏移 30px）。
+
+**响应 (200)：**
+```json
+{
+  "arranged": 4,
+  "offset": 30
+}
+```
+
+---
+
+### POST /api/window-arranger/focus/:windowId
+
+聚焦指定窗口。
+
+**响应 (200)：**
+```json
+{
+  "focused": "12345"
+}
+```
+
+---
+
 ## 配置文件状态
 
 | 状态 | 描述 |

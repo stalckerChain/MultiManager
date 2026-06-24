@@ -491,6 +491,186 @@ Broadcast key press (keyDown + keyUp).
 
 ---
 
+## Extensions
+
+### GET /api/extensions
+
+Get list of installed extensions.
+
+**Response (200):**
+```json
+[
+  {
+    "id": "my-extension",
+    "name": "My Extension",
+    "version": "1.0.0",
+    "description": "Extension description",
+    "enabled": true,
+    "path": "/path/to/extension"
+  }
+]
+```
+
+---
+
+### POST /api/extensions
+
+Install an extension from a directory on disk.
+
+**Request Body:**
+```json
+{
+  "name": "my-extension",
+  "path": "/path/to/unpacked/extension"
+}
+```
+
+**Response (201):** Installed extension
+
+---
+
+### DELETE /api/extensions/:id
+
+Delete an extension.
+
+**Response (204):** Deleted successfully
+
+---
+
+### POST /api/extensions/:id/toggle
+
+Toggle extension enabled state.
+
+**Response (200):**
+```json
+{
+  "id": "my-extension",
+  "enabled": true
+}
+```
+
+---
+
+## Logs
+
+### GET /api/logs
+
+Get recent system log entries (core.log).
+
+**Parameters:** `limit` (default 100)
+
+**Response (200):** Array of log entries
+
+---
+
+### GET /api/logs/tail
+
+Get last N bytes of system log.
+
+**Parameters:** `bytes` (default 10240)
+
+**Response (200):**
+```json
+{
+  "content": "...",
+  "size": 51200
+}
+```
+
+---
+
+### GET /api/logs/profile/:profileId
+
+Get logs for a specific profile.
+
+**Parameters:** `limit` (default 100)
+
+**Response (200):** Array of log entries
+
+---
+
+### GET /api/logs/files
+
+Get list of all log files.
+
+**Response (200):**
+```json
+[
+  {
+    "name": "core.log",
+    "size": 51200,
+    "modified": "2024-01-01T00:00:00.000Z"
+  }
+]
+```
+
+---
+
+## Window Arranger
+
+### GET /api/window-arranger/windows
+
+Get list of current windows on screen.
+
+**Response (200):**
+```json
+[
+  {
+    "id": "12345",
+    "name": "CloakBrowser - Profile 1",
+    "x": 0,
+    "y": 0,
+    "width": 1920,
+    "height": 1080
+  }
+]
+```
+
+---
+
+### POST /api/window-arranger/grid
+
+Arrange all windows in a grid (tile mode).
+
+**Response (200):**
+```json
+{
+  "arranged": 4,
+  "cols": 2,
+  "rows": 2,
+  "screen": { "width": 1920, "height": 1080 }
+}
+```
+
+---
+
+### POST /api/window-arranger/cascade
+
+Arrange windows in cascade (overlapping with 30px offset).
+
+**Response (200):**
+```json
+{
+  "arranged": 4,
+  "offset": 30
+}
+```
+
+---
+
+### POST /api/window-arranger/focus/:windowId
+
+Focus a specific window.
+
+**Response (200):**
+```json
+{
+  "focused": "12345"
+}
+```
+
+---
+
 ## Profile Statuses
 
 | Status | Description |
