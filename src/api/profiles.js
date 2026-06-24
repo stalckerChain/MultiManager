@@ -64,14 +64,14 @@ router.put('/:id', (req, res) => {
   db.prepare(`
     UPDATE profiles 
     SET name = COALESCE(?, name),
-        proxy_id = COALESCE(?, proxy_id),
+        proxy_id = ?,
         extensions = COALESCE(?, extensions),
         tags = COALESCE(?, tags),
         notes = COALESCE(?, notes)
     WHERE id = ?
   `).run(
     name || null,
-    proxy_id || null,
+    proxy_id !== undefined ? proxy_id : profile.proxy_id,
     extensions ? JSON.stringify(extensions) : null,
     tags ? JSON.stringify(tags) : null,
     notes || null,

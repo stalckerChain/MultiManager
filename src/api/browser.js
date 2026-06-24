@@ -69,6 +69,7 @@ router.post('/:id/start', async (req, res) => {
       }
 
       const checkResult = await checkProxy({
+        type: proxy.type,
         host: proxy.host,
         port: proxy.port,
         username: proxy.username,
@@ -123,7 +124,12 @@ router.post('/:id/start', async (req, res) => {
 
   const child = spawn(browserPath, args, {
     detached: true,
-    stdio: 'ignore',
+    stdio: ['ignore', 'pipe', 'pipe'],
+  });
+
+  let stderrOutput = '';
+  child.stderr.on('data', (data) => {
+    stderrOutput += data.toString();
   });
 
   child.unref();
@@ -144,12 +150,22 @@ router.post('/:id/start', async (req, res) => {
     runningProfiles.delete(req.params.id);
   });
 
-  child.on('exit', () => {
+  child.on('exit', (code, signal) => {
     profileQueries.updateStatus(req.params.id, 'stopped');
     broadcastStatus(req.params.id, 'stopped');
     profileQueries.updatePid(req.params.id, null);
-    logQueries.add(req.params.id, 'info', 'Браузер завершен');
-    profileLogger.info({ profileId: req.params.id }, 'Браузер завершен');
+    
+    const exitInfo = code !== null ? `код ${code}` : `сигнал ${signal}`;
+    const logMsg = `Браузер завершен (${exitInfo})`;
+    
+    if (stderrOutput) {
+      profileLogger.error({ profileId: req.params.id, stderr: stderrOutput }, logMsg);
+      logQueries.add(req.params.id, 'error', logMsg, { stderr: stderrOutput });
+    } else {
+      profileLogger.info({ profileId: req.params.id }, logMsg);
+      logQueries.add(req.params.id, 'info', logMsg);
+    }
+    
     runningProfiles.delete(req.params.id);
   });
 
