@@ -5,3 +5,15 @@ node_modules/
 dist/
 release/
 coverage/
+gui/backend/
+gui/src/api/
+gui/src/cookie/
+gui/src/core/
+gui/src/db/
+gui/src/fingerprint/
+gui/src/index.js
+gui/src/logger/
+gui/src/multi-control/
+gui/src/proxy/
+gui/src/typing/
+tmp/

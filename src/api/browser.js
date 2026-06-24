@@ -16,17 +16,24 @@ const runningProfiles = new Map();
 function getBrowserPath() {
   const platform = process.platform;
   const home = process.env.HOME || process.env.USERPROFILE;
-  let browserDir;
 
-  if (platform === 'win32') {
-    browserDir = path.join(process.env.APPDATA, 'multimanager-gui', 'browser');
-  } else if (platform === 'darwin') {
-    browserDir = path.join(home, 'Library', 'Application Support', 'multimanager-gui', 'browser');
-  } else {
-    browserDir = path.join(home, '.config', 'multimanager-gui', 'browser');
+  if (platform === 'win32' || platform === 'darwin' || platform === 'linux') {
+    const cacheDir = path.join(home, '.cloakbrowser');
+    if (fs.existsSync(cacheDir)) {
+      const versions = fs.readdirSync(cacheDir)
+        .filter(d => d.startsWith('chromium-'))
+        .sort()
+        .reverse();
+      for (const ver of versions) {
+        const bin = platform === 'win32'
+          ? path.join(cacheDir, ver, 'chrome.exe')
+          : path.join(cacheDir, ver, 'chrome');
+        if (fs.existsSync(bin)) return bin;
+      }
+    }
   }
 
-  return path.join(browserDir, 'CloakBrowser.exe');
+  return null;
 }
 
 router.post('/:id/start', async (req, res) => {
