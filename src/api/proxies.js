@@ -128,6 +128,7 @@ router.post('/:id/check', async (req, res) => {
   }
 
   const result = await checkProxy({
+    type: proxy.type,
     host: proxy.host,
     port: proxy.port,
     username: proxy.username,
