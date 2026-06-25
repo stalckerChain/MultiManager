@@ -111,6 +111,7 @@ MultiManager/
     ├── unit/                 # Юнит-тесты модулей (nock для моков сети)
     │   ├── auth.test.js
     │   ├── cookie.test.js
+    │   ├── core-manager.test.js
     │   ├── fingerprint.test.js
     │   ├── fingerprint-edge.test.js
     │   ├── proxy.test.js
@@ -184,6 +185,42 @@ npx cloakbrowser update
 | `npm run test:all` | Vitest + API-тест |
 | `npm run lint` | ESLint-проверка `src/` |
 | `npm run typecheck` | TypeScript-проверка без компиляции |
+
+### Логирование (Разработка)
+
+При запуске через `npm run dev` (или `npm start`) логи выводятся в консоль в формате **pino-pretty** (цветной, человекочитаемый) автоматически — это включается при `NODE_ENV !== 'production'`.
+
+Для записи в файл логи всегда дублируются:
+
+| Лог | Путь |
+|-----|------|
+| Системный | `%APPDATA%/CloakManager/logs/core.log` (Windows) |
+| Профиль | `%APPDATA%/CloakManager/logs/profile_[ID].log` |
+
+На macOS/Linux пути см. в разделе «Директории хранения данных» ниже.
+
+**Управление уровнем логирования:**
+
+```bash
+# По умолчанию: info
+npm run dev
+
+# Debug (подробный вывод)
+LOG_LEVEL=debug npm run dev
+
+# Только ошибки
+LOG_LEVEL=error npm run dev
+```
+
+**Быстрый просмотр логов в консоли (без файла):**
+
+```bash
+# Tail лог-файла в реальном времени (Windows — PowerShell)
+Get-Content "$env:APPDATA\CloakManager\logs\core.log" -Wait
+
+# macOS / Linux
+tail -f ~/Library/Application\ Support/CloakManager/logs/core.log
+```
 
 ---
 
@@ -306,18 +343,20 @@ requests.post(f"{BASE}/api/browser/{profile['id']}/stop", headers=HEADERS)
 
 ## Тестирование
 
-Проект включает 12 тестовых файлов на базе **Vitest**:
+Проект включает 14 тестовых файлов (158 тестов) на базе **Vitest**:
 
 | Тест | Тип | Описание |
 |------|-----|----------|
 | `auth.test.js` | Unit | Middleware авторизации по Bearer-токену |
 | `cookie.test.js` | Unit | Парсинг JSON/Netscape куки |
+| `core-manager.test.js` | Unit | Пути CORE_PATH, packaged/DEV-режимы, структура сборки |
 | `fingerprint.test.js` | Unit | Корректность генерации отпечатков |
 | `fingerprint-edge.test.js` | Unit | Граничные кейсы (кроссплатформенные аномалии) |
 | `proxy.test.js` | Unit | Парсинг прокси-строк |
 | `proxy-checker.test.js` | Unit | Проверка прокси через ipify |
 | `typing.test.js` | Unit | Human-like эмуляция ввода |
 | `multi-control.test.js` | Unit | Multi-control логика |
+| `window-arranger.test.js` | Unit | Маршруты window-arranger API |
 | `database.test.js` | Integration | CRUD операции SQLite |
 | `wal-stress.test.js` | Integration | Стресс-тест WAL-режима |
 | `api-real.test.js` | Integration | Полный цикл REST API |

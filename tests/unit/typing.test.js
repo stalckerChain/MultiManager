@@ -47,6 +47,8 @@ describe('Typing Module', () => {
         }),
       };
 
+      vi.spyOn(Math, 'random').mockReturnValue(0.5);
+
       vi.doMock('../../src/logger/index.js', () => ({
         logger: { debug: vi.fn() },
       }));
@@ -54,6 +56,8 @@ describe('Typing Module', () => {
       const { humanType } = await import('../../src/typing/index.js');
 
       await humanType(mockSession, 'ab');
+
+      Math.random.mockRestore();
 
       expect(timestamps.length).toBe(2);
 

@@ -11,7 +11,7 @@ const isDev = !require('electron').app.isPackaged;
 
 const CORE_PATH = isDev
   ? path.join(__dirname, '..', '..', '..', 'src', 'index.js')
-  : path.join(__dirname, '..', '..', 'backend', 'index.js');
+  : path.join(require('electron').app.getPath('exe'), '..', 'resources', 'backend', 'src', 'index.js');
 
 function log(level, ...args) {
   const ts = new Date().toISOString();
@@ -50,21 +50,27 @@ async function findFreePort(start = 3000, end = 3100) {
 
 async function startCore() {
   corePort = await findFreePort();
-
-  if (isDev) {
-    return startCoreDev();
-  }
-  return startCorePackaged();
+  return startCoreProcess();
 }
 
-function startCoreDev() {
+function startCoreProcess() {
   const { fork } = require('child_process');
-  log('INFO', 'startCore: forking (dev)', CORE_PATH);
+  log('INFO', 'startCore: forking', isDev ? '(dev)' : '(packaged)', CORE_PATH);
+
+  const forkEnv = { ...process.env, PORT: corePort };
+
+  if (!isDev) {
+    const asarNodeModules = path.join(
+      require('electron').app.getPath('exe'), '..', 'resources', 'app.asar', 'node_modules'
+    );
+    forkEnv.NODE_PATH = asarNodeModules;
+    log('INFO', 'NODE_PATH:', asarNodeModules);
+  }
 
   coreProcess = fork(CORE_PATH, [
     `--api-token=${coreToken}`,
   ], {
-    env: { ...process.env, PORT: corePort },
+    env: forkEnv,
     stdio: 'pipe',
   });
 
@@ -86,44 +92,6 @@ function startCoreDev() {
   });
 
   return corePort;
-}
-
-function startCorePackaged() {
-  log('INFO', 'startCore: loading backend via require() (packaged)');
-
-  try {
-    const http = require('http');
-
-    const { app, setupWebSocket } = require(path.join(CORE_PATH, '..', 'core', 'app'));
-    const { logger } = require(path.join(CORE_PATH, '..', 'logger'));
-    const { initDatabase } = require(path.join(CORE_PATH, '..', 'db'));
-    const { setToken } = require(path.join(CORE_PATH, '..', 'api', 'auth'));
-
-    log('INFO', 'startCore: backend modules loaded successfully');
-
-    setToken(coreToken);
-    initDatabase();
-
-    const server = http.createServer(app);
-    setupWebSocket(server);
-
-    server.listen(corePort, '127.0.0.1', () => {
-      log('INFO', `Core started on http://127.0.0.1:${corePort}`);
-      log('INFO', `WebSocket on ws://127.0.0.1:${corePort}/ws`);
-    });
-
-    server.on('error', (err) => {
-      log('ERROR', 'Core server error:', err.message);
-    });
-
-    coreProcess = { pid: null, kill: () => server.close() };
-
-    return corePort;
-  } catch (err) {
-    log('ERROR', 'Failed to load backend:', err.message);
-    log('ERROR', 'Stack:', err.stack);
-    return corePort;
-  }
 }
 
 function stopCore() {
