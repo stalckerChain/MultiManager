@@ -116,10 +116,11 @@ router.post('/:id/start', async (req, res) => {
   if (profile.proxy_id) {
     const proxy = proxyQueries.getById(profile.proxy_id);
     if (proxy) {
-      const proxyUrl = proxy.username 
+      const proxyUrl = proxy.username
         ? `${proxy.type}://${proxy.username}:${proxy.password}@${proxy.host}:${proxy.port}`
         : `${proxy.type}://${proxy.host}:${proxy.port}`;
-      args.push(`--proxy=${proxyUrl}`);
+      args.push(`--proxy-server=${proxyUrl}`);
+      profileLogger.info({ profileId: req.params.id, proxyUrl }, 'Прокси применён');
     }
   }
 
