@@ -14,6 +14,13 @@ const port = portArg ? parseInt(portArg.split('=')[1], 10) : (process.env.PORT |
 setToken(token);
 initDatabase();
 
+const db = require('./db').getDatabase();
+const staleProfiles = db.prepare("SELECT id FROM profiles WHERE status IN ('running', 'starting')").all();
+if (staleProfiles.length > 0) {
+  db.prepare("UPDATE profiles SET status = 'stopped', pid = NULL WHERE status IN ('running', 'starting')").run();
+  logger.info(`Сброшены ${staleProfiles.length} профилей со старыми статусами`);
+}
+
 const server = http.createServer(app);
 setupWebSocket(server);
 

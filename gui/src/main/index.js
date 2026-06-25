@@ -6,6 +6,18 @@ const { createTray } = require('./tray');
 const { setupUpdater } = require('./updater');
 const { setupBrowserManager } = require('./browser-manager');
 
+let appVersion = '0.0.0';
+try {
+  const pkgPath = path.join(__dirname, '..', '..', 'package.json');
+  if (fs.existsSync(pkgPath)) {
+    appVersion = JSON.parse(fs.readFileSync(pkgPath, 'utf-8')).version;
+  } else {
+    appVersion = app.getVersion();
+  }
+} catch {
+  appVersion = app.getVersion();
+}
+
 let mainWindow = null;
 let tray = null;
 
@@ -42,12 +54,15 @@ async function createWindow() {
   const token = getCoreToken();
   log('INFO', 'createWindow: token ready');
 
+  const windowTitle = isDev ? `MultiManager v${appVersion} (dev)` : `MultiManager v${appVersion}`;
+
   mainWindow = new BrowserWindow({
     width: 1400,
     height: 900,
     minWidth: 1024,
     minHeight: 700,
     backgroundColor: '#0f172a',
+    title: windowTitle,
     webPreferences: {
       preload: path.join(__dirname, '..', 'preload', 'index.js'),
       contextIsolation: true,

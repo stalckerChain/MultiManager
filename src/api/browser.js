@@ -11,7 +11,56 @@ const { broadcastStatus } = require('../core/websocket');
 
 const router = express.Router();
 
+async function findWindowByPid(targetPid) {
+  if (process.platform !== 'win32') return null;
+  const { exec } = require('child_process');
+  const { promisify } = require('util');
+  const execAsync = promisify(exec);
+
+  const ps = `
+Add-Type @"
+using System;
+using System.Runtime.InteropServices;
+using System.Text;
+public class WinFind {
+    [DllImport("user32.dll")] public static extern bool EnumWindows(EnumWindowsProc lpEnumFunc, IntPtr lParam);
+    [DllImport("user32.dll")] public static extern bool IsWindowVisible(IntPtr hWnd);
+    [DllImport("user32.dll")] public static extern int GetWindowText(IntPtr hWnd, StringBuilder lpString, int nMaxCount);
+    [DllImport("user32.dll")] public static extern int GetWindowTextLength(IntPtr hWnd);
+    [DllImport("user32.dll")] public static extern uint GetWindowThreadProcessId(IntPtr hWnd, out uint lpdwProcessId);
+    public delegate bool EnumWindowsProc(IntPtr hWnd, IntPtr lParam);
+}
+"@
+
+$found = $null
+[WinFind]::EnumWindows({
+    param($hWnd, $lParam)
+    if ([WinFind]::IsWindowVisible($hWnd)) {
+        $len = [WinFind]::GetWindowTextLength($hWnd)
+        if ($len -gt 0) {
+            $pid = 0
+            [WinFind]::GetWindowThreadProcessId($hWnd, [ref]$pid) | Out-Null
+            if ($pid -eq ${targetPid}) {
+                $found = [string]$hWnd.ToInt64()
+            }
+        }
+    }
+    return $true
+})
+if ($found) { $found }
+`;
+
+  try {
+    const { stdout } = await execAsync(ps);
+    const result = stdout.trim();
+    return result || null;
+  } catch {
+    return null;
+  }
+}
+
 const runningProfiles = new Map();
+const profileWindows = new Map();
 
 function getBrowserPath() {
   const platform = process.platform;
@@ -153,6 +202,17 @@ router.post('/:id/start', async (req, res) => {
   logQueries.add(req.params.id, 'info', `Браузер запущен, PID: ${child.pid}`);
   profileLogger.info({ profileId: req.params.id, pid: child.pid }, 'Браузер запущен');
 
+  if (process.platform === 'win32') {
+    setTimeout(() => {
+      findWindowByPid(child.pid).then((windowId) => {
+        if (windowId) {
+          profileWindows.set(req.params.id, { pid: child.pid, handle: windowId });
+          profileLogger.info({ profileId: req.params.id, pid: child.pid, handle: windowId }, 'Окно привязано к профилю');
+        }
+      }).catch(() => {});
+    }, 2000);
+  }
+
   child.on('error', (err) => {
     profileQueries.updateStatus(req.params.id, 'stopped');
     broadcastStatus(req.params.id, 'stopped');
@@ -165,10 +225,10 @@ router.post('/:id/start', async (req, res) => {
     profileQueries.updateStatus(req.params.id, 'stopped');
     broadcastStatus(req.params.id, 'stopped');
     profileQueries.updatePid(req.params.id, null);
-    
+
     const exitInfo = code !== null ? `код ${code}` : `сигнал ${signal}`;
     const logMsg = `Браузер завершен (${exitInfo})`;
-    
+
     if (stderrOutput) {
       profileLogger.error({ profileId: req.params.id, stderr: stderrOutput }, logMsg);
       logQueries.add(req.params.id, 'error', logMsg, { stderr: stderrOutput });
@@ -176,8 +236,9 @@ router.post('/:id/start', async (req, res) => {
       profileLogger.info({ profileId: req.params.id }, logMsg);
       logQueries.add(req.params.id, 'info', logMsg);
     }
-    
+
     runningProfiles.delete(req.params.id);
+    profileWindows.delete(req.params.id);
   });
 
   res.json({
@@ -225,6 +286,7 @@ router.post('/:id/stop', (req, res) => {
   broadcastStatus(req.params.id, 'stopped');
   profileQueries.updatePid(req.params.id, null);
   runningProfiles.delete(req.params.id);
+  profileWindows.delete(req.params.id);
 
   res.json({ status: 'stopped' });
 });
@@ -269,6 +331,14 @@ router.post('/:id/clean', (req, res) => {
   }
 
   res.json({ status: 'cleaned' });
+});
+
+router.get('/profile-windows', (req, res) => {
+  const result = [];
+  for (const [profileId, info] of profileWindows.entries()) {
+    result.push({ profileId, pid: info.pid, handle: info.handle });
+  }
+  res.json(result);
 });
 
 module.exports = router;

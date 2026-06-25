@@ -1,6 +1,8 @@
 const express = require('express');
 const { exec } = require('child_process');
 const { promisify } = require('util');
+const fs = require('fs');
+const path = require('path');
 const { getDatabase, createProfileQueries } = require('../db');
 const { logger } = require('../logger');
 
@@ -37,50 +39,75 @@ using System;
 using System.Runtime.InteropServices;
 using System.Text;
 using System.Collections.Generic;
-public class WinEnum {
+
+public class WinHelper {
     public delegate bool EnumWindowsProc(IntPtr hWnd, IntPtr lParam);
-    [DllImport("user32.dll")] public static extern bool EnumWindows(EnumWindowsProc lpEnumFunc, IntPtr lParam);
-    [DllImport("user32.dll")] public static extern bool IsWindowVisible(IntPtr hWnd);
-    [DllImport("user32.dll")] public static extern int GetWindowText(IntPtr hWnd, StringBuilder lpString, int nMaxCount);
-    [DllImport("user32.dll")] public static extern int GetWindowTextLength(IntPtr hWnd);
+
+    [DllImport("user32.dll")] static extern bool EnumWindows(EnumWindowsProc lpEnumFunc, IntPtr lParam);
+    [DllImport("user32.dll")] static extern bool IsWindowVisible(IntPtr hWnd);
+    [DllImport("user32.dll")] static extern int GetWindowText(IntPtr hWnd, StringBuilder lpString, int nMaxCount);
+    [DllImport("user32.dll")] static extern int GetWindowTextLength(IntPtr hWnd);
     [DllImport("user32.dll")] public static extern uint GetWindowThreadProcessId(IntPtr hWnd, out uint lpdwProcessId);
-    [DllImport("user32.dll")] public static extern bool GetWindowRect(IntPtr hWnd, out RECT lpRect);
-    [DllImport("user32.dll")] public static extern bool MoveWindow(IntPtr hWnd, int X, int Y, int nWidth, int nHeight, bool bRepaint);
-    [DllImport("user32.dll")] public static extern bool SetForegroundWindow(IntPtr hWnd);
+    [DllImport("user32.dll")] static extern bool GetWindowRect(IntPtr hWnd, out RECT lpRect);
+
     [StructLayout(LayoutKind.Sequential)]
     public struct RECT { public int Left, Top, Right, Bottom; }
+
+    static List<uint> _targetPids = new List<uint>();
+    static List<string> _results = new List<string>();
+    static HashSet<string> _seen = new HashSet<string>();
+
+    static bool Callback(IntPtr hWnd, IntPtr lParam) {
+        if (!IsWindowVisible(hWnd)) return true;
+        int len = GetWindowTextLength(hWnd);
+        if (len <= 0) return true;
+
+        StringBuilder sb = new StringBuilder(len + 1);
+        GetWindowText(hWnd, sb, sb.Capacity);
+        string title = sb.ToString();
+
+        uint pid = 0;
+        GetWindowThreadProcessId(hWnd, out pid);
+
+        bool isMatch = false;
+        if (_targetPids.Count > 0 && _targetPids.Contains(pid)) {
+            isMatch = true;
+        } else if (title.IndexOf("Cloak", StringComparison.OrdinalIgnoreCase) >= 0
+                || title.IndexOf("chrome", StringComparison.OrdinalIgnoreCase) >= 0
+                || title.IndexOf("chromium", StringComparison.OrdinalIgnoreCase) >= 0
+                || title.IndexOf("MultiManager", StringComparison.OrdinalIgnoreCase) >= 0) {
+            isMatch = true;
+        }
+
+        if (isMatch) {
+            string handle = hWnd.ToInt64().ToString();
+            if (!_seen.Contains(handle)) {
+                _seen.Add(handle);
+                RECT rect = new RECT();
+                GetWindowRect(hWnd, out rect);
+                string line = handle + "|" + pid + "|" + title + "|" + rect.Left + "|" + rect.Top + "|" + (rect.Right - rect.Left) + "|" + (rect.Bottom - rect.Top);
+                _results.Add(line);
+            }
+        }
+        return true;
+    }
+
+    public static string FindWindows(string[] pids) {
+        _targetPids.Clear();
+        _results.Clear();
+        _seen.Clear();
+        foreach (string p in pids) {
+            uint val;
+            if (uint.TryParse(p, out val)) _targetPids.Add(val);
+        }
+        EnumWindows(Callback, IntPtr.Zero);
+        return string.Join("\\n", _results);
+    }
 }
 "@
 
-$results = @()
-[WinEnum]::EnumWindows({
-    param($hWnd, $lParam)
-    if ([WinEnum]::IsWindowVisible($hWnd)) {
-        $len = [WinEnum]::GetWindowTextLength($hWnd)
-        if ($len -gt 0) {
-            $sb = New-Object System.Text.StringBuilder ($len + 1)
-            [WinEnum]::GetWindowText($hWnd, $sb, $sb.Capacity) | Out-Null
-            $title = $sb.ToString()
-            if ($title -match 'Cloak|chromium|chrome|Chromium|CloakBrowser') {
-                $pid = 0
-                [WinEnum]::GetWindowThreadProcessId($hWnd, [ref]$pid) | Out-Null
-                $rect = New-Object WinEnum+RECT
-                [WinEnum]::GetWindowRect($hWnd, [ref]$rect) | Out-Null
-                $results += @{
-                    handle = [string]$hWnd.ToInt64()
-                    pid = [string]$pid
-                    name = $title
-                    x = $rect.Left
-                    y = $rect.Top
-                    width = $rect.Right - $rect.Left
-                    height = $rect.Bottom - $rect.Top
-                }
-            }
-        }
-    }
-    return $true
-})
-$results | ConvertTo-Json -Compress
+$pids = @(@@TARGETPIDS@@)
+[WinHelper]::FindWindows($pids)
 `;
 
 async function getRunningWindows() {
@@ -88,6 +115,19 @@ async function getRunningWindows() {
   let windows = [];
 
   try {
+    let targetPids = [];
+    try {
+      const db = getDatabase();
+      const profileQueries = createProfileQueries(db);
+      const profiles = profileQueries.getAll();
+      targetPids = profiles
+        .filter(p => p.pid && p.status === 'running')
+        .map(p => p.pid);
+      logger.info({ targetPids, runningCount: profiles.filter(p => p.status === 'running').length }, 'Window arranger: profiles query');
+    } catch (err) {
+      logger.error({ err: err.message }, 'Window arranger: failed to query profiles');
+    }
+
     if (platform === 'linux') {
       const { stdout } = await execAsync("xdotool search --name '' 2>/dev/null | head -20");
       const pids = stdout.trim().split('\n').filter(Boolean);
@@ -109,19 +149,35 @@ async function getRunningWindows() {
         } catch {}
       }
     } else if (platform === 'win32') {
-      const { stdout } = await execAsync(WIN_GET_WINDOWS_PS);
-      if (stdout.trim()) {
-        const procs = JSON.parse(stdout);
-        for (const proc of (Array.isArray(procs) ? procs : [procs])) {
-          windows.push({
-            id: proc.handle,
-            name: proc.name,
-            x: proc.x || 0,
-            y: proc.y || 0,
-            width: proc.width || 800,
-            height: proc.height || 600,
-          });
+      const psWithPids = WIN_GET_WINDOWS_PS.replace(
+        '@@TARGETPIDS@@',
+        targetPids.map(p => `'${p}'`).join(',')
+      );
+      const tmpFile = path.join(require('os').tmpdir(), 'mm_windows.ps1');
+      fs.writeFileSync(tmpFile, psWithPids, 'utf-8');
+      try {
+        const { stdout, stderr } = await execAsync(`powershell -ExecutionPolicy Bypass -File "${tmpFile}"`);
+        logger.info({ stdoutLen: stdout.length, stderr: stderr || '', targetPids }, 'Window arranger: PowerShell result');
+        if (stdout.trim()) {
+          const lines = stdout.trim().split('\n').filter(Boolean);
+          for (const line of lines) {
+            const parts = line.split('|');
+            if (parts.length >= 7) {
+              windows.push({
+                id: parts[0],
+                name: parts[2],
+                x: parseInt(parts[3]) || 0,
+                y: parseInt(parts[4]) || 0,
+                width: parseInt(parts[5]) || 800,
+                height: parseInt(parts[6]) || 600,
+              });
+            }
+          }
         }
+      } catch (err) {
+        logger.error({ err: err.message }, 'Window arranger: PowerShell failed');
+      } finally {
+        try { fs.unlinkSync(tmpFile); } catch {}
       }
     } else if (platform === 'darwin') {
       const script = `
@@ -160,6 +216,7 @@ async function getRunningWindows() {
     logger.error({ err: err.message }, 'Error getting windows');
   }
 
+  logger.info({ windowCount: windows.length }, 'Window arranger: result');
   return windows;
 }
 
@@ -232,6 +289,48 @@ router.get('/windows', async (req, res) => {
   }
 });
 
+router.get('/windows/grouped', async (req, res) => {
+  try {
+    const windows = await getRunningWindows();
+    const db = getDatabase();
+    const profileQueries = createProfileQueries(db);
+
+    const profileWindowsMap = new Map();
+    const ungrouped = [];
+
+    for (const win of windows) {
+      const profile = profileQueries.getAll().find(p => p.pid && String(p.pid) === String(win.pid));
+      if (profile) {
+        if (!profileWindowsMap.has(profile.id)) {
+          profileWindowsMap.set(profile.id, {
+            profileId: profile.id,
+            profileName: profile.name,
+            profileNumber: profile.number,
+            windows: [],
+          });
+        }
+        profileWindowsMap.get(profile.id).windows.push(win);
+      } else {
+        ungrouped.push(win);
+      }
+    }
+
+    const groups = Array.from(profileWindowsMap.values());
+    if (ungrouped.length > 0) {
+      groups.push({
+        profileId: null,
+        profileName: 'Other',
+        profileNumber: 0,
+        windows: ungrouped,
+      });
+    }
+
+    res.json(groups);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
 router.post('/grid', async (req, res) => {
   try {
     const windows = await getRunningWindows();
@@ -274,6 +373,132 @@ router.post('/cascade', async (req, res) => {
     for (let i = 0; i < windows.length; i++) {
       await moveWindow(windows[i].id, 100 + (i * offset), 100 + (i * offset), width, height);
       arranged++;
+    }
+
+    res.json({ arranged, offset });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+router.post('/grid/grouped', async (req, res) => {
+  try {
+    const windows = await getRunningWindows();
+    if (windows.length === 0) {
+      return res.json({ arranged: 0 });
+    }
+
+    const db = getDatabase();
+    const profileQueries = createProfileQueries(db);
+    const screen = await getScreenSize();
+
+    const profileWindowsMap = new Map();
+    const ungrouped = [];
+
+    for (const win of windows) {
+      const profile = profileQueries.getAll().find(p => p.pid && String(p.pid) === String(win.pid));
+      if (profile) {
+        if (!profileWindowsMap.has(profile.id)) {
+          profileWindowsMap.set(profile.id, []);
+        }
+        profileWindowsMap.get(profile.id).push(win);
+      } else {
+        ungrouped.push(win);
+      }
+    }
+
+    const groups = Array.from(profileWindowsMap.values());
+    if (ungrouped.length > 0) {
+      groups.push(ungrouped);
+    }
+
+    const groupCount = groups.length;
+    const groupCols = Math.ceil(Math.sqrt(groupCount));
+    const groupRows = Math.ceil(groupCount / groupCols);
+    const groupWidth = Math.floor(screen.width / groupCols);
+    const groupHeight = Math.floor(screen.height / groupRows);
+
+    let arranged = 0;
+    for (let g = 0; g < groups.length; g++) {
+      const group = groups[g];
+      const gCol = g % groupCols;
+      const gRow = Math.floor(g / groupCols);
+      const gX = gCol * groupWidth;
+      const gY = gRow * groupHeight;
+
+      const wCols = Math.ceil(Math.sqrt(group.length));
+      const wRows = Math.ceil(group.length / wCols);
+      const wWidth = Math.floor(groupWidth / wCols);
+      const wHeight = Math.floor(groupHeight / wRows);
+
+      for (let i = 0; i < group.length; i++) {
+        const wCol = i % wCols;
+        const wRow = Math.floor(i / wCols);
+        await moveWindow(
+          group[i].id,
+          gX + wCol * wWidth,
+          gY + wRow * wHeight,
+          wWidth,
+          wHeight
+        );
+        arranged++;
+      }
+    }
+
+    res.json({ arranged, groups: groupCount, screen });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+router.post('/cascade/grouped', async (req, res) => {
+  try {
+    const windows = await getRunningWindows();
+    if (windows.length === 0) {
+      return res.json({ arranged: 0 });
+    }
+
+    const db = getDatabase();
+    const profileQueries = createProfileQueries(db);
+
+    const profileWindowsMap = new Map();
+    const ungrouped = [];
+
+    for (const win of windows) {
+      const profile = profileQueries.getAll().find(p => p.pid && String(p.pid) === String(win.pid));
+      if (profile) {
+        if (!profileWindowsMap.has(profile.id)) {
+          profileWindowsMap.set(profile.id, []);
+        }
+        profileWindowsMap.get(profile.id).push(win);
+      } else {
+        ungrouped.push(win);
+      }
+    }
+
+    const groups = Array.from(profileWindowsMap.values());
+    if (ungrouped.length > 0) {
+      groups.push(ungrouped);
+    }
+
+    const offset = 30;
+    const width = 1200;
+    const height = 800;
+    let globalOffset = 0;
+
+    let arranged = 0;
+    for (const group of groups) {
+      for (let i = 0; i < group.length; i++) {
+        await moveWindow(
+          group[i].id,
+          100 + (globalOffset * offset),
+          100 + (globalOffset * offset),
+          width,
+          height
+        );
+        globalOffset++;
+        arranged++;
+      }
     }
 
     res.json({ arranged, offset });

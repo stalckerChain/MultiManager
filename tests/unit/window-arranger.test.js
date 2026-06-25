@@ -2,7 +2,9 @@ import { describe, it, expect, vi } from 'vitest';
 
 vi.mock('../../src/db/index.js', () => ({
   getDatabase: vi.fn(() => ({})),
-  createProfileQueries: vi.fn(() => ({})),
+  createProfileQueries: vi.fn(() => ({
+    getAll: vi.fn(() => []),
+  })),
 }));
 
 describe('Window Arranger', () => {
@@ -16,5 +18,8 @@ describe('Window Arranger', () => {
     expect(paths).toContain('/grid');
     expect(paths).toContain('/cascade');
     expect(paths).toContain('/focus/:windowId');
+    expect(paths).toContain('/windows/grouped');
+    expect(paths).toContain('/grid/grouped');
+    expect(paths).toContain('/cascade/grouped');
   });
 });

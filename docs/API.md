@@ -331,6 +331,23 @@ Authorization: Bearer <token>
 
 ---
 
+### GET /api/browser/profile-windows
+
+Получить список привязок профилей к окнам.
+
+**Ответ (200):**
+```json
+[
+  {
+    "profileId": "f81d4fae-...",
+    "pid": 48210,
+    "handle": "12345"
+  }
+]
+```
+
+---
+
 ### POST /api/browser/:id/clean
 
 Очистить кэш профиля. Доступно только для остановленных профилей.
@@ -662,6 +679,33 @@ Authorization: Bearer <token>
 
 ---
 
+### GET /api/window-arranger/windows/grouped
+
+Получить окна, сгруппированные по профилям.
+
+**Ответ (200):**
+```json
+[
+  {
+    "profileId": "f81d4fae-...",
+    "profileName": "Мой профиль",
+    "profileNumber": 1,
+    "windows": [
+      {
+        "id": "12345",
+        "name": "CloakBrowser - Profile 1",
+        "x": 0,
+        "y": 0,
+        "width": 1920,
+        "height": 1080
+      }
+    ]
+  }
+]
+```
+
+---
+
 ### POST /api/window-arranger/grid
 
 Расставить все окна в сетку (tile mode).
@@ -678,9 +722,38 @@ Authorization: Bearer <token>
 
 ---
 
+### POST /api/window-arranger/grid/grouped
+
+Расставить окна в сетку с группировкой по профилям. Каждая группа окон размещается в своей зоне экрана.
+
+**Ответ (200):**
+```json
+{
+  "arranged": 4,
+  "groups": 2,
+  "screen": { "width": 1920, "height": 1080 }
+}
+```
+
+---
+
 ### POST /api/window-arranger/cascade
 
 Расставить окна каскадом (внахлест со смещением 30px).
+
+**Ответ (200):**
+```json
+{
+  "arranged": 4,
+  "offset": 30
+}
+```
+
+---
+
+### POST /api/window-arranger/cascade/grouped
+
+Расставить окна каскадом с группировкой по профилям.
 
 **Ответ (200):**
 ```json
