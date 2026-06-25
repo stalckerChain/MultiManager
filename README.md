@@ -343,7 +343,7 @@ requests.post(f"{BASE}/api/browser/{profile['id']}/stop", headers=HEADERS)
 
 ## Тестирование
 
-Проект включает 14 тестовых файлов (158 тестов) на базе **Vitest**:
+Проект включает 14 тестовых файлов (170 тестов) на базе **Vitest**:
 
 | Тест | Тип | Описание |
 |------|-----|----------|
@@ -353,7 +353,7 @@ requests.post(f"{BASE}/api/browser/{profile['id']}/stop", headers=HEADERS)
 | `fingerprint.test.js` | Unit | Корректность генерации отпечатков |
 | `fingerprint-edge.test.js` | Unit | Граничные кейсы (кроссплатформенные аномалии) |
 | `proxy.test.js` | Unit | Парсинг прокси-строк |
-| `proxy-checker.test.js` | Unit | Проверка прокси через ipify |
+| `proxy-checker.test.js` | Unit | Парсинг прокси, автоопределение SOCKS5, формат --proxy-server |
 | `typing.test.js` | Unit | Human-like эмуляция ввода |
 | `multi-control.test.js` | Unit | Multi-control логика |
 | `window-arranger.test.js` | Unit | Маршруты window-arranger API |
