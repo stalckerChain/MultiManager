@@ -91,6 +91,9 @@ router.post('/:id/start', async (req, res) => {
       }
 
       proxyQueries.updateLastIp(profile.proxy_id, checkResult.ip);
+      if (checkResult.detectedType && checkResult.detectedType !== proxy.type) {
+        db.prepare('UPDATE proxies SET type = ? WHERE id = ?').run(checkResult.detectedType, profile.proxy_id);
+      }
       logQueries.add(req.params.id, 'info', `Прокси проверен, IP: ${checkResult.ip}`);
     }
   }

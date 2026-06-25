@@ -137,6 +137,9 @@ router.post('/:id/check', async (req, res) => {
 
   if (result.ok) {
     queries.updateLastIp(req.params.id, result.ip);
+    if (result.detectedType && result.detectedType !== proxy.type) {
+      db.prepare('UPDATE proxies SET type = ? WHERE id = ?').run(result.detectedType, req.params.id);
+    }
   } else {
     queries.updateActive(req.params.id, false);
   }

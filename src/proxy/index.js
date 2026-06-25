@@ -155,10 +155,25 @@ async function checkHttpProxy(proxy, timeout = 10000) {
 
 async function checkProxy(proxy, timeout = 10000) {
   logger.info({ type: proxy.type, host: proxy.host, port: proxy.port }, 'ProxyCheck started');
-  
+
   if (proxy.type === 'socks5') {
     return checkSocks5Proxy(proxy, timeout);
   }
+
+  if (proxy.type === 'http') {
+    const httpResult = await checkHttpProxy(proxy, timeout);
+    if (httpResult.ok) {
+      return httpResult;
+    }
+
+    const socksResult = await checkSocks5Proxy(proxy, timeout);
+    if (socksResult.ok) {
+      return { ...socksResult, detectedType: 'socks5' };
+    }
+
+    return httpResult;
+  }
+
   return checkHttpProxy(proxy, timeout);
 }
 
