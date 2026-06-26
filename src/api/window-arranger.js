@@ -56,15 +56,12 @@ public class WinHelper {
     static List<uint> _targetPids = new List<uint>();
     static List<string> _results = new List<string>();
     static HashSet<string> _seen = new HashSet<string>();
+    static bool _pidOnly = false;
 
     static bool Callback(IntPtr hWnd, IntPtr lParam) {
         if (!IsWindowVisible(hWnd)) return true;
         int len = GetWindowTextLength(hWnd);
         if (len <= 0) return true;
-
-        StringBuilder sb = new StringBuilder(len + 1);
-        GetWindowText(hWnd, sb, sb.Capacity);
-        string title = sb.ToString();
 
         uint pid = 0;
         GetWindowThreadProcessId(hWnd, out pid);
@@ -72,17 +69,25 @@ public class WinHelper {
         bool isMatch = false;
         if (_targetPids.Count > 0 && _targetPids.Contains(pid)) {
             isMatch = true;
-        } else if (title.IndexOf("Cloak", StringComparison.OrdinalIgnoreCase) >= 0
+        } else if (!_pidOnly) {
+            StringBuilder sb = new StringBuilder(len + 1);
+            GetWindowText(hWnd, sb, sb.Capacity);
+            string title = sb.ToString();
+            if (title.IndexOf("Cloak", StringComparison.OrdinalIgnoreCase) >= 0
                 || title.IndexOf("chrome", StringComparison.OrdinalIgnoreCase) >= 0
                 || title.IndexOf("chromium", StringComparison.OrdinalIgnoreCase) >= 0
                 || title.IndexOf("MultiManager", StringComparison.OrdinalIgnoreCase) >= 0) {
-            isMatch = true;
+                isMatch = true;
+            }
         }
 
         if (isMatch) {
             string handle = hWnd.ToInt64().ToString();
             if (!_seen.Contains(handle)) {
                 _seen.Add(handle);
+                StringBuilder sb2 = new StringBuilder(len + 1);
+                GetWindowText(hWnd, sb2, sb2.Capacity);
+                string title = sb2.ToString();
                 RECT rect = new RECT();
                 GetWindowRect(hWnd, out rect);
                 string line = handle + "|" + pid + "|" + title + "|" + rect.Left + "|" + rect.Top + "|" + (rect.Right - rect.Left) + "|" + (rect.Bottom - rect.Top);
@@ -92,10 +97,11 @@ public class WinHelper {
         return true;
     }
 
-    public static string FindWindows(string[] pids) {
+    public static string FindWindows(string[] pids, bool pidOnly) {
         _targetPids.Clear();
         _results.Clear();
         _seen.Clear();
+        _pidOnly = pidOnly;
         foreach (string p in pids) {
             uint val;
             if (uint.TryParse(p, out val)) _targetPids.Add(val);
@@ -107,7 +113,8 @@ public class WinHelper {
 "@
 
 $pids = @(@@TARGETPIDS@@)
-[WinHelper]::FindWindows($pids)
+$pidOnly = @(@@PIDONLY@@)
+[WinHelper]::FindWindows($pids, $pidOnly)
 `;
 
 async function getRunningWindows() {
@@ -149,15 +156,15 @@ async function getRunningWindows() {
         } catch {}
       }
     } else if (platform === 'win32') {
-      const psWithPids = WIN_GET_WINDOWS_PS.replace(
-        '@@TARGETPIDS@@',
-        targetPids.map(p => `'${p}'`).join(',')
-      );
-      const tmpFile = path.join(require('os').tmpdir(), 'mm_windows.ps1');
+      const pidOnly = targetPids.length > 0;
+      const psWithPids = WIN_GET_WINDOWS_PS
+        .replace('@@TARGETPIDS@@', targetPids.map(p => `'${p}'`).join(','))
+        .replace('@@PIDONLY@@', pidOnly ? '$true' : '$false');
+      const tmpFile = path.join(require('os').tmpdir(), `mm_windows_${Date.now()}_${Math.random().toString(36).slice(2)}.ps1`);
       fs.writeFileSync(tmpFile, psWithPids, 'utf-8');
       try {
         const { stdout, stderr } = await execAsync(`powershell -ExecutionPolicy Bypass -File "${tmpFile}"`);
-        logger.info({ stdoutLen: stdout.length, stderr: stderr || '', targetPids }, 'Window arranger: PowerShell result');
+        logger.info({ stdoutLen: stdout.length, stderr: stderr || '', targetPids, pidOnly }, 'Window arranger: PowerShell result');
         if (stdout.trim()) {
           const lines = stdout.trim().split('\n').filter(Boolean);
           for (const line of lines) {
@@ -228,17 +235,24 @@ async function moveWindow(windowId, x, y, width, height) {
       await execAsync(`xdotool windowmove ${windowId} ${x} ${y}`);
       await execAsync(`xdotool windowsize ${windowId} ${width} ${height}`);
     } else if (platform === 'win32') {
-      const ps = `
-Add-Type @"
+      const handle = parseInt(windowId);
+      if (!handle) return;
+      const ps = `Add-Type @"
 using System;
 using System.Runtime.InteropServices;
 public class WinAPI {
     [DllImport("user32.dll")] public static extern bool MoveWindow(IntPtr h, int x, int y, int w, int h2, bool r);
 }
 "@
-[WinAPI]::MoveWindow([IntPtr]${parseInt(windowId)}, ${x}, ${y}, ${width}, ${height}, $true)
+[WinAPI]::MoveWindow([IntPtr]${handle}, ${x}, ${y}, ${width}, ${height}, $true)
 `;
-      await execAsync(ps);
+      const tmpFile = path.join(require('os').tmpdir(), `mm_move_${Date.now()}_${Math.random().toString(36).slice(2)}.ps1`);
+      fs.writeFileSync(tmpFile, ps, 'utf-8');
+      try {
+        await execAsync(`powershell -ExecutionPolicy Bypass -File "${tmpFile}"`);
+      } finally {
+        try { fs.unlinkSync(tmpFile); } catch {}
+      }
     } else if (platform === 'darwin') {
       const safeWindowId = windowId.replace(/"/g, '\\"');
       const positionScript = `tell application "System Events" to set position of window 1 of process "${safeWindowId}" to {${x}, ${y}}`;
@@ -263,17 +277,24 @@ async function focusWindow(windowId) {
       const script = `tell application "${safeWindowId}" to activate`;
       await execAsync(`osascript -e '${script}'`);
     } else if (platform === 'win32') {
-      const ps = `
-Add-Type @"
+      const handle = parseInt(windowId);
+      if (!handle) return;
+      const ps = `Add-Type @"
 using System;
 using System.Runtime.InteropServices;
 public class WinAPI {
     [DllImport("user32.dll")] public static extern bool SetForegroundWindow(IntPtr h);
 }
 "@
-[WinAPI]::SetForegroundWindow([IntPtr]${parseInt(windowId)})
+[WinAPI]::SetForegroundWindow([IntPtr]${handle})
 `;
-      await execAsync(ps);
+      const tmpFile = path.join(require('os').tmpdir(), `mm_focus_${Date.now()}_${Math.random().toString(36).slice(2)}.ps1`);
+      fs.writeFileSync(tmpFile, ps, 'utf-8');
+      try {
+        await execAsync(`powershell -ExecutionPolicy Bypass -File "${tmpFile}"`);
+      } finally {
+        try { fs.unlinkSync(tmpFile); } catch {}
+      }
     }
   } catch (err) {
     logger.error({ err: err.message }, 'Error focusing window');
