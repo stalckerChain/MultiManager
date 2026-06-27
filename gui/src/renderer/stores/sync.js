@@ -24,6 +24,9 @@ export const useSyncStore = defineStore('sync', () => {
   }
 
   async function startSync(masterProfileId, allRunningIds) {
+    if (allRunningIds.length < 2) {
+      throw new Error('Для синхронизации нужно минимум 2 запущенных профиля');
+    }
     loading.value = true;
     try {
       await client.post('/api/multi-control/start', { masterId: masterProfileId });
@@ -37,6 +40,11 @@ export const useSyncStore = defineStore('sync', () => {
         } catch {}
       }
       await fetchStatus();
+    } catch (err) {
+      active.value = false;
+      masterId.value = null;
+      slaves.value = [];
+      throw err;
     } finally {
       loading.value = false;
     }

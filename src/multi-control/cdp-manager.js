@@ -67,15 +67,47 @@ class CdpManager {
     this.onEvent = null;
   }
 
+  async _discoverWsUrl(cdpPort) {
+    const http = require('http');
+
+    const versions = ['/json/version', '/json'];
+    for (const path of versions) {
+      try {
+        const data = await new Promise((resolve, reject) => {
+          const req = http.get(`http://127.0.0.1:${cdpPort}${path}`, { timeout: 3000 }, (res) => {
+            let body = '';
+            res.on('data', (chunk) => { body += chunk; });
+            res.on('end', () => {
+              try { resolve(JSON.parse(body)); } catch { reject(new Error('Invalid JSON')); }
+            });
+          });
+          req.on('error', reject);
+          req.on('timeout', () => { req.destroy(); reject(new Error('timeout')); });
+        });
+
+        if (path === '/json/version' && data.webSocketDebuggerUrl) {
+          return data.webSocketDebuggerUrl;
+        }
+
+        if (path === '/json' && Array.isArray(data)) {
+          const page = data.find(t => t.type === 'page' && t.webSocketDebuggerUrl);
+          if (page) return page.webSocketDebuggerUrl;
+        }
+      } catch {}
+    }
+
+    return `ws://127.0.0.1:${cdpPort}/devtools/browser`;
+  }
+
   async connect(profileId, cdpPort) {
     if (this.sessions.has(profileId)) {
       this.disconnect(profileId);
     }
 
-    const url = `ws://127.0.0.1:${cdpPort}/devtools/browser`;
+    const wsUrl = await this._discoverWsUrl(cdpPort);
 
     return new Promise((resolve, reject) => {
-      const ws = new WebSocket(url, { handshakeTimeout: 5000 });
+      const ws = new WebSocket(wsUrl, { handshakeTimeout: 5000 });
       let connected = false;
 
       ws.on('open', () => {
