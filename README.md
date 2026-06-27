@@ -40,7 +40,7 @@ MultiManager/
 │   │   ├── cookies.js        # Импорт/экспорт куки
 │   │   ├── browser.js        # Запуск/остановка CloakBrowser
 │   │   ├── multi-control.js  # Синхронизация окон (CDP)
-│   │   ├── window-arranger.js # Управление положением окон (Grid/Cascade)
+│   │   ├── window-arranger.js # Управление положением окон (Grid, Cascade, Focus)
 │   │   ├── extensions.js     # Управление расширениями Chrome
 │   │   └── logs.js           # Доступ к логам профилей и системы
 │   ├── db/                   # SQLite (Инициализация WAL-режима, схемы таблиц, CRUD)

@@ -43,9 +43,9 @@ describe('Window Arranger', () => {
     expect(paths).toContain('/grid');
     expect(paths).toContain('/cascade');
     expect(paths).toContain('/focus/:windowId');
-    expect(paths).toContain('/windows/grouped');
-    expect(paths).toContain('/grid/grouped');
-    expect(paths).toContain('/cascade/grouped');
+    expect(paths).not.toContain('/windows/grouped');
+    expect(paths).not.toContain('/grid/grouped');
+    expect(paths).not.toContain('/cascade/grouped');
   });
 
   describe('Temp file uniqueness (race condition fix)', () => {
