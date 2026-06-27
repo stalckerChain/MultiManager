@@ -67,13 +67,15 @@
 </template>
 
 <script setup>
-import { ref, reactive, onMounted } from 'vue';
+import { ref, reactive, watch } from 'vue';
 import { message } from 'ant-design-vue';
 import { useTranslation } from 'i18next-vue';
 import { useProxiesStore } from '../stores/proxies.js';
+import { useAppStore } from '../stores/app.js';
 
 const { t } = useTranslation();
 const proxiesStore = useProxiesStore();
+const appStore = useAppStore();
 
 const addModal = ref(false);
 const importModal = ref(false);
@@ -155,5 +157,7 @@ function deleteUnused() {
   // TODO: implement delete unused proxies
 }
 
-onMounted(() => proxiesStore.fetchAll());
+watch(() => appStore.initialized, (ready) => {
+  if (ready) proxiesStore.fetchAll();
+}, { immediate: true });
 </script>

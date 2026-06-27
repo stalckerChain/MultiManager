@@ -117,7 +117,11 @@ MultiManager/
     │   ├── proxy.test.js
     │   ├── proxy-checker.test.js
     │   ├── typing.test.js
-    │   └── multi-control.test.js
+    │   ├── multi-control.test.js
+    │   ├── window-arranger.test.js
+    │   ├── app-store.test.js
+    │   ├── api-client.test.js
+    │   └── race-condition.test.js
     └── integration/          # Интеграционные тесты (SQLite WAL, API, CloakBrowser)
         ├── database.test.js
         ├── wal-stress.test.js
@@ -343,7 +347,7 @@ requests.post(f"{BASE}/api/browser/{profile['id']}/stop", headers=HEADERS)
 
 ## Тестирование
 
-Проект включает 14 тестовых файлов (170 тестов) на базе **Vitest**:
+Проект включает 17 тестовых файлов (195+ тестов) на базе **Vitest**:
 
 | Тест | Тип | Описание |
 |------|-----|----------|
@@ -357,6 +361,9 @@ requests.post(f"{BASE}/api/browser/{profile['id']}/stop", headers=HEADERS)
 | `typing.test.js` | Unit | Human-like эмуляция ввода |
 | `multi-control.test.js` | Unit | Multi-control логика |
 | `window-arranger.test.js` | Unit | Маршруты window-arranger API |
+| `app-store.test.js` | Unit | Состояние инициализации приложения (initialized flag) |
+| `api-client.test.js` | Unit | Authorization header, response interceptor |
+| `race-condition.test.js` | Unit | Предотвращение race condition при старте (initialized pattern) |
 | `database.test.js` | Integration | CRUD операции SQLite |
 | `wal-stress.test.js` | Integration | Стресс-тест WAL-режима |
 | `api-real.test.js` | Integration | Полный цикл REST API |

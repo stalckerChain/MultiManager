@@ -86,10 +86,11 @@
 </template>
 
 <script setup>
-import { ref, computed, onMounted } from 'vue';
+import { ref, computed, watch } from 'vue';
 import { useTranslation } from 'i18next-vue';
 import { useProfilesStore } from '../stores/profiles.js';
 import { useBrowserStore } from '../stores/browser.js';
+import { useAppStore } from '../stores/app.js';
 import { useWebSocket } from '../composables/useWebSocket.js';
 import client from '../api/client.js';
 import ProfileModal from './ProfileModal.vue';
@@ -97,6 +98,7 @@ import CookieImportModal from './CookieImportModal.vue';
 
 const { t } = useTranslation();
 const profilesStore = useProfilesStore();
+const appStore = useAppStore();
 const browserStore = useBrowserStore();
 const { connected } = useWebSocket();
 
@@ -234,5 +236,7 @@ async function bulkClean() {
   selectedRowKeys.value = [];
 }
 
-onMounted(() => profilesStore.fetchAll());
+watch(() => appStore.initialized, (ready) => {
+  if (ready) profilesStore.fetchAll();
+}, { immediate: true });
 </script>

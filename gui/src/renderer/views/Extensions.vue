@@ -49,13 +49,15 @@
 </template>
 
 <script setup>
-import { ref, onMounted } from 'vue';
+import { ref, watch } from 'vue';
 import { useTranslation } from 'i18next-vue';
 import { FolderOpenOutlined, ToolOutlined, DeleteOutlined } from '@ant-design/icons-vue';
 import { message, Modal } from 'ant-design-vue';
 import client from '../api/client.js';
+import { useAppStore } from '../stores/app.js';
 
 const { t } = useTranslation();
+const appStore = useAppStore();
 
 const extensions = ref([]);
 const loading = ref(false);
@@ -129,7 +131,9 @@ function removeExtension(ext) {
   });
 }
 
-onMounted(() => fetchExtensions());
+watch(() => appStore.initialized, (ready) => {
+  if (ready) fetchExtensions();
+}, { immediate: true });
 </script>
 
 <style scoped>

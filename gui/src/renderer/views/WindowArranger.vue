@@ -40,7 +40,10 @@
             </div>
           </div>
 
-          <div v-if="windows.length === 0" class="flex items-center justify-center h-full text-slate-500">
+          <div v-if="loading" class="flex items-center justify-center h-full text-slate-500">
+            <a-spin size="small" /> Loading windows...
+          </div>
+          <div v-else-if="windows.length === 0" class="flex items-center justify-center h-full text-slate-500">
             No windows detected
           </div>
         </div>
@@ -49,7 +52,7 @@
       <div>
         <a-card title="Detected Windows" class="bg-slate-800 mb-4">
           <a-table :data-source="windows" size="small" :pagination="false" :columns="columns"
-            row-key="id">
+            row-key="id" :loading="loading">
             <template #bodyCell="{ column, record }">
               <template v-if="column.key === 'position'">
                 <span class="font-mono text-xs">{{ record.x }}, {{ record.y }} ({{ record.width }}x{{ record.height }})</span>
@@ -87,12 +90,15 @@
 </template>
 
 <script setup>
-import { ref, computed, onMounted } from 'vue';
+import { ref, computed, watch } from 'vue';
 import { AppstoreOutlined, BlockOutlined, ReloadOutlined } from '@ant-design/icons-vue';
 import client from '../api/client.js';
+import { useAppStore } from '../stores/app.js';
 
+const appStore = useAppStore();
 const windows = ref([]);
 const windowGroups = ref([]);
+const loading = ref(false);
 const selectedWindow = ref(null);
 const selectedGroup = ref(null);
 const lastAction = ref('');
@@ -139,6 +145,7 @@ function selectGroup(id) {
 }
 
 async function refreshWindows() {
+  loading.value = true;
   try {
     const [winRes, groupRes] = await Promise.all([
       client.get('/api/window-arranger/windows'),
@@ -160,6 +167,8 @@ async function refreshWindows() {
   } catch {
     windows.value = [];
     windowGroups.value = [];
+  } finally {
+    loading.value = false;
   }
 }
 
@@ -203,5 +212,7 @@ async function focusWindow(id) {
   } catch {}
 }
 
-onMounted(() => refreshWindows());
+watch(() => appStore.initialized, (ready) => {
+  if (ready) refreshWindows();
+}, { immediate: true });
 </script>

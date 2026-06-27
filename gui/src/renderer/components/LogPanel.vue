@@ -41,7 +41,10 @@
         </div>
       </div>
 
-      <div v-if="logs.length === 0" class="text-center text-slate-500 py-4">
+      <div v-if="initialLoading" class="text-center text-slate-500 py-4">
+        <a-spin size="small" /> Loading logs...
+      </div>
+      <div v-else-if="logs.length === 0" class="text-center text-slate-500 py-4">
         No logs to display
       </div>
     </div>
@@ -49,18 +52,21 @@
 </template>
 
 <script setup>
-import { ref, computed, nextTick, onMounted, onUnmounted, watch } from 'vue';
+import { ref, computed, nextTick, onUnmounted, watch } from 'vue';
 import { ReloadOutlined, DeleteOutlined } from '@ant-design/icons-vue';
 import client from '../api/client.js';
+import { useAppStore } from '../stores/app.js';
 
 const ITEM_HEIGHT = 24;
 const BUFFER = 10;
+const appStore = useAppStore();
 
 const expanded = ref(false);
 const connected = ref(false);
 const logFiles = ref([]);
 const selectedFile = ref('core.log');
 const logs = ref([]);
+const initialLoading = ref(false);
 const scrollContainer = ref(null);
 const scrollTop = ref(0);
 const containerHeight = ref(264);
@@ -182,11 +188,14 @@ watch(expanded, (val) => {
   }
 });
 
-onMounted(() => {
-  loadLogFiles();
-  loadLogs();
-  refreshInterval = setInterval(loadLogs, 5000);
-});
+watch(() => appStore.initialized, (ready) => {
+  if (ready) {
+    initialLoading.value = true;
+    loadLogFiles();
+    loadLogs().finally(() => { initialLoading.value = false; });
+    refreshInterval = setInterval(loadLogs, 5000);
+  }
+}, { immediate: true });
 
 onUnmounted(() => {
   if (refreshInterval) clearInterval(refreshInterval);

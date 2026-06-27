@@ -9,6 +9,7 @@ export const useAppStore = defineStore('app', () => {
   const theme = ref('dark');
   const language = ref('en');
   const serverStatus = ref('disconnected');
+  const initialized = ref(false);
 
   async function init() {
     if (window.electronAPI) {
@@ -18,6 +19,7 @@ export const useAppStore = defineStore('app', () => {
     setBaseURL(port.value);
     setAuthToken(token.value);
     serverStatus.value = 'connected';
+    initialized.value = true;
   }
 
   function setTheme(newTheme) {
@@ -36,5 +38,5 @@ export const useAppStore = defineStore('app', () => {
     i18next.changeLanguage(lang);
   }
 
-  return { port, token, theme, language, serverStatus, init, setTheme, setLanguage };
+  return { port, token, theme, language, serverStatus, initialized, init, setTheme, setLanguage };
 });
