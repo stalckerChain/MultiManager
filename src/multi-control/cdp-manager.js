@@ -200,10 +200,31 @@ class CdpManager {
       params: { name: bindingId },
     }));
 
-    const scriptWithBinding = EVENT_INJECTION_SCRIPT.replace(
-      /window\.__MM_CDP_SEND__/g,
-      `window['${bindingId}']`
-    );
+    const fallbackScript = `
+(function() {
+  if (window.__MM_SYNC_ACTIVE__) return;
+  window.__MM_SYNC_ACTIVE__ = true;
+  var HAS_BINDING = typeof window['${bindingId}'] === 'function';
+  function SEND(data) {
+    if (HAS_BINDING) { window['${bindingId}'](data); }
+    else { console.log(data); }
+  }
+  var _buf = null, _timer = null, THROTTLE = 25;
+  function flush() { var b = _buf; _buf = null; _timer = null; if (b) SEND(JSON.stringify(b)); }
+  function emit(type, data) {
+    var msg = Object.assign({ __mm_event: true, type: type }, data);
+    if (type === 'mouseMove') { _buf = msg; if (!_timer) _timer = setTimeout(flush, THROTTLE); }
+    else { if (_timer) { clearTimeout(_timer); _timer = null; } _buf = null; SEND(JSON.stringify(msg)); }
+  }
+  document.addEventListener('mousemove', function(e) { emit('mouseMove', { x: e.pageX, y: e.pageY }); }, true);
+  document.addEventListener('mousedown', function(e) { emit('mouseDown', { x: e.pageX, y: e.pageY, button: e.button, clickCount: e.detail || 1 }); }, true);
+  document.addEventListener('mouseup', function(e) { emit('mouseUp', { x: e.pageX, y: e.pageY, button: e.button }); }, true);
+  document.addEventListener('wheel', function(e) { emit('scroll', { x: e.pageX, y: e.pageY, deltaX: e.deltaX, deltaY: e.deltaY }); }, true);
+  document.addEventListener('keydown', function(e) { emit('keyDown', { key: e.key, code: e.code, windowsVirtualKeyCode: e.keyCode }); }, true);
+  document.addEventListener('keyup', function(e) { emit('keyUp', { key: e.key, code: e.code, windowsVirtualKeyCode: e.keyCode }); }, true);
+  document.addEventListener('click', function(e) { emit('click', { x: e.pageX, y: e.pageY, button: e.button, clickCount: e.detail || 1 }); }, true);
+})();
+`;
 
     const runtimeId = Math.floor(Math.random() * 1e9);
     session.ws.send(JSON.stringify({
@@ -211,34 +232,63 @@ class CdpManager {
       method: 'Runtime.evaluate',
       sessionId: session.sessionId,
       params: {
-        expression: scriptWithBinding,
+        expression: fallbackScript,
+      },
+    }));
+
+    const testId = Math.floor(Math.random() * 1e9);
+    session.ws.send(JSON.stringify({
+      id: testId,
+      method: 'Runtime.evaluate',
+      sessionId: session.sessionId,
+      params: {
+        expression: `(function() { try { window['${bindingId}']({__mm_event:true,type:'test',x:0,y:0}); return 'binding_ok'; } catch(e) { return 'binding_error:' + e.message; } })()`,
+        returnByValue: true,
       },
     }));
 
     session.bindingId = bindingId;
 
     let eventCount = 0;
+    let msgCount = 0;
     session.eventHandler = (raw) => {
+      msgCount++;
       try {
         const msg = JSON.parse(raw);
-        if (msg.method === 'Runtime.bindingCalled' && msg.sessionId === session.sessionId) {
-          if (msg.name === bindingId) {
-            eventCount++;
-            if (eventCount <= 3) {
-              logger.info({ profileId: session.profileId, eventCount, payloadLen: msg.payload?.length }, 'CDP: bindingCalled received');
+        if (msgCount <= 20) {
+          logger.info({ profileId: session.profileId, msgCount, method: msg.method, id: msg.id, hasResult: !!msg.result }, 'CDP: raw msg');
+        }
+        if (msg.id === testId) {
+          logger.info({ profileId: session.profileId, result: msg.result?.result?.value, error: msg.error }, 'CDP: binding test result');
+        }
+
+        let payload = null;
+        if (msg.method === 'Runtime.bindingCalled' && msg.sessionId === session.sessionId && msg.name === bindingId) {
+          payload = msg.payload;
+        } else if (msg.method === 'Runtime.consoleAPICalled' && msg.sessionId === session.sessionId) {
+          const args = msg.params?.args;
+          if (args && args.length > 0 && args[0].type === 'string') {
+            payload = args[0].value;
+          }
+        }
+
+        if (payload) {
+          eventCount++;
+          if (eventCount <= 3) {
+            logger.info({ profileId: session.profileId, eventCount, payloadLen: payload.length }, 'CDP: event received');
+          }
+          try {
+            const event = JSON.parse(payload);
+            if (event.__mm_event && this.onEvent) {
+              this.onEvent(session.profileId, event);
             }
-            try {
-              const event = JSON.parse(msg.payload);
-              if (event.__mm_event && this.onEvent) {
-                this.onEvent(session.profileId, event);
-              }
-            } catch (e) {
-              if (eventCount <= 3) {
-                logger.error({ profileId: session.profileId, error: e.message, payload: msg.payload?.substring(0, 200) }, 'CDP: failed to parse event');
-              }
+          } catch (e) {
+            if (eventCount <= 3) {
+              logger.error({ profileId: session.profileId, error: e.message, payload: payload.substring(0, 200) }, 'CDP: parse error');
             }
           }
         }
+
         if (msg.method === 'Runtime.exceptionThrown' && msg.sessionId === session.sessionId) {
           logger.error({ profileId: session.profileId, details: msg.params?.exceptionDetails?.text }, 'CDP: exception in page');
         }
