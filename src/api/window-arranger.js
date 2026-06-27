@@ -82,15 +82,26 @@ public class WinHelper {
         }
 
         if (isMatch) {
+            StringBuilder sb2 = new StringBuilder(len + 1);
+            GetWindowText(hWnd, sb2, sb2.Capacity);
+            string title = sb2.ToString();
+            string lowerTitle = title.ToLowerInvariant();
+            if (lowerTitle.Contains("restore") || lowerTitle.Contains("восстановить")
+                || lowerTitle.Contains("crashed") || lowerTitle.Contains("не заверш")
+                || lowerTitle.Contains("некорректно")) {
+                return true;
+            }
+            RECT rect = new RECT();
+            GetWindowRect(hWnd, out rect);
+            int w = rect.Right - rect.Left;
+            int h = rect.Bottom - rect.Top;
+            if (w < 300 || h < 200) {
+                return true;
+            }
             string handle = hWnd.ToInt64().ToString();
             if (!_seen.Contains(handle)) {
                 _seen.Add(handle);
-                StringBuilder sb2 = new StringBuilder(len + 1);
-                GetWindowText(hWnd, sb2, sb2.Capacity);
-                string title = sb2.ToString();
-                RECT rect = new RECT();
-                GetWindowRect(hWnd, out rect);
-                string line = handle + "|" + pid + "|" + title + "|" + rect.Left + "|" + rect.Top + "|" + (rect.Right - rect.Left) + "|" + (rect.Bottom - rect.Top);
+                string line = handle + "|" + pid + "|" + title + "|" + rect.Left + "|" + rect.Top + "|" + w + "|" + h;
                 _results.Add(line);
             }
         }

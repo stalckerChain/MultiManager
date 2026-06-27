@@ -61,6 +61,7 @@ if ($found) { $found }
 
 const runningProfiles = new Map();
 const profileWindows = new Map();
+const SHUTDOWN_TIMEOUT_MS = 8000;
 
 function getBrowserPath() {
   const platform = process.platform;
@@ -249,7 +250,7 @@ router.post('/:id/start', async (req, res) => {
   });
 });
 
-router.post('/:id/stop', (req, res) => {
+router.post('/:id/stop', async (req, res) => {
   const db = getDatabase();
   const profileQueries = createProfileQueries(db);
   const logQueries = createLogQueries(db);
@@ -268,18 +269,8 @@ router.post('/:id/stop', (req, res) => {
   if (child && child.pid) {
     logQueries.add(req.params.id, 'info', `Остановка процесса PID: ${child.pid}`);
     
-    kill(child.pid, 'SIGTERM', (err) => {
-      if (err) {
-        logQueries.add(req.params.id, 'error', 'Ошибка остановки', { error: err.message });
-      }
-    });
-
-    setTimeout(() => {
-      if (runningProfiles.has(req.params.id)) {
-        kill(child.pid, 'SIGKILL');
-        logQueries.add(req.params.id, 'warn', 'Принудительное завершение');
-      }
-    }, 5000);
+    const profileLogger = createProfileLogger(req.params.id);
+    await gracefulCloseBrowser(child, req.params.id, profileLogger, logQueries);
   }
 
   profileQueries.updateStatus(req.params.id, 'stopped');
@@ -339,6 +330,67 @@ router.get('/profile-windows', (req, res) => {
     result.push({ profileId, pid: info.pid, handle: info.handle });
   }
   res.json(result);
+});
+
+async function gracefulCloseBrowser(child, profileId, profileLogger, logQueries) {
+  return new Promise((resolve) => {
+    let resolved = false;
+    const done = () => {
+      if (!resolved) {
+        resolved = true;
+        resolve();
+      }
+    };
+
+    const timer = setTimeout(() => {
+      logQueries.add(profileId, 'warn', 'Graceful shutdown timeout, force killing');
+      kill(child.pid, 'SIGKILL', done);
+    }, SHUTDOWN_TIMEOUT_MS);
+
+    child.on('exit', () => {
+      clearTimeout(timer);
+      done();
+    });
+
+    kill(child.pid, 'SIGTERM', (err) => {
+      if (err) {
+        clearTimeout(timer);
+        kill(child.pid, 'SIGKILL', done);
+      }
+    });
+  });
+}
+
+router.post('/shutdown', async (req, res) => {
+  const db = getDatabase();
+  const profileQueries = createProfileQueries(db);
+  const logQueries = createLogQueries(db);
+
+  const running = Array.from(runningProfiles.entries());
+  if (running.length === 0) {
+    return res.json({ stopped: 0 });
+  }
+
+  logQueries.add(null, 'info', `Shutdown: closing ${running.length} browsers`);
+
+  const closePromises = running.map(([profileId, child]) => {
+    const profileLogger = createProfileLogger(profileId);
+    return gracefulCloseBrowser(child, profileId, profileLogger, logQueries).then(() => {
+      profileQueries.updateStatus(profileId, 'stopped');
+      profileQueries.updatePid(profileId, null);
+      profileLogger.info({ profileId }, 'Browser closed on shutdown');
+      logQueries.add(profileId, 'info', 'Browser closed on shutdown');
+    }).catch(() => {
+      profileQueries.updateStatus(profileId, 'stopped');
+      profileQueries.updatePid(profileId, null);
+    });
+  });
+
+  await Promise.allSettled(closePromises);
+  runningProfiles.clear();
+  profileWindows.clear();
+
+  res.json({ stopped: running.length });
 });
 
 module.exports = router;

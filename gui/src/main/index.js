@@ -1,6 +1,7 @@
 const { app, BrowserWindow, ipcMain, Tray, Menu, nativeTheme } = require('electron');
 const path = require('path');
 const fs = require('fs');
+const http = require('http');
 const { startCore, stopCore, getCorePort, getCoreToken } = require('./core-manager');
 const { createTray } = require('./tray');
 const { setupUpdater } = require('./updater');
@@ -40,6 +41,46 @@ log('INFO', 'isDev:', isDev, 'isPackaged:', app.isPackaged);
 log('INFO', 'appPath:', app.getAppPath());
 log('INFO', 'userData:', app.getPath('userData'));
 log('INFO', 'exePath:', process.execPath);
+
+async function gracefulShutdown() {
+  const port = getCorePort();
+  const token = getCoreToken();
+  log('INFO', 'gracefulShutdown: stopping browsers on port', port);
+
+  return new Promise((resolve) => {
+    const req = http.request({
+      hostname: '127.0.0.1',
+      port,
+      path: '/api/browser/shutdown',
+      method: 'POST',
+      headers: { Authorization: `Bearer ${token}` },
+      timeout: 15000,
+    }, (res) => {
+      let body = '';
+      res.on('data', (chunk) => { body += chunk; });
+      res.on('end', () => {
+        log('INFO', 'gracefulShutdown: response', body);
+        stopCore();
+        resolve();
+      });
+    });
+
+    req.on('error', (err) => {
+      log('ERROR', 'gracefulShutdown: error', err.message);
+      stopCore();
+      resolve();
+    });
+
+    req.on('timeout', () => {
+      log('ERROR', 'gracefulShutdown: timeout, force stopping');
+      req.destroy();
+      stopCore();
+      resolve();
+    });
+
+    req.end();
+  });
+}
 
 async function createWindow() {
   log('INFO', 'createWindow: starting core...');
@@ -114,15 +155,15 @@ async function createWindow() {
 
   ipcMain.handle('get-port', () => getCorePort());
   ipcMain.handle('get-token', () => getCoreToken());
-  ipcMain.handle('quit-app', () => {
+  ipcMain.handle('quit-app', async () => {
     app.isQuitting = true;
-    stopCore();
+    await gracefulShutdown();
     app.quit();
   });
 
-  tray = createTray(mainWindow, () => {
+  tray = createTray(mainWindow, async () => {
     app.isQuitting = true;
-    stopCore();
+    await gracefulShutdown();
     app.quit();
   });
 
@@ -147,10 +188,10 @@ app.on('activate', () => {
   }
 });
 
-app.on('before-quit', () => {
+app.on('before-quit', async () => {
   log('INFO', 'before-quit');
   app.isQuitting = true;
-  stopCore();
+  await gracefulShutdown();
 });
 
 process.on('uncaughtException', (err) => {
