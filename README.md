@@ -57,7 +57,8 @@ MultiManager/
 │   ├── typing/               # Эмуляция человеческого ввода текста (Human-like Typing)
 │   │   └── index.js
 │   ├── multi-control/        # Синхронизатор окон (трансляция мыши/клавиш через CDP)
-│   │   └── index.js
+│   │   ├── index.js          # MultiController: relative coords, throttle, event dispatch
+│   │   └── cdp-manager.js    # CDP-менеджер: WebSocket к CloakBrowser, инъекция listeners
 │   ├── logger/               # Высокопроизводительный логгер Pino (core.log + profile_[ID].log)
 │   │   └── index.js
 │   └── utils/
@@ -91,7 +92,8 @@ MultiManager/
 │           │   ├── app.js    # Глобальное состояние приложения
 │           │   ├── profiles.js # Состояние профилей
 │           │   ├── proxies.js  # Состояние прокси
-│           │   └── browser.js  # Состояние браузера
+│           │   ├── browser.js  # Состояние браузера
+│           │   └── sync.js     # Состояние синхронизации (Multi-Control)
 │           ├── views/        # Экраны
 │           │   ├── Profiles.vue
 │           │   ├── Proxies.vue
@@ -118,6 +120,9 @@ MultiManager/
     │   ├── proxy-checker.test.js
     │   ├── typing.test.js
     │   ├── multi-control.test.js
+    │   ├── multi-control-api.test.js
+    │   ├── cdp-manager.test.js
+    │   ├── cdp-port-capture.test.js
     │   ├── window-arranger.test.js
     │   ├── app-store.test.js
     │   ├── api-client.test.js
@@ -160,7 +165,7 @@ cd gui
 npm install
 npx vite build
 npx electron-builder --win
-# Результат: gui/release/MultiManager Setup 0.1.0.exe
+# Результат: gui/release/MultiManager Setup 0.3.0.exe
 ```
 
 ### Установка CloakBrowser
@@ -289,7 +294,66 @@ POST http://127.0.0.1:{PORT}/api/multi-control/keyboard/type
 }
 ```
 
-### 4. Полный цикл автоматизации (Пример)
+### 4. Синхронизация окон (Multi-Control API)
+
+Модуль синхронизации транслирует действия мыши и клавиатуры из «главного» (Master) окна во все «ведомые» (Slave) окна через Chrome DevTools Protocol (CDP).
+
+**Как работает:**
+1. CloakBrowser запускается с `--remote-debugging-port=0` (свободный порт)
+2. При активации синхронизации Core подключается к CDP master-окна
+3. В master окно инжектится JS-скрипт для перехвата `mousemove/click/scroll/keydown/keyup`
+4. События пересчитываются с учётом relative coordinates (scroll + offset окон) и отправляются в slave-окна
+5. Throttling мыши: 25мс (40 FPS)
+
+**Эндпоинты:**
+
+| Метод | Путь | Описание |
+|-------|------|----------|
+| `GET` | `/api/multi-control/status` | Текущее состояние (active, masterId, slaves) |
+| `POST` | `/api/multi-control/start` | Активировать синхронизацию `{ "masterId": "uuid" }` |
+| `POST` | `/api/multi-control/stop` | Остановить синхронизацию |
+| `POST` | `/api/multi-control/slave/add` | Добавить slave `{ "profileId": "uuid" }` |
+| `POST` | `/api/multi-control/slave/remove` | Удалить slave `{ "profileId": "uuid" }` |
+| `POST` | `/api/multi-control/window-position` | Установить позицию окна `{ "profileId", "x", "y", "width", "height" }` |
+| `GET` | `/api/multi-control/cdp-status` | Статус CDP-подключений |
+
+**Пример использования (Python):**
+
+```python
+import requests
+
+BASE = "http://127.0.0.1:3000"
+TOKEN = "your-api-token"
+HEADERS = {"Authorization": f"Bearer {TOKEN}"}
+
+# Запускаем 3 профиля
+profiles = []
+for i in range(3):
+    p = requests.post(f"{BASE}/api/profiles", headers=HEADERS, json={
+        "name": f"Worker {i}", "platform": "windows"
+    }).json()
+    requests.post(f"{BASE}/api/browser/{p['id']}/start", headers=HEADERS)
+    profiles.append(p)
+
+# Активируем синхронизацию с первым профилем как Master
+requests.post(f"{BASE}/api/multi-control/start", headers=HEADERS, json={
+    "masterId": profiles[0]["id"]
+})
+
+# Добавляем остальных как Slave
+for p in profiles[1:]:
+    requests.post(f"{BASE}/api/multi-control/slave/add", headers=HEADERS, json={
+        "profileId": p["id"]
+    })
+
+# Теперь все клики/ввод в master окне дублируются в slave-окна
+# ...
+
+# Останавливаем
+requests.post(f"{BASE}/api/multi-control/stop", headers=HEADERS)
+```
+
+### 5. Полный цикл автоматизации (Пример)
 
 ```python
 import requests
@@ -349,7 +413,7 @@ requests.post(f"{BASE}/api/browser/{profile['id']}/stop", headers=HEADERS)
 
 ## Тестирование
 
-Проект включает 19 тестовых файлов (230+ тестов) на базе **Vitest**:
+Проект включает 22 тестовых файла (262 тестов) на базе **Vitest**:
 
 | Тест | Тип | Описание |
 |------|-----|----------|
@@ -361,7 +425,10 @@ requests.post(f"{BASE}/api/browser/{profile['id']}/stop", headers=HEADERS)
 | `proxy.test.js` | Unit | Парсинг прокси-строк |
 | `proxy-checker.test.js` | Unit | Парсинг прокси, автоопределение SOCKS5, формат --proxy-server |
 | `typing.test.js` | Unit | Human-like эмуляция ввода |
-| `multi-control.test.js` | Unit | Multi-control логика |
+| `multi-control.test.js` | Unit | MultiController: master/slave, relative coords, throttle |
+| `multi-control-api.test.js` | Unit | Multi-control API логика (start/stop/slave flow) |
+| `cdp-manager.test.js` | Unit | CDP-менеджер: сессии, dispatch, scroll |
+| `cdp-port-capture.test.js` | Unit | Захват CDP-порта из stderr, regex, chunked output |
 | `window-arranger.test.js` | Unit | Маршруты window-arranger API |
 | `app-store.test.js` | Unit | Состояние инициализации приложения (initialized flag) |
 | `api-client.test.js` | Unit | Authorization header, response interceptor |
