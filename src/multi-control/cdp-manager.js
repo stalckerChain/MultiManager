@@ -242,7 +242,7 @@ class CdpManager {
       method: 'Runtime.evaluate',
       sessionId: session.sessionId,
       params: {
-        expression: `(function() { try { window['${bindingId}']({__mm_event:true,type:'test',x:0,y:0}); return 'binding_ok'; } catch(e) { return 'binding_error:' + e.message; } })()`,
+        expression: `(function() { try { window['${bindingId}'](JSON.stringify({__mm_event:true,type:'test',x:0,y:0})); return 'binding_ok'; } catch(e) { return 'binding_error:' + e.message; } })()`,
         returnByValue: true,
       },
     }));
@@ -263,7 +263,7 @@ class CdpManager {
         }
 
         let payload = null;
-        if (msg.method === 'Runtime.bindingCalled' && msg.sessionId === session.sessionId && msg.name === bindingId) {
+        if (msg.method === 'Runtime.bindingCalled' && msg.sessionId === session.sessionId) {
           payload = msg.payload;
         } else if (msg.method === 'Runtime.consoleAPICalled' && msg.sessionId === session.sessionId) {
           const args = msg.params?.args;
