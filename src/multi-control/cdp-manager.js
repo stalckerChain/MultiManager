@@ -175,7 +175,7 @@ class CdpManager {
             return;
           }
           const sessionId = msg.result.sessionId;
-          const session = { ws: browserWs, sessionId, targetId };
+          const session = { ws: browserWs, sessionId, targetId, profileId };
           this.sessions.set(profileId, session);
           this._enableInput(session);
           resolve(session);
@@ -189,26 +189,43 @@ class CdpManager {
     this._send(session, 'Runtime.enable', {});
     this._send(session, 'Page.enable', {});
 
+    const bindingId = `__mm_sync_${session.sessionId}`;
+
+    const addBindingId = Math.floor(Math.random() * 1e9);
+    session.ws.send(JSON.stringify({
+      id: addBindingId,
+      method: 'Runtime.addBinding',
+      sessionId: session.sessionId,
+      params: { name: bindingId },
+    }));
+
+    const scriptWithBinding = EVENT_INJECTION_SCRIPT.replace(
+      /window\.__MM_CDP_SEND__/g,
+      `window['${bindingId}']`
+    );
+
     const runtimeId = Math.floor(Math.random() * 1e9);
     session.ws.send(JSON.stringify({
       id: runtimeId,
       method: 'Runtime.evaluate',
       sessionId: session.sessionId,
       params: {
-        expression: `(${EVENT_INJECTION_SCRIPT})`,
+        expression: scriptWithBinding,
       },
     }));
+
+    session.profileId = session.profileId || null;
+    session.bindingId = bindingId;
 
     session.eventHandler = (raw) => {
       try {
         const msg = JSON.parse(raw);
-        if (msg.method === 'Runtime.consoleAPICalled' && msg.sessionId === session.sessionId) {
-          const args = msg.params.args;
-          if (args && args.length > 0 && args[0].type === 'string') {
+        if (msg.method === 'Runtime.bindingCalled' && msg.sessionId === session.sessionId) {
+          if (msg.name === bindingId) {
             try {
-              const event = JSON.parse(args[0].value);
+              const event = JSON.parse(msg.payload);
               if (event.__mm_event && this.onEvent) {
-                this.onEvent(profileId, event);
+                this.onEvent(session.profileId, event);
               }
             } catch {}
           }
@@ -238,6 +255,14 @@ class CdpManager {
     const session = this.sessions.get(profileId);
     if (!session) return;
     this._send(session, 'Input.dispatchKeyEvent', { type, ...params });
+  }
+
+  setWindowTitle(profileId, title) {
+    const session = this.sessions.get(profileId);
+    if (!session) return;
+    this._send(session, 'Runtime.evaluate', {
+      expression: `document.title = ${JSON.stringify(title)}`,
+    });
   }
 
   async getPageScroll(profileId) {

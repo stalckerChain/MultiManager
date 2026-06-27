@@ -2,6 +2,7 @@ const express = require('express');
 const { controller } = require('../multi-control');
 const { cdpManager } = require('../multi-control/cdp-manager');
 const { getCdpPort } = require('./browser');
+const { getDatabase, createProfileQueries } = require('../db');
 const { logger } = require('../logger');
 
 const router = express.Router();
@@ -24,6 +25,14 @@ router.post('/start', async (req, res) => {
 
   try {
     await cdpManager.connect(masterId, port);
+
+    const db = getDatabase();
+    const pq = createProfileQueries(db);
+    const profile = pq.getById(masterId);
+    if (profile) {
+      cdpManager.setWindowTitle(masterId, `${profile.name} [MASTER]`);
+    }
+
     controller.setMaster(masterId);
     res.json({ status: 'active', masterId });
   } catch (err) {
@@ -56,6 +65,14 @@ router.post('/slave/add', async (req, res) => {
 
   try {
     await cdpManager.connect(profileId, port);
+
+    const db = getDatabase();
+    const pq = createProfileQueries(db);
+    const profile = pq.getById(profileId);
+    if (profile) {
+      cdpManager.setWindowTitle(profileId, `${profile.name} [SYNC]`);
+    }
+
     await controller.addSlave(profileId);
     res.json({ status: 'added', profileId, slaveCount: controller.getStatus().slaveCount });
   } catch (err) {
