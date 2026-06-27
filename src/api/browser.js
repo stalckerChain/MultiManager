@@ -61,7 +61,12 @@ if ($found) { $found }
 
 const runningProfiles = new Map();
 const profileWindows = new Map();
+const cdpPorts = new Map();
 const SHUTDOWN_TIMEOUT_MS = 8000;
+
+function getCdpPort(profileId) {
+  return cdpPorts.get(profileId) || null;
+}
 
 function getBrowserPath() {
   const platform = process.platform;
@@ -155,6 +160,7 @@ router.post('/:id/start', async (req, res) => {
   profileLogger.info({ profileId: req.params.id, profileDir: user_data_dir }, 'Куки инжектированы');
 
   const args = [
+    '--remote-debugging-port=0',
     '--fingerprint-seed=' + profile.fingerprint_seed,
     '--user-agent=' + profile.user_agent,
     '--resolution=' + profile.screen_resolution,
@@ -190,7 +196,12 @@ router.post('/:id/start', async (req, res) => {
 
   let stderrOutput = '';
   child.stderr.on('data', (data) => {
-    stderrOutput += data.toString();
+    const chunk = data.toString();
+    stderrOutput += chunk;
+    const match = chunk.match(/DevTools listening on ws:\/\/127\.0\.0\.1:(\d+)/);
+    if (match) {
+      cdpPorts.set(req.params.id, parseInt(match[1], 10));
+    }
   });
 
   child.unref();
@@ -240,6 +251,7 @@ router.post('/:id/start', async (req, res) => {
 
     runningProfiles.delete(req.params.id);
     profileWindows.delete(req.params.id);
+    cdpPorts.delete(req.params.id);
   });
 
   res.json({
@@ -278,6 +290,7 @@ router.post('/:id/stop', async (req, res) => {
   profileQueries.updatePid(req.params.id, null);
   runningProfiles.delete(req.params.id);
   profileWindows.delete(req.params.id);
+  cdpPorts.delete(req.params.id);
 
   res.json({ status: 'stopped' });
 });
@@ -389,8 +402,10 @@ router.post('/shutdown', async (req, res) => {
   await Promise.allSettled(closePromises);
   runningProfiles.clear();
   profileWindows.clear();
+  cdpPorts.clear();
 
   res.json({ stopped: running.length });
 });
 
 module.exports = router;
+module.exports.getCdpPort = getCdpPort;

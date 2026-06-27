@@ -302,26 +302,24 @@ describe('Multi-Control', () => {
     expect(res.body.active).toBe(false);
   });
 
-  it('POST /api/multi-control/start activates', async () => {
+  it('POST /api/multi-control/start returns 412 when no browser running', async () => {
     const res = await request('POST', '/api/multi-control/start', {
       masterId: profileId,
     });
-    expect(res.status).toBe(200);
-    expect(res.body.status).toBe('active');
+    expect(res.status).toBe(412);
   });
 
-  it('POST /api/multi-control/slave/add adds slave', async () => {
+  it('POST /api/multi-control/slave/add returns 409 when inactive', async () => {
     const res = await request('POST', '/api/multi-control/slave/add', {
       profileId: 'slave-uuid-1',
     });
-    expect(res.status).toBe(200);
-    expect(res.body.slaveCount).toBe(1);
+    expect(res.status).toBe(409);
   });
 
-  it('GET /api/multi-control/status shows slaves', async () => {
+  it('GET /api/multi-control/status shows inactive (no CDP)', async () => {
     const res = await request('GET', '/api/multi-control/status');
-    expect(res.body.slaveCount).toBe(1);
-    expect(res.body.slaves).toContain('slave-uuid-1');
+    expect(res.body.active).toBe(false);
+    expect(res.body.slaveCount).toBe(0);
   });
 
   it('POST /api/multi-control/slave/remove removes slave', async () => {
