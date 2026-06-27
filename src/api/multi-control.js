@@ -24,6 +24,21 @@ router.post('/start', async (req, res) => {
   }
 
   try {
+    cdpManager.onEvent = (profileId, event) => {
+      if (profileId !== controller.masterId) return;
+      if (!controller.active) return;
+
+      switch (event.type) {
+        case 'mouseMove': controller.onMouseMoved(event); break;
+        case 'mouseDown': controller.onMousePressed(event); break;
+        case 'mouseUp': controller.onMouseReleased(event); break;
+        case 'click': controller.onClick(event); break;
+        case 'scroll': controller.scrollTo(event); break;
+        case 'keyDown': controller.onKeyDown(event); break;
+        case 'keyUp': controller.onKeyUp(event); break;
+      }
+    };
+
     await cdpManager.connect(masterId, port);
 
     const db = getDatabase();
@@ -42,6 +57,7 @@ router.post('/start', async (req, res) => {
 });
 
 router.post('/stop', async (req, res) => {
+  cdpManager.onEvent = null;
   cdpManager.disconnectAll();
   controller.stop();
   res.json({ status: 'stopped' });

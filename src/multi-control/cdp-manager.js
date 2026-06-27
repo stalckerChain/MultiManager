@@ -190,6 +190,7 @@ class CdpManager {
     this._send(session, 'Page.enable', {});
 
     const bindingId = `__mm_sync_${session.sessionId}`;
+    logger.info({ profileId: session.profileId, bindingId }, 'CDP: setting up binding');
 
     const addBindingId = Math.floor(Math.random() * 1e9);
     session.ws.send(JSON.stringify({
@@ -214,21 +215,32 @@ class CdpManager {
       },
     }));
 
-    session.profileId = session.profileId || null;
     session.bindingId = bindingId;
 
+    let eventCount = 0;
     session.eventHandler = (raw) => {
       try {
         const msg = JSON.parse(raw);
         if (msg.method === 'Runtime.bindingCalled' && msg.sessionId === session.sessionId) {
           if (msg.name === bindingId) {
+            eventCount++;
+            if (eventCount <= 3) {
+              logger.info({ profileId: session.profileId, eventCount, payloadLen: msg.payload?.length }, 'CDP: bindingCalled received');
+            }
             try {
               const event = JSON.parse(msg.payload);
               if (event.__mm_event && this.onEvent) {
                 this.onEvent(session.profileId, event);
               }
-            } catch {}
+            } catch (e) {
+              if (eventCount <= 3) {
+                logger.error({ profileId: session.profileId, error: e.message, payload: msg.payload?.substring(0, 200) }, 'CDP: failed to parse event');
+              }
+            }
           }
+        }
+        if (msg.method === 'Runtime.exceptionThrown' && msg.sessionId === session.sessionId) {
+          logger.error({ profileId: session.profileId, details: msg.params?.exceptionDetails?.text }, 'CDP: exception in page');
         }
       } catch {}
     };
