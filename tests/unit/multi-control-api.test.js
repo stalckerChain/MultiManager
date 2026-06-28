@@ -9,6 +9,7 @@ function createMockCdp() {
     isConnected: vi.fn().mockReturnValue(true),
     dispatchMouseEvent: vi.fn(),
     dispatchKeyEvent: vi.fn(),
+    insertText: vi.fn(),
     getPageScroll: vi.fn().mockResolvedValue({ scrollX: 0, scrollY: 0 }),
   };
 }

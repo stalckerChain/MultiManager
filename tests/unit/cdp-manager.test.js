@@ -146,4 +146,22 @@ describe('CdpManager', () => {
       expect(typeof mgr.connect).toBe('function');
     });
   });
+
+  describe('insertText', () => {
+    it('отправляет Input.insertText через сессию', () => {
+      const mockWs = { send: vi.fn() };
+      mgr.sessions.set('p1', { ws: mockWs, sessionId: 's1' });
+      mgr.insertText('p1', 'hello');
+      expect(mockWs.send).toHaveBeenCalledWith(
+        expect.stringContaining('"method":"Input.insertText"')
+      );
+      expect(mockWs.send).toHaveBeenCalledWith(
+        expect.stringContaining('"text":"hello"')
+      );
+    });
+
+    it('не падает если сессии нет', () => {
+      expect(() => mgr.insertText('nonexistent', 'test')).not.toThrow();
+    });
+  });
 });

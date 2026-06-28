@@ -53,6 +53,7 @@ router.post('/start', async (req, res) => {
         case 'scroll': controller.scrollTo(event); break;
         case 'keyDown': controller.onKeyDown(event); break;
         case 'keyUp': controller.onKeyUp(event); break;
+        case 'charInput': controller.onCharInput(event); break;
         default: logger.warn({ eventType: event.type }, 'MULTI-CONTROL: unknown event type');
       }
     };

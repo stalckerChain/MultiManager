@@ -139,13 +139,13 @@ class MultiController {
     }
   }
 
-  async onCharTyped(params) {
+  async onCharInput(params) {
     if (!this.active || !this.cdp) return;
     for (const [id] of this.slaves) {
       try {
-        this.cdp.dispatchKeyEvent(id, 'char', params);
+        this.cdp.insertText(id, params.text);
       } catch (err) {
-        logger.error(`Multi-control: char error slave ${id}`, { error: err.message });
+        logger.error(`Multi-control: charInput error slave ${id}`, { error: err.message });
       }
     }
   }

@@ -5,6 +5,7 @@ function createMockCdp() {
   return {
     dispatchMouseEvent: vi.fn(),
     dispatchKeyEvent: vi.fn(),
+    insertText: vi.fn(),
     getPageScroll: vi.fn().mockResolvedValue({ scrollX: 0, scrollY: 0 }),
   };
 }
@@ -96,6 +97,15 @@ describe('MultiController', () => {
       await controller.onKeyUp({ key: 'Enter', code: 'Enter', windowsVirtualKeyCode: 13 });
 
       expect(mockCdp.dispatchKeyEvent).toHaveBeenCalledTimes(2);
+    });
+
+    it('транслирует текст через insertText', async () => {
+      controller.setMaster('master-1');
+      await controller.addSlave('slave-1');
+
+      await controller.onCharInput({ text: 'a' });
+
+      expect(mockCdp.insertText).toHaveBeenCalledWith('slave-1', 'a');
     });
 
     it('транслирует scroll', async () => {

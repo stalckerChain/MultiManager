@@ -28,7 +28,12 @@ const SYNC_EVENT_SCRIPT = `
   document.addEventListener('mousedown', function(e) { emit('mouseDown', { x: e.pageX, y: e.pageY, button: e.button, clickCount: e.detail || 1 }); }, true);
   document.addEventListener('mouseup', function(e) { emit('mouseUp', { x: e.pageX, y: e.pageY, button: e.button }); }, true);
   document.addEventListener('wheel', function(e) { emit('scroll', { x: e.pageX, y: e.pageY, deltaX: e.deltaX, deltaY: e.deltaY }); }, true);
-  document.addEventListener('keydown', function(e) { emit('keyDown', { key: e.key, code: e.code, windowsVirtualKeyCode: e.keyCode }); }, true);
+  document.addEventListener('keydown', function(e) {
+    emit('keyDown', { key: e.key, code: e.code, windowsVirtualKeyCode: e.keyCode });
+    if (e.key.length === 1 && !e.ctrlKey && !e.metaKey && !e.altKey) {
+      emit('charInput', { text: e.key });
+    }
+  }, true);
   document.addEventListener('keyup', function(e) { emit('keyUp', { key: e.key, code: e.code, windowsVirtualKeyCode: e.keyCode }); }, true);
   document.addEventListener('click', function(e) { emit('click', { x: e.pageX, y: e.pageY, button: e.button, clickCount: e.detail || 1 }); }, true);
 })();
@@ -384,6 +389,12 @@ class CdpManager {
     const session = this.sessions.get(profileId);
     if (!session) return;
     this._send(session, 'Input.dispatchKeyEvent', { type, ...params });
+  }
+
+  insertText(profileId, text) {
+    const session = this.sessions.get(profileId);
+    if (!session) return;
+    this._send(session, 'Input.insertText', { text });
   }
 
   setWindowTitle(profileId, title) {
