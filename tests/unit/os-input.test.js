@@ -143,6 +143,115 @@ describe('InputCapture', () => {
   });
 });
 
+describe('WindowsHooks (VK mapping)', () => {
+  const { WindowsHooks } = require('../../src/os-input/windows-hooks.js');
+  let hooks;
+
+  beforeEach(() => {
+    hooks = new WindowsHooks();
+  });
+
+  describe('_vkToKey', () => {
+    it('maps letter keys a-z', () => {
+      expect(hooks._vkToKey(0x41)).toBe('a');
+      expect(hooks._vkToKey(0x5A)).toBe('z');
+    });
+
+    it('maps digit keys 0-9', () => {
+      expect(hooks._vkToKey(0x30)).toBe('0');
+      expect(hooks._vkToKey(0x39)).toBe('9');
+    });
+
+    it('maps special keys', () => {
+      expect(hooks._vkToKey(0x0D)).toBe('Enter');
+      expect(hooks._vkToKey(0x1B)).toBe('Escape');
+      expect(hooks._vkToKey(0x20)).toBe(' ');
+      expect(hooks._vkToKey(0x08)).toBe('Backspace');
+      expect(hooks._vkToKey(0x09)).toBe('Tab');
+      expect(hooks._vkToKey(0x10)).toBe('Shift');
+      expect(hooks._vkToKey(0x11)).toBe('Control');
+      expect(hooks._vkToKey(0x12)).toBe('Alt');
+    });
+
+    it('maps arrow keys', () => {
+      expect(hooks._vkToKey(0x25)).toBe('ArrowLeft');
+      expect(hooks._vkToKey(0x26)).toBe('ArrowUp');
+      expect(hooks._vkToKey(0x27)).toBe('ArrowRight');
+      expect(hooks._vkToKey(0x28)).toBe('ArrowDown');
+    });
+
+    it('maps F keys', () => {
+      expect(hooks._vkToKey(0x70)).toBe('F1');
+      expect(hooks._vkToKey(0x7B)).toBe('F12');
+    });
+
+    it('returns VK_xxx for unknown', () => {
+      expect(hooks._vkToKey(0xFF)).toBe('VK_255');
+    });
+  });
+
+  describe('_vkToCode', () => {
+    it('maps letter keys', () => {
+      expect(hooks._vkToCode(0x41)).toBe('KeyA');
+      expect(hooks._vkToCode(0x5A)).toBe('KeyZ');
+    });
+
+    it('maps digit keys', () => {
+      expect(hooks._vkToCode(0x30)).toBe('Digit0');
+      expect(hooks._vkToCode(0x39)).toBe('Digit9');
+    });
+
+    it('maps special keys', () => {
+      expect(hooks._vkToCode(0x0D)).toBe('Enter');
+      expect(hooks._vkToCode(0x1B)).toBe('Escape');
+      expect(hooks._vkToCode(0x20)).toBe('Space');
+      expect(hooks._vkToCode(0x10)).toBe('ShiftLeft');
+      expect(hooks._vkToCode(0x11)).toBe('ControlLeft');
+      expect(hooks._vkToCode(0x12)).toBe('AltLeft');
+    });
+
+    it('maps arrow keys', () => {
+      expect(hooks._vkToCode(0x25)).toBe('ArrowLeft');
+      expect(hooks._vkToCode(0x26)).toBe('ArrowUp');
+      expect(hooks._vkToCode(0x27)).toBe('ArrowRight');
+      expect(hooks._vkToCode(0x28)).toBe('ArrowDown');
+    });
+
+    it('returns KeyXXX for unknown', () => {
+      expect(hooks._vkToCode(0xFF)).toBe('Key255');
+    });
+  });
+
+  describe('state management', () => {
+    it('starts in stopped state', () => {
+      expect(hooks.running).toBe(false);
+      expect(hooks.mouseHook).toBeNull();
+      expect(hooks.keyboardHook).toBeNull();
+    });
+
+    it('stop clears hooks and callbacks', () => {
+      hooks.running = true;
+      hooks.mouseHook = 'mock';
+      hooks.keyboardHook = 'mock';
+      hooks._mouseCallback = vi.fn();
+      hooks._keyboardCallback = vi.fn();
+
+      hooks.stop();
+
+      expect(hooks.running).toBe(false);
+      expect(hooks.mouseHook).toBeNull();
+      expect(hooks.keyboardHook).toBeNull();
+      expect(hooks._mouseCallback).toBeNull();
+      expect(hooks._keyboardCallback).toBeNull();
+    });
+
+    it('stop is idempotent', () => {
+      hooks.stop();
+      expect(hooks.running).toBe(false);
+    });
+  });
+});
+
 describe('WindowTracker', () => {
   let tracker;
 

@@ -368,20 +368,28 @@ Authorization: Bearer <token>
 
 ---
 
-## Multi-Control (Синхронизация окон) — v0.3.2
+## Multi-Control (Синхронизация окон) — v0.4.0
 
-Система трансляции действий из главного окна во все slave-окна через CDP.
+Система синхронизации ввода из главного окна во все slave-окна.
+
+**Архитектура (v0.4.0):**
+- **Захват**: Windows OS-level hooks (WH_MOUSE_LL + WH_KEYBOARD_LL) через koffi FFI
+- **Отправка**: CDP Input.dispatchMouseEvent / Input.dispatchKeyEvent / Input.insertText
+- **Scroll sync**: CDP Runtime.evaluate (page-level)
+- **Определение master**: GetForegroundWindow() + pid маппинг
 
 **Возможности:**
 - Синхронизация мыши (клик, движение, скролл) между окнами
-- Синхронизация клавиатуры (нажатия, печать текста)
-- Скрипт синхронизации переживает навигацию (Page.addScriptToEvaluateOnNewDocument)
-- Автоматическое подключение к новым вкладкам (Target.setAutoAttach)
+- Синхронизация клавиатуры (нажатия, печать текста, Ctrl+combo)
+- Browser-level shortcuts (Ctrl+L, Ctrl+T, Ctrl+W, F5) — синхронизируются
+- Все вкладки синхронизируются (ОС hooks работают глобально)
+- Навигация не влияет на sync (нет injection script)
 - Ввод текста через Input.insertText (работает в полях ввода)
+- Фильтрация: только события master window (GetForegroundWindow)
 
 **Ограничения:**
-- Browser-level shortcuts (Ctrl+L, Ctrl+T, Ctrl+W) не синхронизируются — это UI браузера, а не страницы
 - Новые вкладки в slave-окнах не синхронизируются (slave не захватывает события)
+- Windows-only (ОС-specific hooks)
 
 ### GET /api/multi-control/status
 
