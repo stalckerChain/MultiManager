@@ -58,7 +58,7 @@ router.post('/start', async (req, res) => {
     };
     logger.info('MULTI-CONTROL: onEvent callback assigned to cdpManager');
 
-    await cdpManager.connect(masterId, port);
+    await cdpManager.connect(masterId, port, { enableInput: true });
 
     const db = getDatabase();
     const pq = createProfileQueries(db);
@@ -100,7 +100,7 @@ router.post('/slave/add', async (req, res) => {
   }
 
   try {
-    await cdpManager.connect(profileId, port);
+    await cdpManager.connect(profileId, port, { enableInput: false });
 
     const db = getDatabase();
     const pq = createProfileQueries(db);

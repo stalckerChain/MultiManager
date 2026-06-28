@@ -1,63 +1,36 @@
 const WebSocket = require('ws');
 const { logger } = require('../logger');
 
-const EVENT_INJECTION_SCRIPT = `
+const SYNC_EVENT_SCRIPT = `
 (function() {
   if (window.__MM_SYNC_ACTIVE__) return;
   window.__MM_SYNC_ACTIVE__ = true;
 
-  var _buf = null;
-  var _timer = null;
-  var THROTTLE = 25;
+  var HAS_BINDING = typeof window['__MM_SYNC_BIND__'] === 'function';
 
-  function flush() {
-    var b = _buf;
-    _buf = null;
-    _timer = null;
-    if (b && window.__MM_CDP_SEND__) {
-      window.__MM_CDP_SEND__(JSON.stringify(b));
+  function SEND(data) {
+    if (typeof window['__MM_SYNC_BIND__'] === 'function') {
+      window['__MM_SYNC_BIND__'](data);
+    } else {
+      console.log(data);
     }
   }
 
+  var _buf = null, _timer = null, THROTTLE = 25;
+  function flush() { var b = _buf; _buf = null; _timer = null; if (b) SEND(JSON.stringify(b)); }
   function emit(type, data) {
     var msg = Object.assign({ __mm_event: true, type: type }, data);
-    if (type === 'mouseMove') {
-      _buf = msg;
-      if (!_timer) _timer = setTimeout(flush, THROTTLE);
-    } else {
-      if (_timer) { clearTimeout(_timer); _timer = null; }
-      _buf = null;
-      window.__MM_CDP_SEND__(JSON.stringify(msg));
-    }
+    if (type === 'mouseMove') { _buf = msg; if (!_timer) _timer = setTimeout(flush, THROTTLE); }
+    else { if (_timer) { clearTimeout(_timer); _timer = null; } _buf = null; SEND(JSON.stringify(msg)); }
   }
 
-  document.addEventListener('mousemove', function(e) {
-    emit('mouseMove', { x: e.pageX, y: e.pageY });
-  }, true);
-
-  document.addEventListener('mousedown', function(e) {
-    emit('mouseDown', { x: e.pageX, y: e.pageY, button: e.button, clickCount: e.detail || 1 });
-  }, true);
-
-  document.addEventListener('mouseup', function(e) {
-    emit('mouseUp', { x: e.pageX, y: e.pageY, button: e.button });
-  }, true);
-
-  document.addEventListener('wheel', function(e) {
-    emit('scroll', { x: e.pageX, y: e.pageY, deltaX: e.deltaX, deltaY: e.deltaY });
-  }, true);
-
-  document.addEventListener('keydown', function(e) {
-    emit('keyDown', { key: e.key, code: e.code, windowsVirtualKeyCode: e.keyCode });
-  }, true);
-
-  document.addEventListener('keyup', function(e) {
-    emit('keyUp', { key: e.key, code: e.code, windowsVirtualKeyCode: e.keyCode });
-  }, true);
-
-  document.addEventListener('click', function(e) {
-    emit('click', { x: e.pageX, y: e.pageY, button: e.button, clickCount: e.detail || 1 });
-  }, true);
+  document.addEventListener('mousemove', function(e) { emit('mouseMove', { x: e.pageX, y: e.pageY }); }, true);
+  document.addEventListener('mousedown', function(e) { emit('mouseDown', { x: e.pageX, y: e.pageY, button: e.button, clickCount: e.detail || 1 }); }, true);
+  document.addEventListener('mouseup', function(e) { emit('mouseUp', { x: e.pageX, y: e.pageY, button: e.button }); }, true);
+  document.addEventListener('wheel', function(e) { emit('scroll', { x: e.pageX, y: e.pageY, deltaX: e.deltaX, deltaY: e.deltaY }); }, true);
+  document.addEventListener('keydown', function(e) { emit('keyDown', { key: e.key, code: e.code, windowsVirtualKeyCode: e.keyCode }); }, true);
+  document.addEventListener('keyup', function(e) { emit('keyUp', { key: e.key, code: e.code, windowsVirtualKeyCode: e.keyCode }); }, true);
+  document.addEventListener('click', function(e) { emit('click', { x: e.pageX, y: e.pageY, button: e.button, clickCount: e.detail || 1 }); }, true);
 })();
 `;
 
@@ -65,6 +38,9 @@ class CdpManager {
   constructor() {
     this.sessions = new Map();
     this.onEvent = null;
+
+    this.browserConnections = new Map();
+    this.sessionBySid = new Map();
   }
 
   async _discoverWsUrl(cdpPort) {
@@ -99,11 +75,12 @@ class CdpManager {
     return `ws://127.0.0.1:${cdpPort}/devtools/browser`;
   }
 
-  async connect(profileId, cdpPort) {
+  async connect(profileId, cdpPort, opts = {}) {
     if (this.sessions.has(profileId)) {
       this.disconnect(profileId);
     }
 
+    const { enableInput = true } = opts;
     const wsUrl = await this._discoverWsUrl(cdpPort);
 
     return new Promise((resolve, reject) => {
@@ -112,30 +89,13 @@ class CdpManager {
 
       ws.on('open', () => {
         connected = true;
-        const id = Math.floor(Math.random() * 1e9);
-        ws.send(JSON.stringify({
-          id,
-          method: 'Target.getTargets',
-        }));
 
-        const handler = (raw) => {
-          try {
-            const msg = JSON.parse(raw);
-            if (msg.id === id && msg.result) {
-              ws.removeListener('message', handler);
-              const pages = (msg.result.targetInfos || []).filter(
-                t => t.type === 'page' && !t.url.startsWith('devtools://')
-              );
-              if (pages.length === 0) {
-                ws.close();
-                reject(new Error('No page targets found'));
-                return;
-              }
-              this._setupPageSession(ws, profileId, pages[0].targetId, resolve);
-            }
-          } catch {}
-        };
-        ws.on('message', handler);
+        this.browserConnections.set(profileId, {
+          ws,
+          targetSessions: new Map(),
+        });
+
+        this._setupBrowserMessageHandler(ws, profileId, enableInput, resolve, reject);
       });
 
       ws.on('error', (err) => {
@@ -145,7 +105,7 @@ class CdpManager {
       });
 
       ws.on('close', () => {
-        this.sessions.delete(profileId);
+        this._cleanupBrowserConnection(profileId);
       });
 
       setTimeout(() => {
@@ -157,9 +117,151 @@ class CdpManager {
     });
   }
 
-  _setupPageSession(browserWs, profileId, targetId, resolve) {
+  _setupBrowserMessageHandler(ws, profileId, enableInput, resolve, reject) {
+    const getTargetsId = Math.floor(Math.random() * 1e9);
+    let firstSessionResolved = false;
+
+    ws.send(JSON.stringify({
+      id: getTargetsId,
+      method: 'Target.getTargets',
+    }));
+
+    ws.send(JSON.stringify({
+      method: 'Target.setAutoAttach',
+      params: { autoAttach: true, flatten: true, waitForDebuggerOnStart: false },
+    }));
+
+    const handler = (raw) => {
+      try {
+        const msg = JSON.parse(raw);
+
+        if (msg.id === getTargetsId && msg.result) {
+          const pages = (msg.result.targetInfos || []).filter(
+            t => t.type === 'page' && !t.url.startsWith('devtools://')
+          );
+
+          if (pages.length === 0) {
+            ws.removeListener('message', handler);
+            ws.close();
+            reject(new Error('No page targets found'));
+            return;
+          }
+
+          this._attachToTarget(ws, profileId, pages[0].targetId, enableInput, (session) => {
+            firstSessionResolved = true;
+            resolve(session);
+          });
+        }
+
+        if (msg.method === 'Target.attachedToTarget') {
+          const { sessionId: newSid, targetInfo } = msg.params;
+          if (targetInfo.type !== 'page') return;
+          if (this.sessionBySid.has(newSid)) return;
+
+          logger.info({
+            profileId,
+            targetId: targetInfo.targetId,
+            url: targetInfo.url,
+            sessionId: newSid,
+          }, 'CDP: AUTO-ATTACHED to new target');
+
+          const newSession = {
+            ws,
+            sessionId: newSid,
+            targetId: targetInfo.targetId,
+            profileId,
+          };
+
+          this.sessionBySid.set(newSid, profileId);
+          const bc = this.browserConnections.get(profileId);
+          if (bc) bc.targetSessions.set(targetInfo.targetId, newSession);
+
+          if (!this.sessions.has(profileId)) {
+            this.sessions.set(profileId, newSession);
+          }
+
+          if (enableInput) {
+            this._enableInput(newSession);
+          }
+        }
+
+        if (msg.method === 'Target.targetDestroyed') {
+          const { targetId } = msg.params;
+          const bc = this.browserConnections.get(profileId);
+          if (bc) {
+            const deadSession = bc.targetSessions.get(targetId);
+            if (deadSession) {
+              this.sessionBySid.delete(deadSession.sessionId);
+              bc.targetSessions.delete(targetId);
+              logger.info({ profileId, targetId }, 'CDP: target destroyed, cleaned up');
+            }
+          }
+        }
+
+        if (msg.method === 'Page.frameNavigated' && msg.params?.frame && !msg.params.frame.parentId) {
+          const navSid = msg.sessionId;
+          const navProfileId = this.sessionBySid.get(navSid);
+          if (navProfileId && enableInput) {
+            logger.info({ profileId: navProfileId, frameId: msg.params.frame.id, url: msg.params.frame.url }, 'CDP: frame navigated, re-adding binding');
+            const bc = this.browserConnections.get(navProfileId);
+            if (bc) {
+              for (const [, s] of bc.targetSessions) {
+                if (s.sessionId === navSid) {
+                  this._reAddBinding(s);
+                  break;
+                }
+              }
+            }
+          }
+        }
+
+        if (msg.method === 'Runtime.bindingCalled') {
+          const eventProfileId = this.sessionBySid.get(msg.sessionId);
+          if (eventProfileId && this.onEvent) {
+            const bp = msg.params?.payload ?? msg.payload;
+            if (bp) {
+              try {
+                const event = JSON.parse(bp);
+                if (event.__mm_event) {
+                  this.onEvent(eventProfileId, event);
+                }
+              } catch {}
+            }
+          }
+        }
+
+        if (msg.method === 'Runtime.consoleAPICalled') {
+          const consoleProfileId = this.sessionBySid.get(msg.sessionId);
+          if (consoleProfileId && this.onEvent) {
+            const args = msg.params?.args;
+            if (args && args.length > 0 && args[0].type === 'string') {
+              try {
+                const event = JSON.parse(args[0].value);
+                if (event.__mm_event) {
+                  this.onEvent(consoleProfileId, event);
+                }
+              } catch {}
+            }
+          }
+        }
+
+        if (!firstSessionResolved) return;
+
+        if (msg.method === 'Runtime.exceptionThrown') {
+          const excProfileId = this.sessionBySid.get(msg.sessionId);
+          if (excProfileId) {
+            logger.error({ profileId: excProfileId, details: msg.params?.exceptionDetails?.text }, 'CDP: exception in page');
+          }
+        }
+      } catch {}
+    };
+
+    ws.on('message', handler);
+  }
+
+  _attachToTarget(ws, profileId, targetId, enableInput, callback) {
     const attachId = Math.floor(Math.random() * 1e9);
-    browserWs.send(JSON.stringify({
+    ws.send(JSON.stringify({
       id: attachId,
       method: 'Target.attachToTarget',
       params: { targetId, flatten: true },
@@ -169,27 +271,36 @@ class CdpManager {
       try {
         const msg = JSON.parse(raw);
         if (msg.id === attachId) {
-          browserWs.removeListener('message', handler);
+          ws.removeListener('message', handler);
           if (msg.error) {
-            browserWs.close();
+            logger.error({ profileId, targetId, error: msg.error.message }, 'CDP: attachToTarget failed');
             return;
           }
           const sessionId = msg.result.sessionId;
-          const session = { ws: browserWs, sessionId, targetId, profileId };
+          const session = { ws, sessionId, targetId, profileId };
+
+          this.sessionBySid.set(sessionId, profileId);
           this.sessions.set(profileId, session);
-          this._enableInput(session);
-          resolve(session);
+
+          const bc = this.browserConnections.get(profileId);
+          if (bc) bc.targetSessions.set(targetId, session);
+
+          if (enableInput) {
+            this._enableInput(session);
+          }
+
+          callback(session);
         }
       } catch {}
     };
-    browserWs.on('message', handler);
+    ws.on('message', handler);
   }
 
   _enableInput(session) {
     this._send(session, 'Runtime.enable', {});
     this._send(session, 'Page.enable', {});
 
-    const bindingId = `__mm_sync_${session.sessionId}`;
+    const bindingId = `__MM_SYNC_BIND__`;
     logger.info({
       profileId: session.profileId,
       bindingId,
@@ -197,6 +308,12 @@ class CdpManager {
       targetId: session.targetId,
     }, 'CDP: ENABLE INPUT — starting setup');
 
+    this._addBinding(session, bindingId);
+    this._injectSyncScript(session, bindingId);
+    this._testBinding(session, bindingId);
+  }
+
+  _addBinding(session, bindingId) {
     const addBindingId = Math.floor(Math.random() * 1e9);
     session.ws.send(JSON.stringify({
       id: addBindingId,
@@ -204,43 +321,29 @@ class CdpManager {
       sessionId: session.sessionId,
       params: { name: bindingId },
     }));
-
-    const fallbackScript = `
-(function() {
-  if (window.__MM_SYNC_ACTIVE__) return;
-  window.__MM_SYNC_ACTIVE__ = true;
-  var HAS_BINDING = typeof window['${bindingId}'] === 'function';
-  function SEND(data) {
-    if (HAS_BINDING) { window['${bindingId}'](data); }
-    else { console.log(data); }
   }
-  var _buf = null, _timer = null, THROTTLE = 25;
-  function flush() { var b = _buf; _buf = null; _timer = null; if (b) SEND(JSON.stringify(b)); }
-  function emit(type, data) {
-    var msg = Object.assign({ __mm_event: true, type: type }, data);
-    if (type === 'mouseMove') { _buf = msg; if (!_timer) _timer = setTimeout(flush, THROTTLE); }
-    else { if (_timer) { clearTimeout(_timer); _timer = null; } _buf = null; SEND(JSON.stringify(msg)); }
-  }
-  document.addEventListener('mousemove', function(e) { emit('mouseMove', { x: e.pageX, y: e.pageY }); }, true);
-  document.addEventListener('mousedown', function(e) { emit('mouseDown', { x: e.pageX, y: e.pageY, button: e.button, clickCount: e.detail || 1 }); }, true);
-  document.addEventListener('mouseup', function(e) { emit('mouseUp', { x: e.pageX, y: e.pageY, button: e.button }); }, true);
-  document.addEventListener('wheel', function(e) { emit('scroll', { x: e.pageX, y: e.pageY, deltaX: e.deltaX, deltaY: e.deltaY }); }, true);
-  document.addEventListener('keydown', function(e) { emit('keyDown', { key: e.key, code: e.code, windowsVirtualKeyCode: e.keyCode }); }, true);
-  document.addEventListener('keyup', function(e) { emit('keyUp', { key: e.key, code: e.code, windowsVirtualKeyCode: e.keyCode }); }, true);
-  document.addEventListener('click', function(e) { emit('click', { x: e.pageX, y: e.pageY, button: e.button, clickCount: e.detail || 1 }); }, true);
-})();
-`;
 
-    const runtimeId = Math.floor(Math.random() * 1e9);
+  _injectSyncScript(session, bindingId) {
+    const script = SYNC_EVENT_SCRIPT.replace(/__MM_SYNC_BIND__/g, bindingId);
+
+    const addScriptId = Math.floor(Math.random() * 1e9);
     session.ws.send(JSON.stringify({
-      id: runtimeId,
-      method: 'Runtime.evaluate',
+      id: addScriptId,
+      method: 'Page.addScriptToEvaluateOnNewDocument',
       sessionId: session.sessionId,
-      params: {
-        expression: fallbackScript,
-      },
+      params: { source: script },
     }));
 
+    const evalId = Math.floor(Math.random() * 1e9);
+    session.ws.send(JSON.stringify({
+      id: evalId,
+      method: 'Runtime.evaluate',
+      sessionId: session.sessionId,
+      params: { expression: script },
+    }));
+  }
+
+  _testBinding(session, bindingId) {
     const testId = Math.floor(Math.random() * 1e9);
     session.ws.send(JSON.stringify({
       id: testId,
@@ -251,123 +354,14 @@ class CdpManager {
         returnByValue: true,
       },
     }));
+  }
 
-    session.bindingId = bindingId;
-
-    let eventCount = 0;
-    let msgCount = 0;
-    session.eventHandler = (raw) => {
-      msgCount++;
-      try {
-        const msg = JSON.parse(raw);
-        // Логируем ВСЕ входящие сообщения (первые 100)
-        if (msgCount <= 100) {
-          logger.info({
-            profileId: session.profileId,
-            msgCount,
-            method: msg.method || '(no method)',
-            id: msg.id,
-            sessionId: msg.sessionId,
-            hasResult: !!msg.result,
-            hasError: !!msg.error,
-            hasParams: !!msg.params,
-          }, 'CDP: RAW MSG');
-        }
-
-        // Тест binding
-        if (msg.id === testId) {
-          logger.info({
-            profileId: session.profileId,
-            result: msg.result?.result?.value,
-            error: msg.error,
-            sessionId: msg.sessionId,
-          }, 'CDP: BINDING TEST RESULT');
-        }
-
-        let payload = null;
-        // Runtime.bindingCalled — ЛОГИРУЕМ ВСЁ
-        if (msg.method === 'Runtime.bindingCalled') {
-          const match = msg.sessionId === session.sessionId;
-          const bp = msg.params?.payload ?? msg.payload;
-          logger.info({
-            profileId: session.profileId,
-            msgSid: msg.sessionId,
-            expectedSid: session.sessionId,
-            match,
-            name: msg.params?.name ?? msg.name,
-            payloadPreview: typeof bp === 'string' ? bp.substring(0, 300) : bp,
-            payloadLen: bp?.length,
-            hasParams: !!msg.params,
-            rawKeys: Object.keys(msg).join(','),
-          }, 'CDP: BINDING CALLED');
-          if (match) {
-            payload = bp;
-          } else {
-            logger.warn({
-              profileId: session.profileId,
-              msgSid: msg.sessionId,
-              expectedSid: session.sessionId,
-            }, 'CDP: BINDING CALLED SESSION MISMATCH — IGNORED');
-          }
-        }
-
-        // Runtime.consoleAPICalled — fallback
-        if (!payload && msg.method === 'Runtime.consoleAPICalled' && msg.sessionId === session.sessionId) {
-          const args = msg.params?.args;
-          if (args && args.length > 0 && args[0].type === 'string') {
-            payload = args[0].value;
-            logger.info({
-              profileId: session.profileId,
-              consolePayload: typeof payload === 'string' ? payload.substring(0, 300) : payload,
-              argsCount: args.length,
-              argTypes: args.map(a => a.type),
-            }, 'CDP: CONSOLE API PAYLOAD');
-          }
-        }
-
-        // Обработка payload
-        if (payload) {
-          eventCount++;
-          logger.info({
-            profileId: session.profileId,
-            eventCount,
-            payloadLen: payload.length,
-            payloadPreview: typeof payload === 'string' ? payload.substring(0, 300) : payload,
-          }, 'CDP: EVENT RECEIVED');
-          try {
-            const event = JSON.parse(payload);
-            const hasOnEvent = !!this.onEvent;
-            const isMmEvent = !!event.__mm_event;
-            logger.info({
-              profileId: session.profileId,
-              eventType: event.type,
-              isMmEvent,
-              hasOnEvent,
-              keys: Object.keys(event).join(','),
-            }, 'CDP: EVENT PARSED');
-            if (isMmEvent && hasOnEvent) {
-              this.onEvent(session.profileId, event);
-              logger.info({ profileId: session.profileId, eventType: event.type }, 'CDP: EVENT DISPATCHED TO CONTROLLER');
-            } else if (isMmEvent && !hasOnEvent) {
-              logger.warn({ profileId: session.profileId }, 'CDP: onEvent callback is NULL!');
-            } else if (!isMmEvent) {
-              logger.info({ profileId: session.profileId, keys: Object.keys(event).join(',') }, 'CDP: NOT __mm_event — SKIP');
-            }
-          } catch (e) {
-            logger.error({
-              profileId: session.profileId,
-              error: e.message,
-              payload: typeof payload === 'string' ? payload.substring(0, 200) : payload,
-            }, 'CDP: PARSE ERROR');
-          }
-        }
-
-        if (msg.method === 'Runtime.exceptionThrown' && msg.sessionId === session.sessionId) {
-          logger.error({ profileId: session.profileId, details: msg.params?.exceptionDetails?.text }, 'CDP: EXCEPTION IN PAGE');
-        }
-      } catch {}
-    };
-    session.ws.on('message', session.eventHandler);
+  _reAddBinding(session) {
+    const bindingId = `__MM_SYNC_BIND__`;
+    this._addBinding(session, bindingId);
+    this._injectSyncScript(session, bindingId);
+    this._testBinding(session, bindingId);
+    logger.info({ profileId: session.profileId, sessionId: session.sessionId }, 'CDP: re-added binding after navigation');
   }
 
   _send(session, method, params) {
@@ -431,17 +425,28 @@ class CdpManager {
     });
   }
 
-  disconnect(profileId) {
-    const session = this.sessions.get(profileId);
-    if (!session) return;
-    if (session.eventHandler) {
-      session.ws.removeListener('message', session.eventHandler);
+  _cleanupBrowserConnection(profileId) {
+    const bc = this.browserConnections.get(profileId);
+    if (bc) {
+      for (const [targetId, session] of bc.targetSessions) {
+        this.sessionBySid.delete(session.sessionId);
+      }
+      bc.targetSessions.clear();
+      this.browserConnections.delete(profileId);
     }
     this.sessions.delete(profileId);
   }
 
+  disconnect(profileId) {
+    const bc = this.browserConnections.get(profileId);
+    if (bc) {
+      bc.ws.close();
+    }
+    this._cleanupBrowserConnection(profileId);
+  }
+
   disconnectAll() {
-    for (const [id] of this.sessions) {
+    for (const [id] of this.browserConnections) {
       this.disconnect(id);
     }
   }
