@@ -77,6 +77,15 @@ router.post('/start', async (req, res) => {
       }
     };
 
+    cdpManager.onNavigate = (profileId, url) => {
+      if (profileId === masterId && controller.active) {
+        logger.info({ masterId, url }, 'MULTI-CONTROL: master navigated, syncing to slaves');
+        for (const [slaveId] of controller.slaves) {
+          cdpManager.navigateTo(slaveId, url);
+        }
+      }
+    };
+
     await cdpManager.connect(masterId, port, { enableInput: true });
 
     const db = getDatabase();
@@ -102,6 +111,7 @@ router.post('/start', async (req, res) => {
 router.post('/stop', async (req, res) => {
   inputCapture.stop();
   cdpManager.onEvent = null;
+  cdpManager.onNavigate = null;
   cdpManager.disconnectAll();
   controller.stop();
   logger.info('MULTI-CONTROL: STOPPED');

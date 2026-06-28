@@ -43,6 +43,7 @@ class CdpManager {
   constructor() {
     this.sessions = new Map();
     this.onEvent = null;
+    this.onNavigate = null;
 
     this.browserConnections = new Map();
     this.sessionBySid = new Map();
@@ -206,8 +207,9 @@ class CdpManager {
         if (msg.method === 'Page.frameNavigated' && msg.params?.frame && !msg.params.frame.parentId) {
           const navSid = msg.sessionId;
           const navProfileId = this.sessionBySid.get(navSid);
+          const navUrl = msg.params.frame.url;
           if (navProfileId && enableInput) {
-            logger.info({ profileId: navProfileId, frameId: msg.params.frame.id, url: msg.params.frame.url }, 'CDP: frame navigated, re-adding binding');
+            logger.info({ profileId: navProfileId, frameId: msg.params.frame.id, url: navUrl }, 'CDP: frame navigated, re-adding binding');
             const bc = this.browserConnections.get(navProfileId);
             if (bc) {
               for (const [, s] of bc.targetSessions) {
@@ -216,6 +218,9 @@ class CdpManager {
                   break;
                 }
               }
+            }
+            if (this.onNavigate) {
+              this.onNavigate(navProfileId, navUrl);
             }
           }
         }
@@ -434,6 +439,13 @@ class CdpManager {
         expression: 'String(window.scrollX) + "," + String(window.scrollY)',
       });
     });
+  }
+
+  navigateTo(profileId, url) {
+    const session = this.sessions.get(profileId);
+    if (!session) return;
+    logger.info({ profileId, url }, 'CDP: navigating');
+    this._send(session, 'Page.navigate', { url });
   }
 
   _cleanupBrowserConnection(profileId) {

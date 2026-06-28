@@ -384,6 +384,7 @@ Authorization: Bearer <token>
 - Синхронизация клавиатуры (нажатия, печать текста)
 - Ввод текста через `Input.insertText` (работает в полях ввода)
 - Multi-tab support: новые вкладки в master автоматически захватываются
+- Навигация sync: master переходит → slave следует (Page.navigate)
 
 **Ограничения:**
 - Browser shortcuts (Ctrl+L, Ctrl+T) не синхронизируются (DOM events не ловят браузерные шорткаты)
