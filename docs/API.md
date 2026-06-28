@@ -370,26 +370,24 @@ Authorization: Bearer <token>
 
 ## Multi-Control (Синхронизация окон) — v0.4.0
 
-Система синхронизации ввода из главного окна во все slave-окна.
+Система синхронизации ввода из master окна во все slave окна.
 
-**Архитектура (v0.4.0):**
-- **Захват**: Windows OS-level hooks (WH_MOUSE_LL + WH_KEYBOARD_LL) через koffi FFI
-- **Отправка**: CDP Input.dispatchMouseEvent / Input.dispatchKeyEvent / Input.insertText
-- **Scroll sync**: CDP Runtime.evaluate (page-level)
-- **Определение master**: GetForegroundWindow() + pid маппинг
+**Архитектура:**
+- **Захват ввода**: CDP binding (`Runtime.addBinding`) инжектируется в master page через `SYNC_EVENT_SCRIPT`
+- **Передача**: DOM events → `window.__MM_SYNC_BIND__(JSON)` → `cdpManager.onEvent` → `inputCapture.injectFromCdp()`
+- **Dispatch**: CDP `Input.dispatchMouseEvent` / `Input.dispatchKeyEvent` / `Input.insertText` → slave окна
+- **Scroll sync**: CDP `Runtime.evaluate` (page-level)
+- **Multi-tab**: `Target.setAutoAttach` + `Page.addScriptToEvaluateOnNewDocument` для новых вкладок
 
 **Возможности:**
 - Синхронизация мыши (клик, движение, скролл) между окнами
-- Синхронизация клавиатуры (нажатия, печать текста, Ctrl+combo)
-- Browser-level shortcuts (Ctrl+L, Ctrl+T, Ctrl+W, F5) — синхронизируются
-- Все вкладки синхронизируются (ОС hooks работают глобально)
-- Навигация не влияет на sync (нет injection script)
-- Ввод текста через Input.insertText (работает в полях ввода)
-- Фильтрация: только события master window (GetForegroundWindow)
+- Синхронизация клавиатуры (нажатия, печать текста)
+- Ввод текста через `Input.insertText` (работает в полях ввода)
+- Multi-tab support: новые вкладки в master автоматически захватываются
 
 **Ограничения:**
-- Новые вкладки в slave-окнах не синхронизируются (slave не захватывает события)
-- Windows-only (ОС-specific hooks)
+- Browser shortcuts (Ctrl+L, Ctrl+T) не синхронизируются (DOM events не ловят браузерные шорткаты)
+- Events привязаны к DOM — не работают на chrome:// и devtools:// страницах
 
 ### GET /api/multi-control/status
 
@@ -409,7 +407,7 @@ Authorization: Bearer <token>
 
 ### POST /api/multi-control/start
 
-Запустить multi-control. Устанавливает master-профиль.
+Запустить multi-control. Устанавливает master-профиль и начинает захват ввода.
 
 **Тело запроса:**
 ```json
@@ -422,9 +420,12 @@ Authorization: Bearer <token>
 ```json
 {
   "status": "active",
-  "masterId": "f81d4fae-..."
+  "masterId": "f81d4fae-...",
+  "mode": "cdp"
 }
 ```
+
+**Ответ (412):** `{ "error": "CDP порт недоступен" }`
 
 ---
 
@@ -486,76 +487,16 @@ Authorization: Bearer <token>
 
 ---
 
-### POST /api/multi-control/mouse/move
+### GET /api/multi-control/cdp-status
 
-Транслировать движение мыши (буферизуется, throttling 25мс).
+Получить статус CDP подключений.
 
-**Тело запроса:**
+**Ответ (200):**
 ```json
 {
-  "x": 500,
-  "y": 300
-}
-```
-
----
-
-### POST /api/multi-control/mouse/click
-
-Транслировать клик (mousePressed + mouseReleased).
-
-**Тело запроса:**
-```json
-{
-  "x": 500,
-  "y": 300,
-  "button": "left",
-  "clickCount": 1
-}
-```
-
----
-
-### POST /api/multi-control/mouse/scroll
-
-Транслировать скролл.
-
-**Тело запроса:**
-```json
-{
-  "x": 500,
-  "y": 300,
-  "deltaX": 0,
-  "deltaY": -100
-}
-```
-
----
-
-### POST /api/multi-control/keyboard/type
-
-Транслировать текст на все slave-окна.
-
-**Тело запроса:**
-```json
-{
-  "text": "Hello, world!"
-}
-```
-
----
-
-### POST /api/multi-control/keyboard/key
-
-Транслировать нажатие клавиши (keyDown + keyUp).
-
-**Тело запроса:**
-```json
-{
-  "key": "Enter",
-  "code": "Enter",
-  "windowsVirtualKeyCode": 13,
-  "nativeVirtualKeyCode": 13
+  "f81d4fae-...": true,
+  "uuid-slave-1": true,
+  "uuid-slave-2": true
 }
 ```
 

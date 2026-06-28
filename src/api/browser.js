@@ -409,3 +409,4 @@ router.post('/shutdown', async (req, res) => {
 
 module.exports = router;
 module.exports.getCdpPort = getCdpPort;
+module.exports.getProfileWindows = () => profileWindows;

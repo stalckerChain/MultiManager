@@ -10,56 +10,48 @@ const router = express.Router();
 
 controller.cdp = cdpManager;
 
-function wireOsInputToController() {
+function wireInputToController() {
   inputCapture.on('mouseMove', (event) => {
     if (!controller.active) return;
-    if (!windowTracker.isMasterFocused()) return;
     controller.onMouseMoved(event);
   });
 
   inputCapture.on('mouseDown', (event) => {
     if (!controller.active) return;
-    if (!windowTracker.isMasterFocused()) return;
     controller.onMousePressed(event);
   });
 
   inputCapture.on('mouseUp', (event) => {
     if (!controller.active) return;
-    if (!windowTracker.isMasterFocused()) return;
     controller.onMouseReleased(event);
   });
 
   inputCapture.on('click', (event) => {
     if (!controller.active) return;
-    if (!windowTracker.isMasterFocused()) return;
     controller.onClick(event);
   });
 
   inputCapture.on('scroll', (event) => {
     if (!controller.active) return;
-    if (!windowTracker.isMasterFocused()) return;
     controller.scrollTo(event);
   });
 
   inputCapture.on('keyDown', (event) => {
     if (!controller.active) return;
-    if (!windowTracker.isMasterFocused()) return;
     controller.onKeyDown(event);
   });
 
   inputCapture.on('keyUp', (event) => {
     if (!controller.active) return;
-    if (!windowTracker.isMasterFocused()) return;
     controller.onKeyUp(event);
   });
 
   inputCapture.on('charInput', (event) => {
     if (!controller.active) return;
-    if (!windowTracker.isMasterFocused()) return;
     controller.onCharInput(event);
   });
 
-  logger.info('MULTI-CONTROL: OS input wired to controller');
+  logger.info('MULTI-CONTROL: Input wired to controller');
 }
 
 router.get('/status', (req, res) => {
@@ -79,7 +71,13 @@ router.post('/start', async (req, res) => {
   }
 
   try {
-    await cdpManager.connect(masterId, port, { enableInput: false });
+    cdpManager.onEvent = (profileId, event) => {
+      if (profileId === masterId && controller.active) {
+        inputCapture.injectFromCdp(event);
+      }
+    };
+
+    await cdpManager.connect(masterId, port, { enableInput: true });
 
     const db = getDatabase();
     const pq = createProfileQueries(db);
@@ -90,11 +88,11 @@ router.post('/start', async (req, res) => {
 
     controller.setMaster(masterId);
 
-    wireOsInputToController();
+    wireInputToController();
     inputCapture.start();
 
-    logger.info('MULTI-CONTROL: OS input capture started for master');
-    res.json({ status: 'active', masterId, mode: 'os-input' });
+    logger.info('MULTI-CONTROL: CDP input capture started for master');
+    res.json({ status: 'active', masterId, mode: 'cdp' });
   } catch (err) {
     logger.error({ err: err.message }, 'Multi-control: failed to start');
     res.status(500).json({ error: `Ошибка запуска: ${err.message}` });
@@ -103,9 +101,9 @@ router.post('/start', async (req, res) => {
 
 router.post('/stop', async (req, res) => {
   inputCapture.stop();
+  cdpManager.onEvent = null;
   cdpManager.disconnectAll();
   controller.stop();
-  windowTracker.clear();
   logger.info('MULTI-CONTROL: STOPPED');
   res.json({ status: 'stopped' });
 });
@@ -153,7 +151,6 @@ router.post('/slave/remove', (req, res) => {
 
   cdpManager.disconnect(profileId);
   controller.removeSlave(profileId);
-  windowTracker.unregisterWindow(profileId);
   res.json({ status: 'removed', profileId });
 });
 

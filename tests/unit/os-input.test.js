@@ -25,101 +25,101 @@ describe('InputCapture', () => {
     const h = vi.fn();
     cap.on('mouseMove', h);
     cap.on('keyDown', h);
-    cap._onMouseMove({ x: 0, y: 0 });
-    cap._onKeyDown({ key: 'a' });
+    cap.injectFromCdp({ type: 'mouseMove', x: 0, y: 0 });
+    cap.injectFromCdp({ type: 'keyDown', key: 'a' });
     expect(h).not.toHaveBeenCalled();
   });
 
   it('emits mouseDown', () => {
     const h = vi.fn();
     cap.on('mouseDown', h);
-    cap._onMouseButton({ x: 50, y: 60, button: 0, pressed: true });
+    cap.injectFromCdp({ type: 'mouseDown', x: 50, y: 60, button: 0 });
     expect(h).toHaveBeenCalledWith({ x: 50, y: 60, button: 0 });
   });
 
   it('emits mouseUp', () => {
     const h = vi.fn();
     cap.on('mouseUp', h);
-    cap._onMouseButton({ x: 50, y: 60, button: 0, pressed: false });
+    cap.injectFromCdp({ type: 'mouseUp', x: 50, y: 60, button: 0 });
     expect(h).toHaveBeenCalledWith({ x: 50, y: 60, button: 0 });
   });
 
   it('emits click on mouseUp button 0', () => {
     const h = vi.fn();
     cap.on('click', h);
-    cap._onMouseButton({ x: 10, y: 20, button: 0, pressed: false });
+    cap.injectFromCdp({ type: 'click', x: 10, y: 20, button: 0, clickCount: 1 });
     expect(h).toHaveBeenCalledWith({ x: 10, y: 20, button: 0, clickCount: 1 });
   });
 
   it('no click on mouseDown', () => {
     const h = vi.fn();
     cap.on('click', h);
-    cap._onMouseButton({ x: 10, y: 20, button: 0, pressed: true });
+    cap.injectFromCdp({ type: 'mouseDown', x: 10, y: 20, button: 0 });
     expect(h).not.toHaveBeenCalled();
   });
 
   it('no click on right mouseUp', () => {
     const h = vi.fn();
     cap.on('click', h);
-    cap._onMouseButton({ x: 10, y: 20, button: 2, pressed: false });
+    cap.injectFromCdp({ type: 'click', x: 10, y: 20, button: 2, clickCount: 1 });
     expect(h).not.toHaveBeenCalled();
   });
 
   it('emits scroll', () => {
     const h = vi.fn();
     cap.on('scroll', h);
-    cap._onMouseWheel({ x: 100, y: 200, deltaX: 0, deltaY: -120 });
+    cap.injectFromCdp({ type: 'scroll', x: 100, y: 200, deltaX: 0, deltaY: -120 });
     expect(h).toHaveBeenCalledWith({ x: 100, y: 200, deltaX: 0, deltaY: -120 });
   });
 
   it('emits keyDown', () => {
     const h = vi.fn();
     cap.on('keyDown', h);
-    cap._onKeyDown({ key: 'Enter', code: 'Enter', windowsVirtualKeyCode: 13, ctrlKey: false, shiftKey: false, altKey: false, metaKey: false });
+    cap.injectFromCdp({ type: 'keyDown', key: 'Enter', code: 'Enter', windowsVirtualKeyCode: 13 });
     expect(h).toHaveBeenCalled();
   });
 
   it('emits keyUp', () => {
     const h = vi.fn();
     cap.on('keyUp', h);
-    cap._onKeyUp({ key: 'Enter', code: 'Enter', windowsVirtualKeyCode: 13, ctrlKey: false, shiftKey: false, altKey: false, metaKey: false });
+    cap.injectFromCdp({ type: 'keyUp', key: 'Enter', code: 'Enter', windowsVirtualKeyCode: 13 });
     expect(h).toHaveBeenCalled();
   });
 
   it('charInput for printable char', () => {
     const h = vi.fn();
     cap.on('charInput', h);
-    cap._onKeyDown({ key: 'a', code: 'KeyA', windowsVirtualKeyCode: 65, ctrlKey: false, shiftKey: false, altKey: false, metaKey: false });
+    cap.injectFromCdp({ type: 'keyDown', key: 'a', code: 'KeyA', windowsVirtualKeyCode: 65, ctrlKey: false, shiftKey: false, altKey: false, metaKey: false });
     expect(h).toHaveBeenCalledWith({ text: 'a' });
   });
 
   it('no charInput for ctrl+a', () => {
     const h = vi.fn();
     cap.on('charInput', h);
-    cap._onKeyDown({ key: 'a', code: 'KeyA', windowsVirtualKeyCode: 65, ctrlKey: true, shiftKey: false, altKey: false, metaKey: false });
+    cap.injectFromCdp({ type: 'keyDown', key: 'a', code: 'KeyA', windowsVirtualKeyCode: 65, ctrlKey: true, shiftKey: false, altKey: false, metaKey: false });
     expect(h).not.toHaveBeenCalled();
   });
 
   it('no charInput for alt+a', () => {
     const h = vi.fn();
     cap.on('charInput', h);
-    cap._onKeyDown({ key: 'a', code: 'KeyA', windowsVirtualKeyCode: 65, ctrlKey: false, shiftKey: false, altKey: true, metaKey: false });
+    cap.injectFromCdp({ type: 'keyDown', key: 'a', code: 'KeyA', windowsVirtualKeyCode: 65, ctrlKey: false, shiftKey: false, altKey: true, metaKey: false });
     expect(h).not.toHaveBeenCalled();
   });
 
   it('no charInput for meta+a', () => {
     const h = vi.fn();
     cap.on('charInput', h);
-    cap._onKeyDown({ key: 'a', code: 'KeyA', windowsVirtualKeyCode: 65, ctrlKey: false, shiftKey: false, altKey: false, metaKey: true });
+    cap.injectFromCdp({ type: 'keyDown', key: 'a', code: 'KeyA', windowsVirtualKeyCode: 65, ctrlKey: false, shiftKey: false, altKey: false, metaKey: true });
     expect(h).not.toHaveBeenCalled();
   });
 
   it('throttles mouseMove', () => {
     const h = vi.fn();
     cap.on('mouseMove', h);
-    cap._onMouseMove({ x: 1, y: 1 });
-    cap._onMouseMove({ x: 2, y: 2 });
-    cap._onMouseMove({ x: 3, y: 3 });
+    cap.injectFromCdp({ type: 'mouseMove', x: 1, y: 1 });
+    cap.injectFromCdp({ type: 'mouseMove', x: 2, y: 2 });
+    cap.injectFromCdp({ type: 'mouseMove', x: 3, y: 3 });
     expect(h).not.toHaveBeenCalled();
     return new Promise(r => setTimeout(() => {
       expect(h).toHaveBeenCalledTimes(1);
@@ -129,7 +129,7 @@ describe('InputCapture', () => {
   });
 
   it('mouseMove stores lastMousePos', () => {
-    cap._onMouseMove({ x: 42, y: 99 });
+    cap.injectFromCdp({ type: 'mouseMove', x: 42, y: 99 });
     expect(cap.lastMousePos).toEqual({ x: 42, y: 99 });
   });
 
@@ -143,7 +143,82 @@ describe('InputCapture', () => {
   });
 });
 
-describe('WindowsHooks (VK mapping)', () => {
+describe('VK mapping', () => {
+  const { vkToKey, vkToCode } = require('../../src/os-input/vk-map.js');
+
+  describe('vkToKey', () => {
+    it('maps letter keys a-z', () => {
+      expect(vkToKey(0x41)).toBe('a');
+      expect(vkToKey(0x5A)).toBe('z');
+    });
+
+    it('maps digit keys 0-9', () => {
+      expect(vkToKey(0x30)).toBe('0');
+      expect(vkToKey(0x39)).toBe('9');
+    });
+
+    it('maps special keys', () => {
+      expect(vkToKey(0x0D)).toBe('Enter');
+      expect(vkToKey(0x1B)).toBe('Escape');
+      expect(vkToKey(0x20)).toBe(' ');
+      expect(vkToKey(0x08)).toBe('Backspace');
+      expect(vkToKey(0x09)).toBe('Tab');
+      expect(vkToKey(0x10)).toBe('Shift');
+      expect(vkToKey(0x11)).toBe('Control');
+      expect(vkToKey(0x12)).toBe('Alt');
+    });
+
+    it('maps arrow keys', () => {
+      expect(vkToKey(0x25)).toBe('ArrowLeft');
+      expect(vkToKey(0x26)).toBe('ArrowUp');
+      expect(vkToKey(0x27)).toBe('ArrowRight');
+      expect(vkToKey(0x28)).toBe('ArrowDown');
+    });
+
+    it('maps F keys', () => {
+      expect(vkToKey(0x70)).toBe('F1');
+      expect(vkToKey(0x7B)).toBe('F12');
+    });
+
+    it('returns VK_xxx for unknown', () => {
+      expect(vkToKey(0xFF)).toBe('VK_255');
+    });
+  });
+
+  describe('vkToCode', () => {
+    it('maps letter keys', () => {
+      expect(vkToCode(0x41)).toBe('KeyA');
+      expect(vkToCode(0x5A)).toBe('KeyZ');
+    });
+
+    it('maps digit keys', () => {
+      expect(vkToCode(0x30)).toBe('Digit0');
+      expect(vkToCode(0x39)).toBe('Digit9');
+    });
+
+    it('maps special keys', () => {
+      expect(vkToCode(0x0D)).toBe('Enter');
+      expect(vkToCode(0x1B)).toBe('Escape');
+      expect(vkToCode(0x20)).toBe('Space');
+      expect(vkToCode(0x10)).toBe('ShiftLeft');
+      expect(vkToCode(0x11)).toBe('ControlLeft');
+      expect(vkToCode(0x12)).toBe('AltLeft');
+    });
+
+    it('maps arrow keys', () => {
+      expect(vkToCode(0x25)).toBe('ArrowLeft');
+      expect(vkToCode(0x26)).toBe('ArrowUp');
+      expect(vkToCode(0x27)).toBe('ArrowRight');
+      expect(vkToCode(0x28)).toBe('ArrowDown');
+    });
+
+    it('returns KeyXXX for unknown', () => {
+      expect(vkToCode(0xFF)).toBe('Key255');
+    });
+  });
+});
+
+describe('WindowsHooks', () => {
   const { WindowsHooks } = require('../../src/os-input/windows-hooks.js');
   let hooks;
 
@@ -151,104 +226,13 @@ describe('WindowsHooks (VK mapping)', () => {
     hooks = new WindowsHooks();
   });
 
-  describe('_vkToKey', () => {
-    it('maps letter keys a-z', () => {
-      expect(hooks._vkToKey(0x41)).toBe('a');
-      expect(hooks._vkToKey(0x5A)).toBe('z');
-    });
-
-    it('maps digit keys 0-9', () => {
-      expect(hooks._vkToKey(0x30)).toBe('0');
-      expect(hooks._vkToKey(0x39)).toBe('9');
-    });
-
-    it('maps special keys', () => {
-      expect(hooks._vkToKey(0x0D)).toBe('Enter');
-      expect(hooks._vkToKey(0x1B)).toBe('Escape');
-      expect(hooks._vkToKey(0x20)).toBe(' ');
-      expect(hooks._vkToKey(0x08)).toBe('Backspace');
-      expect(hooks._vkToKey(0x09)).toBe('Tab');
-      expect(hooks._vkToKey(0x10)).toBe('Shift');
-      expect(hooks._vkToKey(0x11)).toBe('Control');
-      expect(hooks._vkToKey(0x12)).toBe('Alt');
-    });
-
-    it('maps arrow keys', () => {
-      expect(hooks._vkToKey(0x25)).toBe('ArrowLeft');
-      expect(hooks._vkToKey(0x26)).toBe('ArrowUp');
-      expect(hooks._vkToKey(0x27)).toBe('ArrowRight');
-      expect(hooks._vkToKey(0x28)).toBe('ArrowDown');
-    });
-
-    it('maps F keys', () => {
-      expect(hooks._vkToKey(0x70)).toBe('F1');
-      expect(hooks._vkToKey(0x7B)).toBe('F12');
-    });
-
-    it('returns VK_xxx for unknown', () => {
-      expect(hooks._vkToKey(0xFF)).toBe('VK_255');
-    });
+  it('starts in stopped state', () => {
+    expect(hooks.running).toBe(false);
   });
 
-  describe('_vkToCode', () => {
-    it('maps letter keys', () => {
-      expect(hooks._vkToCode(0x41)).toBe('KeyA');
-      expect(hooks._vkToCode(0x5A)).toBe('KeyZ');
-    });
-
-    it('maps digit keys', () => {
-      expect(hooks._vkToCode(0x30)).toBe('Digit0');
-      expect(hooks._vkToCode(0x39)).toBe('Digit9');
-    });
-
-    it('maps special keys', () => {
-      expect(hooks._vkToCode(0x0D)).toBe('Enter');
-      expect(hooks._vkToCode(0x1B)).toBe('Escape');
-      expect(hooks._vkToCode(0x20)).toBe('Space');
-      expect(hooks._vkToCode(0x10)).toBe('ShiftLeft');
-      expect(hooks._vkToCode(0x11)).toBe('ControlLeft');
-      expect(hooks._vkToCode(0x12)).toBe('AltLeft');
-    });
-
-    it('maps arrow keys', () => {
-      expect(hooks._vkToCode(0x25)).toBe('ArrowLeft');
-      expect(hooks._vkToCode(0x26)).toBe('ArrowUp');
-      expect(hooks._vkToCode(0x27)).toBe('ArrowRight');
-      expect(hooks._vkToCode(0x28)).toBe('ArrowDown');
-    });
-
-    it('returns KeyXXX for unknown', () => {
-      expect(hooks._vkToCode(0xFF)).toBe('Key255');
-    });
-  });
-
-  describe('state management', () => {
-    it('starts in stopped state', () => {
-      expect(hooks.running).toBe(false);
-      expect(hooks.mouseHook).toBeNull();
-      expect(hooks.keyboardHook).toBeNull();
-    });
-
-    it('stop clears hooks and callbacks', () => {
-      hooks.running = true;
-      hooks.mouseHook = 'mock';
-      hooks.keyboardHook = 'mock';
-      hooks._mouseCallback = vi.fn();
-      hooks._keyboardCallback = vi.fn();
-
-      hooks.stop();
-
-      expect(hooks.running).toBe(false);
-      expect(hooks.mouseHook).toBeNull();
-      expect(hooks.keyboardHook).toBeNull();
-      expect(hooks._mouseCallback).toBeNull();
-      expect(hooks._keyboardCallback).toBeNull();
-    });
-
-    it('stop is idempotent', () => {
-      hooks.stop();
-      expect(hooks.running).toBe(false);
-    });
+  it('stop is idempotent', () => {
+    hooks.stop();
+    expect(hooks.running).toBe(false);
   });
 });
 

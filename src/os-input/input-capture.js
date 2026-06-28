@@ -1,5 +1,4 @@
 const EventEmitter = require('events');
-const { windowsHooks } = require('./windows-hooks');
 const { logger } = require('../logger');
 
 class InputCapture extends EventEmitter {
@@ -13,28 +12,12 @@ class InputCapture extends EventEmitter {
   start() {
     if (this.active) return;
     this.active = true;
-
-    windowsHooks.onMouseMove = (data) => this._onMouseMove(data);
-    windowsHooks.onMouseButton = (data) => this._onMouseButton(data);
-    windowsHooks.onMouseWheel = (data) => this._onMouseWheel(data);
-    windowsHooks.onKeyDown = (data) => this._onKeyDown(data);
-    windowsHooks.onKeyUp = (data) => this._onKeyUp(data);
-
-    windowsHooks.start();
-    logger.info('OS-INPUT: InputCapture started');
+    logger.info('OS-INPUT: InputCapture started (CDP mode)');
   }
 
   stop() {
     if (!this.active) return;
     this.active = false;
-
-    windowsHooks.onMouseMove = null;
-    windowsHooks.onMouseButton = null;
-    windowsHooks.onMouseWheel = null;
-    windowsHooks.onKeyDown = null;
-    windowsHooks.onKeyUp = null;
-
-    windowsHooks.stop();
 
     if (this.throttleTimer) {
       clearTimeout(this.throttleTimer);
@@ -43,6 +26,39 @@ class InputCapture extends EventEmitter {
     this.lastMousePos = null;
 
     logger.info('OS-INPUT: InputCapture stopped');
+  }
+
+  injectFromCdp(event) {
+    if (!this.active) return;
+
+    switch (event.type) {
+      case 'mouseMove':
+        this._onMouseMove(event);
+        break;
+      case 'mouseDown':
+        this.emit('mouseDown', { x: event.x, y: event.y, button: event.button });
+        break;
+      case 'mouseUp':
+        this.emit('mouseUp', { x: event.x, y: event.y, button: event.button });
+        break;
+      case 'click':
+        if ((event.button || 0) === 0) {
+          this.emit('click', { x: event.x, y: event.y, button: 0, clickCount: event.clickCount || 1 });
+        }
+        break;
+      case 'scroll':
+        this.emit('scroll', { x: event.x, y: event.y, deltaX: event.deltaX || 0, deltaY: event.deltaY || 0 });
+        break;
+      case 'keyDown':
+        this.emit('keyDown', event);
+        if (event.key && event.key.length === 1 && !event.ctrlKey && !event.metaKey && !event.altKey) {
+          this.emit('charInput', { text: event.key });
+        }
+        break;
+      case 'keyUp':
+        this.emit('keyUp', event);
+        break;
+    }
   }
 
   _onMouseMove(data) {
@@ -58,39 +74,6 @@ class InputCapture extends EventEmitter {
         }
       }, 16);
     }
-  }
-
-  _onMouseButton(data) {
-    if (!this.active) return;
-
-    if (data.pressed) {
-      this.emit('mouseDown', { x: data.x, y: data.y, button: data.button });
-    } else {
-      this.emit('mouseUp', { x: data.x, y: data.y, button: data.button });
-    }
-
-    if (data.button === 0 && !data.pressed) {
-      this.emit('click', { x: data.x, y: data.y, button: 0, clickCount: 1 });
-    }
-  }
-
-  _onMouseWheel(data) {
-    if (!this.active) return;
-    this.emit('scroll', { x: data.x, y: data.y, deltaX: data.deltaX, deltaY: data.deltaY });
-  }
-
-  _onKeyDown(data) {
-    if (!this.active) return;
-    this.emit('keyDown', data);
-
-    if (data.key.length === 1 && !data.ctrlKey && !data.metaKey && !data.altKey) {
-      this.emit('charInput', { text: data.key });
-    }
-  }
-
-  _onKeyUp(data) {
-    if (!this.active) return;
-    this.emit('keyUp', data);
   }
 }
 

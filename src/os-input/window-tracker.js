@@ -35,7 +35,7 @@ class WindowTracker {
     const hwnd = GetForegroundWindow();
     if (!hwnd) return null;
 
-    const pidBuf = koffi.alloc('uint32');
+    const pidBuf = koffi.alloc('uint32', 1);
     GetWindowThreadProcessId(hwnd, pidBuf);
     const pid = koffi.decode(pidBuf, 'uint32');
 
