@@ -20,11 +20,13 @@ class MultiController {
     this.active = true;
     this._loadMasterScroll();
     logger.info(`Multi-control: master установлен — ${profileId}`);
+    logger.info({ masterId: this.masterId, active: this.active }, 'Multi-control: setMaster DONE');
   }
 
   async addSlave(profileId) {
     this.slaves.set(profileId, { position: null });
     logger.info(`Multi-control: slave добавлен — ${profileId}, всего: ${this.slaves.size}`);
+    logger.info({ masterId: this.masterId, slaves: Array.from(this.slaves.keys()) }, 'Multi-control: addSlave DONE');
     await this._loadSlavePosition(profileId);
   }
 
@@ -85,7 +87,10 @@ class MultiController {
   }
 
   async onMouseMoved(params) {
-    if (!this.active) return;
+    if (!this.active) {
+      logger.warn('Multi-control: onMouseMoved called but controller NOT active');
+      return;
+    }
 
     this.mouseBuffer = params;
 
@@ -178,7 +183,17 @@ class MultiController {
   }
 
   async _broadcastMouse(type, params) {
-    if (!this.cdp) return;
+    if (!this.cdp) {
+      logger.warn('Multi-control: _broadcastMouse called but cdp is null');
+      return;
+    }
+    logger.info({
+      type,
+      x: params.x,
+      y: params.y,
+      slaveCount: this.slaves.size,
+      masterId: this.masterId,
+    }, 'Multi-control: BROADCAST to slaves');
     for (const [id] of this.slaves) {
       try {
         const coords = this._toSlaveCoords(params.x || 0, params.y || 0, id);
@@ -189,6 +204,7 @@ class MultiController {
           deltaX: params.deltaX,
           deltaY: params.deltaY,
         });
+        logger.info({ slaveId: id, type, coords }, 'Multi-control: SENT to slave');
       } catch (err) {
         logger.error(`Multi-control: mouse error slave ${id}`, { error: err.message });
       }

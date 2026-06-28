@@ -190,7 +190,12 @@ class CdpManager {
     this._send(session, 'Page.enable', {});
 
     const bindingId = `__mm_sync_${session.sessionId}`;
-    logger.info({ profileId: session.profileId, bindingId }, 'CDP: setting up binding');
+    logger.info({
+      profileId: session.profileId,
+      bindingId,
+      sessionId: session.sessionId,
+      targetId: session.targetId,
+    }, 'CDP: ENABLE INPUT — starting setup');
 
     const addBindingId = Math.floor(Math.random() * 1e9);
     session.ws.send(JSON.stringify({
@@ -255,42 +260,110 @@ class CdpManager {
       msgCount++;
       try {
         const msg = JSON.parse(raw);
-        if (msgCount <= 20) {
-          logger.info({ profileId: session.profileId, msgCount, method: msg.method, id: msg.id, hasResult: !!msg.result }, 'CDP: raw msg');
+        // Логируем ВСЕ входящие сообщения (первые 100)
+        if (msgCount <= 100) {
+          logger.info({
+            profileId: session.profileId,
+            msgCount,
+            method: msg.method || '(no method)',
+            id: msg.id,
+            sessionId: msg.sessionId,
+            hasResult: !!msg.result,
+            hasError: !!msg.error,
+            hasParams: !!msg.params,
+          }, 'CDP: RAW MSG');
         }
+
+        // Тест binding
         if (msg.id === testId) {
-          logger.info({ profileId: session.profileId, result: msg.result?.result?.value, error: msg.error }, 'CDP: binding test result');
+          logger.info({
+            profileId: session.profileId,
+            result: msg.result?.result?.value,
+            error: msg.error,
+            sessionId: msg.sessionId,
+          }, 'CDP: BINDING TEST RESULT');
         }
 
         let payload = null;
-        if (msg.method === 'Runtime.bindingCalled' && msg.sessionId === session.sessionId) {
-          payload = msg.payload;
-        } else if (msg.method === 'Runtime.consoleAPICalled' && msg.sessionId === session.sessionId) {
-          const args = msg.params?.args;
-          if (args && args.length > 0 && args[0].type === 'string') {
-            payload = args[0].value;
+        // Runtime.bindingCalled — ЛОГИРУЕМ ВСЁ
+        if (msg.method === 'Runtime.bindingCalled') {
+          const match = msg.sessionId === session.sessionId;
+          const bp = msg.params?.payload ?? msg.payload;
+          logger.info({
+            profileId: session.profileId,
+            msgSid: msg.sessionId,
+            expectedSid: session.sessionId,
+            match,
+            name: msg.params?.name ?? msg.name,
+            payloadPreview: typeof bp === 'string' ? bp.substring(0, 300) : bp,
+            payloadLen: bp?.length,
+            hasParams: !!msg.params,
+            rawKeys: Object.keys(msg).join(','),
+          }, 'CDP: BINDING CALLED');
+          if (match) {
+            payload = bp;
+          } else {
+            logger.warn({
+              profileId: session.profileId,
+              msgSid: msg.sessionId,
+              expectedSid: session.sessionId,
+            }, 'CDP: BINDING CALLED SESSION MISMATCH — IGNORED');
           }
         }
 
+        // Runtime.consoleAPICalled — fallback
+        if (!payload && msg.method === 'Runtime.consoleAPICalled' && msg.sessionId === session.sessionId) {
+          const args = msg.params?.args;
+          if (args && args.length > 0 && args[0].type === 'string') {
+            payload = args[0].value;
+            logger.info({
+              profileId: session.profileId,
+              consolePayload: typeof payload === 'string' ? payload.substring(0, 300) : payload,
+              argsCount: args.length,
+              argTypes: args.map(a => a.type),
+            }, 'CDP: CONSOLE API PAYLOAD');
+          }
+        }
+
+        // Обработка payload
         if (payload) {
           eventCount++;
-          if (eventCount <= 3) {
-            logger.info({ profileId: session.profileId, eventCount, payloadLen: payload.length }, 'CDP: event received');
-          }
+          logger.info({
+            profileId: session.profileId,
+            eventCount,
+            payloadLen: payload.length,
+            payloadPreview: typeof payload === 'string' ? payload.substring(0, 300) : payload,
+          }, 'CDP: EVENT RECEIVED');
           try {
             const event = JSON.parse(payload);
-            if (event.__mm_event && this.onEvent) {
+            const hasOnEvent = !!this.onEvent;
+            const isMmEvent = !!event.__mm_event;
+            logger.info({
+              profileId: session.profileId,
+              eventType: event.type,
+              isMmEvent,
+              hasOnEvent,
+              keys: Object.keys(event).join(','),
+            }, 'CDP: EVENT PARSED');
+            if (isMmEvent && hasOnEvent) {
               this.onEvent(session.profileId, event);
+              logger.info({ profileId: session.profileId, eventType: event.type }, 'CDP: EVENT DISPATCHED TO CONTROLLER');
+            } else if (isMmEvent && !hasOnEvent) {
+              logger.warn({ profileId: session.profileId }, 'CDP: onEvent callback is NULL!');
+            } else if (!isMmEvent) {
+              logger.info({ profileId: session.profileId, keys: Object.keys(event).join(',') }, 'CDP: NOT __mm_event — SKIP');
             }
           } catch (e) {
-            if (eventCount <= 3) {
-              logger.error({ profileId: session.profileId, error: e.message, payload: payload.substring(0, 200) }, 'CDP: parse error');
-            }
+            logger.error({
+              profileId: session.profileId,
+              error: e.message,
+              payload: typeof payload === 'string' ? payload.substring(0, 200) : payload,
+            }, 'CDP: PARSE ERROR');
           }
         }
 
         if (msg.method === 'Runtime.exceptionThrown' && msg.sessionId === session.sessionId) {
-          logger.error({ profileId: session.profileId, details: msg.params?.exceptionDetails?.text }, 'CDP: exception in page');
+          logger.error({ profileId: session.profileId, details: msg.params?.exceptionDetails?.text }, 'CDP: EXCEPTION IN PAGE');
         }
       } catch {}
     };

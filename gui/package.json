@@ -1,6 +1,6 @@
 {
   "name": "multimanager-gui",
-  "version": "0.3.0",
+  "version": "0.3.1",
   "description": "GUI for MultiManager anti-detect browser",
   "main": "src/main/index.js",
   "scripts": {

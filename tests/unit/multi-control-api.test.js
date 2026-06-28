@@ -94,4 +94,38 @@ describe('Multi-control API logic', () => {
       expect(mockCdp.isConnected('slave-1')).toBe(false);
     });
   });
+
+  describe('cdp injection', () => {
+    it('controller.cdp is set when created with mockCdp', () => {
+      expect(controller.cdp).toBe(mockCdp);
+    });
+
+    it('_broadcastMouse dispatches when cdp is wired', async () => {
+      controller.setMaster('master-1');
+      controller.setWindowPosition('master-1', 0, 0, 1920, 1080);
+      controller.setWindowPosition('slave-1', 0, 0, 1920, 1080);
+      await controller.addSlave('slave-1');
+
+      await controller.onMouseMoved({ x: 50, y: 50 });
+
+      await new Promise(resolve => setTimeout(resolve, 30));
+
+      expect(mockCdp.dispatchMouseEvent).toHaveBeenCalledWith(
+        'slave-1',
+        'mouseMoved',
+        expect.objectContaining({ x: 50, y: 50 })
+      );
+    });
+
+    it('_broadcastMouse does nothing when cdp is null', async () => {
+      controller.cdp = null;
+      controller.setMaster('master-1');
+      await controller.addSlave('slave-1');
+
+      await controller.onMouseMoved({ x: 50, y: 50 });
+      await new Promise(resolve => setTimeout(resolve, 30));
+
+      expect(mockCdp.dispatchMouseEvent).not.toHaveBeenCalled();
+    });
+  });
 });

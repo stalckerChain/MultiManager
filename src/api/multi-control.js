@@ -7,6 +7,8 @@ const { logger } = require('../logger');
 
 const router = express.Router();
 
+controller.cdp = cdpManager;
+
 router.get('/status', (req, res) => {
   res.json(controller.getStatus());
 });
@@ -25,9 +27,24 @@ router.post('/start', async (req, res) => {
 
   try {
     cdpManager.onEvent = (profileId, event) => {
-      if (profileId !== controller.masterId) return;
-      if (!controller.active) return;
+      logger.info({
+        profileId,
+        eventType: event.type,
+        masterId: controller.masterId,
+        active: controller.active,
+        matchMaster: profileId === controller.masterId,
+      }, 'MULTI-CONTROL: onEvent received');
 
+      if (profileId !== controller.masterId) {
+        logger.info({ profileId, masterId: controller.masterId }, 'MULTI-CONTROL: onEvent SKIPPED — not master');
+        return;
+      }
+      if (!controller.active) {
+        logger.info({ profileId }, 'MULTI-CONTROL: onEvent SKIPPED — controller not active');
+        return;
+      }
+
+      logger.info({ profileId, eventType: event.type }, 'MULTI-CONTROL: onEvent DISPATCHING');
       switch (event.type) {
         case 'mouseMove': controller.onMouseMoved(event); break;
         case 'mouseDown': controller.onMousePressed(event); break;
@@ -36,8 +53,10 @@ router.post('/start', async (req, res) => {
         case 'scroll': controller.scrollTo(event); break;
         case 'keyDown': controller.onKeyDown(event); break;
         case 'keyUp': controller.onKeyUp(event); break;
+        default: logger.warn({ eventType: event.type }, 'MULTI-CONTROL: unknown event type');
       }
     };
+    logger.info('MULTI-CONTROL: onEvent callback assigned to cdpManager');
 
     await cdpManager.connect(masterId, port);
 
@@ -60,6 +79,7 @@ router.post('/stop', async (req, res) => {
   cdpManager.onEvent = null;
   cdpManager.disconnectAll();
   controller.stop();
+  logger.info('MULTI-CONTROL: STOPPED');
   res.json({ status: 'stopped' });
 });
 
