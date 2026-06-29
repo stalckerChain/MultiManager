@@ -7,45 +7,56 @@
 - Keyboard sync (нажатия, Enter, стрелки) ✓ — CDP-based
 - Text input (Input.insertText через charInput) ✓
 - Navigation sync (master переходит → slave следует) ✓
-- Multi-tab master (Target.setAutoAttach + addScriptToEvaluateOnNewDocument) ✓
+- Multi-tab sync — Ctrl+T открывает вкладки в slaves ✓
 - Browser shortcuts (Ctrl+L, Ctrl+T, Ctrl+W, Alt+Arrow) ✓ — native C++ addon
 - Slave dispatch через CDP Input.dispatch* ✓
+- Tab mapping — master вкладки привязаны к slave вкладкам ✓
 
 ### Что НЕ работает
-1. **Multi-tab sync** — при открытии новой вкладки в master, sync может прерываться
+1. **Multi-tab sync** — при ручном открытии вкладки в slave, sync не подхватывается (slave CDP с enableInput:false)
 2. **Windows-only** — window arranger через PowerShell
+3. **Ctrl+W** — закрытие вкладок в slaves не реализовано
 
 ### Архитектура (текущая)
 ```
 CDP SYNC_EVENT_SCRIPT (инжектится в master page)
   ↓ Runtime.addBinding('__MM_SYNC_BIND__')
   ↓ DOM events → window.__MM_SYNC_BIND__(JSON)
-  ↓ cdpManager.onEvent → inputCapture.injectFromCdp()
+  ↓ cdpManager.onEvent(profileId, event, sessionId)
+  ↓ controller.setActiveMasterTab(targetId)
+  ↓ inputCapture.injectFromCdp()
   ↓ MultiController → broadcast
   ↓ CDP Input.dispatch* → slave windows
 
 Browser shortcuts (native):
   ↓ Electron main process → WH_KEYBOARD_LL hook (C++ addon)
   ↓ hooks.node → HTTP POST /api/multi-control/os-keyboard
-  ↓ backend → controller.onKeyDown/onKeyUp → CDP dispatch
+  ↓ backend детектит Ctrl+T → cdpManager.createTab(slaveId)
+  ↓ Target.createTarget → новая вкладка в каждом slave
+
+Tab mapping:
+  ↓ Target.attachedToTarget (master) → onNewTab callback
+  ↓ controller.mapTab(masterTargetId, slaveTargetId)
+  ↓ Navigate → navigateToSession(slaveId, slaveSessionId, url)
 
 Navigation:
   ↓ Page.frameNavigated event (master)
-  ↓ cdpManager.onNavigate → navigateTo(slave, url)
+  ↓ cdpManager.onNavigate(profileId, url, sessionId)
+  ↓ navigateToSession для привязанных slave вкладок
 ```
 
 ---
 
 ## Версия и сборка
 - Версия: 0.5.0
-- Тесты: 318/318 pass
+- Тесты: 326/326 pass
 - Бинарник: `gui/release/MultiManager Setup 0.5.0.exe`
-- Режим: CDP-based + native keyboard hooks (C++ addon)
+- Режим: CDP-based + native keyboard hooks (C++ addon) + multi-tab mirror
 
 ## Ключевые файлы
-- `src/multi-control/cdp-manager.js` — CDP connection, dispatch, navigation sync
-- `src/multi-control/index.js` — MultiController (broadcast, coords)
-- `src/api/multi-control.js` — API routes + CDP event wiring + /os-keyboard endpoint
+- `src/multi-control/cdp-manager.js` — CDP connection, dispatch, navigation, createTab, tab mapping
+- `src/multi-control/index.js` — MultiController (broadcast, coords, tabMapping)
+- `src/api/multi-control.js` — API routes + CDP event wiring + /os-keyboard + Ctrl+T handling
 - `src/os-input/input-capture.js` — EventEmitter wrapper (CDP mode)
 - `src/os-input/native-hooks/hooks.cc` — C++ addon: WH_KEYBOARD_LL via N-API
 - `src/os-input/native-hooks/index.js` — JS wrapper for native addon
@@ -75,10 +86,21 @@ cd src/os-input/native-hooks; npx node-gyp rebuild
 cd gui; npx vite build; npx electron-builder --win
 ```
 
-## Что сделано в этой сессии
-- Native C++ addon для WH_KEYBOARD_LL (N-API, raw, без node-addon-api)
-- addon компилируется через node-gyp, загружается из Electron main process
-- IPC цепочка: renderer → main process (hooks:start/stop) → addon → HTTP → backend → CDP
-- Убрано дублирование кликов (click handler в wireInputToController)
-- Добавлен /api/multi-control/os-keyboard endpoint
-- Диагностическое логирование в файлы (app-*.log, hooks-*.log)
+## История коммитов (сессия 2026-06-29)
+```
+81dacef fix: Target.createTarget requires url param — default to about:blank
+4ef09c2 fix: Ctrl+T creates tabs in slaves via os-keyboard handler
+7e94cee feat: multi-tab sync — mirror tabs between master and slaves
+8a11e13 feat: native keyboard hooks via C++ addon + fix duplicate clicks
+```
+
+## Архитектурные решения
+1. **CDP-based sync** — правильный подход для антидетект-браузера (не Windows API)
+2. **Native C++ addon** для WH_KEYBOARD_LL — koffi trampoline не работает для синхронных callback
+3. **Гибрид**: CDP для mouse/keyboard + native hooks для browser shortcuts
+4. **Tab mapping** — master вкладки привязаны к slave вкладкам через targetId
+
+## TODO (следующая сессия)
+1. **Ctrl+W** — закрытие вкладок в slaves (Target.closeTarget)
+2. **Multi-tab sync** — slave CDP с enableInput:false не детектит новые вкладки
+3. **Кроссплатформенность** — заменить PowerShell window arranger

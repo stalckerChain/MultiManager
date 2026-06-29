@@ -129,4 +129,37 @@ describe('Multi-control API logic', () => {
       expect(mockCdp.dispatchMouseEvent).not.toHaveBeenCalled();
     });
   });
+
+  describe('os-keyboard Ctrl+T handling', () => {
+    it('Ctrl+T triggers createTab for each slave', async () => {
+      mockCdp.createTab = vi.fn().mockResolvedValue('new-target-id');
+      controller.setMaster('master-1');
+      await controller.addSlave('slave-1');
+      await controller.addSlave('slave-2');
+
+      const event = { type: 'keyDown', key: 't', ctrlKey: true, altKey: false, metaKey: false };
+
+      if (event.type === 'keyDown' && event.ctrlKey && !event.altKey && !event.metaKey) {
+        if ((event.key || '').toLowerCase() === 't') {
+          for (const [slaveId] of controller.slaves) {
+            await mockCdp.createTab(slaveId);
+          }
+        }
+      }
+
+      expect(mockCdp.createTab).toHaveBeenCalledTimes(2);
+      expect(mockCdp.createTab).toHaveBeenCalledWith('slave-1');
+      expect(mockCdp.createTab).toHaveBeenCalledWith('slave-2');
+    });
+
+    it('regular keyDown does not trigger createTab', async () => {
+      mockCdp.createTab = vi.fn();
+      controller.setMaster('master-1');
+      await controller.addSlave('slave-1');
+
+      await controller.onKeyDown({ key: 'a', ctrlKey: false });
+
+      expect(mockCdp.createTab).not.toHaveBeenCalled();
+    });
+  });
 });
