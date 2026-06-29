@@ -135,8 +135,17 @@ router.post('/start', async (req, res) => {
     };
 
     cdpManager.onTabDestroyed = (profileId, targetId) => {
-      if (profileId === masterId && controller.active) {
+      if (!controller.active) return;
+      if (profileId === masterId) {
         controller.unmapTab(targetId);
+      } else {
+        for (const [masterTid, slaveTid] of controller.tabMapping) {
+          if (slaveTid === targetId) {
+            controller.tabMapping.delete(masterTid);
+            logger.info({ masterTargetId: masterTid, slaveTargetId: targetId }, 'MULTI-CONTROL: slave tab destroyed, unmapped');
+            break;
+          }
+        }
       }
     };
 
@@ -192,6 +201,13 @@ router.post('/slave/add', async (req, res) => {
 
   try {
     await cdpManager.connect(profileId, port, { enableInput: false });
+
+    const masterSession = cdpManager.sessions.get(controller.masterId);
+    const slaveSession = cdpManager.sessions.get(profileId);
+    if (masterSession && slaveSession) {
+      controller.mapTab(masterSession.targetId, slaveSession.targetId);
+      logger.info({ masterTargetId: masterSession.targetId, slaveTargetId: slaveSession.targetId }, 'MULTI-CONTROL: mapped initial tabs');
+    }
 
     const db = getDatabase();
     const pq = createProfileQueries(db);

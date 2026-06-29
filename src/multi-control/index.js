@@ -73,7 +73,23 @@ class MultiController {
   }
 
   setActiveMasterTab(targetId) {
+    if (this.activeMasterTab === targetId) return;
     this.activeMasterTab = targetId;
+    logger.info({ targetId }, 'Multi-control: active master tab changed, syncing to slaves');
+    this._syncActiveTabToSlaves(targetId);
+  }
+
+  _syncActiveTabToSlaves(masterTargetId) {
+    if (!this.cdp) return;
+    const slaveTargetId = this.tabMapping.get(masterTargetId);
+    if (!slaveTargetId) return;
+    for (const [slaveId] of this.slaves) {
+      try {
+        this.cdp.activateTarget(slaveId, slaveTargetId);
+      } catch (err) {
+        logger.error(`Multi-control: activateTarget error slave ${slaveId}`, { error: err.message });
+      }
+    }
   }
 
   _toSlaveCoords(pageX, pageY, slaveId) {
@@ -280,14 +296,19 @@ class MultiController {
   }
 
   _getSlaveSession(slaveId) {
-    if (!this.activeMasterTab || !this.cdp) return null;
+    if (!this.cdp) return null;
+    if (!this.cdp.browserConnections) return null;
     const bc = this.cdp.browserConnections.get(slaveId);
     if (!bc) return null;
-    const slaveTargetId = this.tabMapping.get(this.activeMasterTab);
-    if (slaveTargetId) {
-      return bc.targetSessions.get(slaveTargetId) || null;
+    if (this.activeMasterTab) {
+      const slaveTargetId = this.tabMapping.get(this.activeMasterTab);
+      if (slaveTargetId) {
+        const mapped = bc.targetSessions.get(slaveTargetId);
+        if (mapped) return mapped;
+      }
     }
-    return null;
+    const first = bc.targetSessions.values().next().value;
+    return first || null;
   }
 
   getStatus() {

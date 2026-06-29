@@ -209,6 +209,17 @@ class CdpManager {
               this.targetBySid.delete(deadSession.sessionId);
               bc.targetSessions.delete(targetId);
               logger.info({ profileId, targetId }, 'CDP: target destroyed, cleaned up');
+
+              if (this.sessions.get(profileId)?.targetId === targetId) {
+                const remaining = bc.targetSessions.values().next().value;
+                if (remaining) {
+                  this.sessions.set(profileId, remaining);
+                  logger.info({ profileId, newTargetId: remaining.targetId }, 'CDP: updated default session to surviving target');
+                } else {
+                  this.sessions.delete(profileId);
+                }
+              }
+
               if (this.onTabDestroyed) {
                 this.onTabDestroyed(profileId, targetId);
               }
@@ -564,6 +575,18 @@ class CdpManager {
 
   isConnected(profileId) {
     return this.sessions.has(profileId);
+  }
+
+  activateTarget(profileId, targetId) {
+    const bc = this.browserConnections.get(profileId);
+    if (!bc) return;
+    const id = Math.floor(Math.random() * 1e9);
+    bc.ws.send(JSON.stringify({
+      id,
+      method: 'Target.activateTarget',
+      params: { targetId },
+    }));
+    logger.info({ profileId, targetId }, 'CDP: activateTarget');
   }
 }
 
