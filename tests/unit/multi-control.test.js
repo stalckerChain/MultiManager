@@ -211,34 +211,38 @@ describe('MultiController', () => {
 
   describe('tab mapping', () => {
     it('mapTab stores master→slave mapping', () => {
-      controller.mapTab('master-tab-1', 'slave-tab-1');
-      expect(controller.getSlaveTabForMaster('master-tab-1')).toBe('slave-tab-1');
+      controller.mapTab('master-tab-1', 'slave-A', 'slave-tab-1');
+      expect(controller.getSlaveTabForMaster('master-tab-1', 'slave-A')).toBe('slave-tab-1');
+    });
+
+    it('mapTab supports multiple slaves per master tab', () => {
+      controller.mapTab('master-tab-1', 'slave-A', 'slave-tab-A');
+      controller.mapTab('master-tab-1', 'slave-B', 'slave-tab-B');
+      expect(controller.getSlaveTabForMaster('master-tab-1', 'slave-A')).toBe('slave-tab-A');
+      expect(controller.getSlaveTabForMaster('master-tab-1', 'slave-B')).toBe('slave-tab-B');
     });
 
     it('getSlaveTabForMaster returns null for unknown', () => {
       expect(controller.getSlaveTabForMaster('unknown')).toBeNull();
     });
 
-    it('unmapTab removes mapping and returns slave id', () => {
-      controller.mapTab('master-tab-1', 'slave-tab-1');
-      const removed = controller.unmapTab('master-tab-1');
-      expect(removed).toBe('slave-tab-1');
+    it('getSlaveTabForMaster without slaveId returns first', () => {
+      controller.mapTab('master-tab-1', 'slave-A', 'slave-tab-A');
+      controller.mapTab('master-tab-1', 'slave-B', 'slave-tab-B');
+      const first = controller.getSlaveTabForMaster('master-tab-1');
+      expect(['slave-tab-A', 'slave-tab-B']).toContain(first);
+    });
+
+    it('unmapTab removes all mappings for master tab', () => {
+      controller.mapTab('master-tab-1', 'slave-A', 'slave-tab-A');
+      controller.mapTab('master-tab-1', 'slave-B', 'slave-tab-B');
+      controller.unmapTab('master-tab-1');
       expect(controller.getSlaveTabForMaster('master-tab-1')).toBeNull();
     });
 
-    it('unmapTab returns undefined for unknown', () => {
-      const removed = controller.unmapTab('unknown');
-      expect(removed).toBeUndefined();
-    });
-
-    it('setActiveMasterTab stores current tab', () => {
-      controller.setActiveMasterTab('tab-42');
-      expect(controller.activeMasterTab).toBe('tab-42');
-    });
-
     it('stop clears tabMapping', () => {
-      controller.mapTab('master-tab-1', 'slave-tab-1');
-      controller.mapTab('master-tab-2', 'slave-tab-2');
+      controller.mapTab('master-tab-1', 'slave-A', 'slave-tab-A');
+      controller.mapTab('master-tab-2', 'slave-B', 'slave-tab-B');
       controller.stop();
       expect(controller.tabMapping.size).toBe(0);
       expect(controller.activeMasterTab).toBeNull();

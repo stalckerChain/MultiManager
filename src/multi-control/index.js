@@ -57,19 +57,44 @@ class MultiController {
     this.windowPositions.set(profileId, { x, y, width, height });
   }
 
-  mapTab(masterTargetId, slaveTargetId) {
-    this.tabMapping.set(masterTargetId, slaveTargetId);
-    logger.info({ masterTargetId, slaveTargetId }, 'Multi-control: tab mapped');
+  mapTab(masterTargetId, slaveId, slaveTargetId) {
+    let bySlave = this.tabMapping.get(masterTargetId);
+    if (!bySlave) {
+      bySlave = new Map();
+      this.tabMapping.set(masterTargetId, bySlave);
+    }
+    bySlave.set(slaveId, slaveTargetId);
+    logger.info({ masterTargetId, slaveId, slaveTargetId }, 'Multi-control: tab mapped');
   }
 
-  unmapTab(masterTargetId) {
-    const slaveTargetId = this.tabMapping.get(masterTargetId);
-    this.tabMapping.delete(masterTargetId);
-    return slaveTargetId;
+  unmapTab(masterTargetId, slaveId) {
+    const bySlave = this.tabMapping.get(masterTargetId);
+    if (!bySlave) return;
+    if (slaveId) {
+      bySlave.delete(slaveId);
+    } else {
+      this.tabMapping.delete(masterTargetId);
+    }
   }
 
-  getSlaveTabForMaster(masterTargetId) {
-    return this.tabMapping.get(masterTargetId) || null;
+  _unmapBySlaveTargetId(slaveTargetId) {
+    for (const [masterTid, bySlave] of this.tabMapping) {
+      for (const [sid, stid] of bySlave) {
+        if (stid === slaveTargetId) {
+          bySlave.delete(sid);
+          logger.info({ masterTargetId: masterTid, slaveId: sid, slaveTargetId }, 'Multi-control: slave tab destroyed, unmapped');
+          if (bySlave.size === 0) this.tabMapping.delete(masterTid);
+          return;
+        }
+      }
+    }
+  }
+
+  getSlaveTabForMaster(masterTargetId, slaveId) {
+    const bySlave = this.tabMapping.get(masterTargetId);
+    if (!bySlave) return null;
+    if (slaveId) return bySlave.get(slaveId) || null;
+    return bySlave.values().next().value || null;
   }
 
   setActiveMasterTab(targetId) {
@@ -81,9 +106,9 @@ class MultiController {
 
   _syncActiveTabToSlaves(masterTargetId) {
     if (!this.cdp) return;
-    const slaveTargetId = this.tabMapping.get(masterTargetId);
-    if (!slaveTargetId) return;
-    for (const [slaveId] of this.slaves) {
+    const bySlave = this.tabMapping.get(masterTargetId);
+    if (!bySlave) return;
+    for (const [slaveId, slaveTargetId] of bySlave) {
       try {
         this.cdp.activateTarget(slaveId, slaveTargetId);
       } catch (err) {
@@ -301,10 +326,13 @@ class MultiController {
     const bc = this.cdp.browserConnections.get(slaveId);
     if (!bc) return null;
     if (this.activeMasterTab) {
-      const slaveTargetId = this.tabMapping.get(this.activeMasterTab);
-      if (slaveTargetId) {
-        const mapped = bc.targetSessions.get(slaveTargetId);
-        if (mapped) return mapped;
+      const bySlave = this.tabMapping.get(this.activeMasterTab);
+      if (bySlave) {
+        const slaveTargetId = bySlave.get(slaveId);
+        if (slaveTargetId) {
+          const mapped = bc.targetSessions.get(slaveTargetId);
+          if (mapped) return mapped;
+        }
       }
     }
     const first = bc.targetSessions.values().next().value;

@@ -86,7 +86,7 @@ router.post('/start', async (req, res) => {
           try {
             const slaveTargetId = await cdpManager.createTab(slaveId);
             if (slaveTargetId) {
-              controller.mapTab(targetInfo.targetId, slaveTargetId);
+              controller.mapTab(targetInfo.targetId, slaveId, slaveTargetId);
               if (targetInfo.url && !targetInfo.url.startsWith('chrome://')) {
                 cdpManager.navigateToSession(slaveId, cdpManager.sessionBySid.get(Array.from(cdpManager.browserConnections.get(slaveId)?.targetSessions?.keys() || [])[0]) || '', targetInfo.url);
               }
@@ -108,23 +108,23 @@ router.post('/start', async (req, res) => {
         if (sessionId) {
           const masterTargetId = cdpManager.targetBySid.get(sessionId);
           if (masterTargetId) {
-            const slaveTargetId = controller.getSlaveTabForMaster(masterTargetId);
-            if (slaveTargetId) {
-              const slaveSessionId = Array.from(cdpManager.sessionBySid.entries())
-                .find(([sid, pid]) => pid === controller.slaves.keys().next().value)?.[0];
-              for (const [slaveId] of controller.slaves) {
+            let navigatedMapped = false;
+            for (const [slaveId] of controller.slaves) {
+              const slaveTargetId = controller.getSlaveTabForMaster(masterTargetId, slaveId);
+              if (slaveTargetId) {
                 const bc = cdpManager.browserConnections.get(slaveId);
                 if (bc) {
                   const slaveSession = bc.targetSessions.get(slaveTargetId);
                   if (slaveSession) {
                     cdpManager.navigateToSession(slaveId, slaveSession.sessionId, navUrl);
                     logger.info({ slaveId, slaveTargetId, url: navUrl }, 'MULTI-CONTROL: navigated mapped slave tab');
+                    navigatedMapped = true;
                     continue;
                   }
                 }
               }
-              return;
             }
+            if (navigatedMapped) return;
           }
         }
 
@@ -139,13 +139,7 @@ router.post('/start', async (req, res) => {
       if (profileId === masterId) {
         controller.unmapTab(targetId);
       } else {
-        for (const [masterTid, slaveTid] of controller.tabMapping) {
-          if (slaveTid === targetId) {
-            controller.tabMapping.delete(masterTid);
-            logger.info({ masterTargetId: masterTid, slaveTargetId: targetId }, 'MULTI-CONTROL: slave tab destroyed, unmapped');
-            break;
-          }
-        }
+        controller._unmapBySlaveTargetId(targetId);
       }
     };
 
@@ -205,8 +199,8 @@ router.post('/slave/add', async (req, res) => {
     const masterSession = cdpManager.sessions.get(controller.masterId);
     const slaveSession = cdpManager.sessions.get(profileId);
     if (masterSession && slaveSession) {
-      controller.mapTab(masterSession.targetId, slaveSession.targetId);
-      logger.info({ masterTargetId: masterSession.targetId, slaveTargetId: slaveSession.targetId }, 'MULTI-CONTROL: mapped initial tabs');
+      controller.mapTab(masterSession.targetId, profileId, slaveSession.targetId);
+      logger.info({ masterTargetId: masterSession.targetId, slaveId: profileId, slaveTargetId: slaveSession.targetId }, 'MULTI-CONTROL: mapped initial tabs');
     }
 
     const db = getDatabase();
