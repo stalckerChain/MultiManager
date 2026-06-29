@@ -76,7 +76,7 @@ describe('Multi-control API logic', () => {
       controller.setWindowPosition('slave-1', 2000, 0, 1920, 1080);
       await controller.addSlave('slave-1');
 
-      await controller.onClick({ x: 100, y: 200, button: 'left', clickCount: 1 });
+      await controller.onMousePressed({ x: 100, y: 200, button: 0, clickCount: 1 });
 
       expect(mockCdp.dispatchMouseEvent).toHaveBeenCalledWith(
         'slave-1', 'mousePressed',

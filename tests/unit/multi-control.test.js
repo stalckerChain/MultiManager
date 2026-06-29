@@ -84,7 +84,8 @@ describe('MultiController', () => {
       await controller.addSlave('slave-1');
       await controller.addSlave('slave-2');
 
-      await controller.onClick({ x: 100, y: 200, button: 'left', clickCount: 1 });
+      await controller.onMousePressed({ x: 100, y: 200, button: 0, clickCount: 1 });
+      await controller.onMouseReleased({ x: 100, y: 200, button: 0 });
 
       expect(mockCdp.dispatchMouseEvent).toHaveBeenCalledTimes(4);
     });
@@ -130,7 +131,7 @@ describe('MultiController', () => {
       controller.setWindowPosition('slave-1', 2000, 0, 1920, 1080);
       await controller.addSlave('slave-1');
 
-      await controller.onClick({ x: 100, y: 200, button: 'left', clickCount: 1 });
+      await controller.onMousePressed({ x: 100, y: 200, button: 0, clickCount: 1 });
 
       expect(mockCdp.dispatchMouseEvent).toHaveBeenCalledWith(
         'slave-1',
@@ -146,7 +147,7 @@ describe('MultiController', () => {
       await controller.addSlave('slave-1');
       controller.masterScroll = { scrollX: 0, scrollY: 100 };
 
-      await controller.onClick({ x: 100, y: 300, button: 'left', clickCount: 1 });
+      await controller.onMousePressed({ x: 100, y: 300, button: 0, clickCount: 1 });
 
       expect(mockCdp.dispatchMouseEvent).toHaveBeenCalledWith(
         'slave-1',
@@ -161,7 +162,7 @@ describe('MultiController', () => {
       controller.setWindowPosition('slave-1', 0, 0, 1920, 1080);
       await controller.addSlave('slave-1');
 
-      await controller.onClick({ x: 50, y: 50, button: 'left', clickCount: 1 });
+      await controller.onMousePressed({ x: 50, y: 50, button: 0, clickCount: 1 });
 
       const calls = mockCdp.dispatchMouseEvent.mock.calls.filter(c => c[0] === 'slave-1');
       expect(calls.length).toBeGreaterThan(0);
