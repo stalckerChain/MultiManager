@@ -12,6 +12,8 @@ class MultiController {
     this.masterScroll = { x: 0, y: 0 };
     this.windowPositions = new Map();
     this.cdp = cdpManagerRef || null;
+    this.tabMapping = new Map();
+    this.activeMasterTab = null;
   }
 
   setMaster(profileId) {
@@ -41,6 +43,8 @@ class MultiController {
     this.slaves.clear();
     this.masterScroll = { scrollX: 0, scrollY: 0 };
     this.windowPositions.clear();
+    this.tabMapping.clear();
+    this.activeMasterTab = null;
     if (this.throttleTimer) {
       clearTimeout(this.throttleTimer);
       this.throttleTimer = null;
@@ -51,6 +55,25 @@ class MultiController {
 
   setWindowPosition(profileId, x, y, width, height) {
     this.windowPositions.set(profileId, { x, y, width, height });
+  }
+
+  mapTab(masterTargetId, slaveTargetId) {
+    this.tabMapping.set(masterTargetId, slaveTargetId);
+    logger.info({ masterTargetId, slaveTargetId }, 'Multi-control: tab mapped');
+  }
+
+  unmapTab(masterTargetId) {
+    const slaveTargetId = this.tabMapping.get(masterTargetId);
+    this.tabMapping.delete(masterTargetId);
+    return slaveTargetId;
+  }
+
+  getSlaveTabForMaster(masterTargetId) {
+    return this.tabMapping.get(masterTargetId) || null;
+  }
+
+  setActiveMasterTab(targetId) {
+    this.activeMasterTab = targetId;
   }
 
   _toSlaveCoords(pageX, pageY, slaveId) {

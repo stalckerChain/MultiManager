@@ -208,4 +208,40 @@ describe('MultiController', () => {
       expect(controller.windowPositions.size).toBe(0);
     });
   });
+
+  describe('tab mapping', () => {
+    it('mapTab stores master→slave mapping', () => {
+      controller.mapTab('master-tab-1', 'slave-tab-1');
+      expect(controller.getSlaveTabForMaster('master-tab-1')).toBe('slave-tab-1');
+    });
+
+    it('getSlaveTabForMaster returns null for unknown', () => {
+      expect(controller.getSlaveTabForMaster('unknown')).toBeNull();
+    });
+
+    it('unmapTab removes mapping and returns slave id', () => {
+      controller.mapTab('master-tab-1', 'slave-tab-1');
+      const removed = controller.unmapTab('master-tab-1');
+      expect(removed).toBe('slave-tab-1');
+      expect(controller.getSlaveTabForMaster('master-tab-1')).toBeNull();
+    });
+
+    it('unmapTab returns undefined for unknown', () => {
+      const removed = controller.unmapTab('unknown');
+      expect(removed).toBeUndefined();
+    });
+
+    it('setActiveMasterTab stores current tab', () => {
+      controller.setActiveMasterTab('tab-42');
+      expect(controller.activeMasterTab).toBe('tab-42');
+    });
+
+    it('stop clears tabMapping', () => {
+      controller.mapTab('master-tab-1', 'slave-tab-1');
+      controller.mapTab('master-tab-2', 'slave-tab-2');
+      controller.stop();
+      expect(controller.tabMapping.size).toBe(0);
+      expect(controller.activeMasterTab).toBeNull();
+    });
+  });
 });

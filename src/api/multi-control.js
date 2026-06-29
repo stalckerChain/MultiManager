@@ -66,9 +66,32 @@ router.post('/start', async (req, res) => {
   }
 
   try {
-    cdpManager.onEvent = (profileId, event) => {
+    cdpManager.onEvent = (profileId, event, sessionId) => {
       if (profileId === masterId && controller.active) {
+        const targetId = cdpManager.targetBySid.get(sessionId);
+        if (targetId) {
+          controller.setActiveMasterTab(targetId);
+        }
         inputCapture.injectFromCdp(event);
+      }
+    };
+
+    cdpManager.onNewTab = async (profileId, targetInfo, newSession) => {
+      if (profileId !== masterId || !controller.active) return;
+      logger.info({ masterTargetId: targetInfo.targetId, url: targetInfo.url }, 'MULTI-CONTROL: master opened new tab, syncing to slaves');
+
+      for (const [slaveId] of controller.slaves) {
+        try {
+          const slaveTargetId = await cdpManager.createTab(slaveId);
+          if (slaveTargetId) {
+            controller.mapTab(targetInfo.targetId, slaveTargetId);
+            if (targetInfo.url && !targetInfo.url.startsWith('chrome://')) {
+              cdpManager.navigateToSession(slaveId, cdpManager.sessionBySid.get(Array.from(cdpManager.browserConnections.get(slaveId)?.targetSessions?.keys() || [])[0]) || '', targetInfo.url);
+            }
+          }
+        } catch (err) {
+          logger.error({ slaveId, error: err.message }, 'MULTI-CONTROL: failed to create tab in slave');
+        }
       }
     };
 
@@ -78,6 +101,12 @@ router.post('/start', async (req, res) => {
         for (const [slaveId] of controller.slaves) {
           cdpManager.navigateTo(slaveId, url);
         }
+      }
+    };
+
+    cdpManager.onTabDestroyed = (profileId, targetId) => {
+      if (profileId === masterId && controller.active) {
+        controller.unmapTab(targetId);
       }
     };
 
@@ -107,6 +136,8 @@ router.post('/stop', async (req, res) => {
   inputCapture.stop();
   cdpManager.onEvent = null;
   cdpManager.onNavigate = null;
+  cdpManager.onNewTab = null;
+  cdpManager.onTabDestroyed = null;
   cdpManager.disconnectAll();
   controller.stop();
   logger.info('MULTI-CONTROL: STOPPED');

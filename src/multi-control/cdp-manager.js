@@ -44,9 +44,12 @@ class CdpManager {
     this.sessions = new Map();
     this.onEvent = null;
     this.onNavigate = null;
+    this.onNewTab = null;
+    this.onTabDestroyed = null;
 
     this.browserConnections = new Map();
     this.sessionBySid = new Map();
+    this.targetBySid = new Map();
   }
 
   async _discoverWsUrl(cdpPort) {
@@ -179,6 +182,7 @@ class CdpManager {
           };
 
           this.sessionBySid.set(newSid, profileId);
+          this.targetBySid.set(newSid, targetInfo.targetId);
           const bc = this.browserConnections.get(profileId);
           if (bc) bc.targetSessions.set(targetInfo.targetId, newSession);
 
@@ -189,6 +193,10 @@ class CdpManager {
           if (enableInput) {
             this._enableInput(newSession);
           }
+
+          if (enableInput && this.onNewTab) {
+            this.onNewTab(profileId, targetInfo, newSession);
+          }
         }
 
         if (msg.method === 'Target.targetDestroyed') {
@@ -198,8 +206,12 @@ class CdpManager {
             const deadSession = bc.targetSessions.get(targetId);
             if (deadSession) {
               this.sessionBySid.delete(deadSession.sessionId);
+              this.targetBySid.delete(deadSession.sessionId);
               bc.targetSessions.delete(targetId);
               logger.info({ profileId, targetId }, 'CDP: target destroyed, cleaned up');
+              if (this.onTabDestroyed) {
+                this.onTabDestroyed(profileId, targetId);
+              }
             }
           }
         }
@@ -233,7 +245,7 @@ class CdpManager {
               try {
                 const event = JSON.parse(bp);
                 if (event.__mm_event) {
-                  this.onEvent(eventProfileId, event);
+                  this.onEvent(eventProfileId, event, msg.sessionId);
                 }
               } catch {}
             }
@@ -290,6 +302,7 @@ class CdpManager {
           const session = { ws, sessionId, targetId, profileId };
 
           this.sessionBySid.set(sessionId, profileId);
+          this.targetBySid.set(sessionId, targetId);
           this.sessions.set(profileId, session);
 
           const bc = this.browserConnections.get(profileId);
@@ -448,11 +461,77 @@ class CdpManager {
     this._send(session, 'Page.navigate', { url });
   }
 
+  async createTab(profileId, url) {
+    const bc = this.browserConnections.get(profileId);
+    if (!bc) return null;
+
+    return new Promise((resolve) => {
+      const id = Math.floor(Math.random() * 1e9);
+      const timeout = setTimeout(() => resolve(null), 5000);
+
+      const params = url ? { url } : {};
+      bc.ws.send(JSON.stringify({ id, method: 'Target.createTarget', params }));
+
+      const handler = (raw) => {
+        try {
+          const msg = JSON.parse(raw);
+          if (msg.id === id) {
+            clearTimeout(timeout);
+            bc.ws.removeListener('message', handler);
+            if (msg.error) {
+              logger.error({ profileId, error: msg.error.message }, 'CDP: createTarget failed');
+              resolve(null);
+              return;
+            }
+            const targetId = msg.result.targetId;
+            logger.info({ profileId, targetId, url }, 'CDP: created new tab');
+            resolve(targetId);
+          }
+        } catch {}
+      };
+      bc.ws.on('message', handler);
+    });
+  }
+
+  navigateToSession(profileId, sessionId, url) {
+    const bc = this.browserConnections.get(profileId);
+    if (!bc) return;
+    const session = bc.targetSessions.values().find(s => s.sessionId === sessionId);
+    if (!session) return;
+    logger.info({ profileId, sessionId, url }, 'CDP: navigating session');
+    this._send(session, 'Page.navigate', { url });
+  }
+
+  dispatchMouseEventToSession(profileId, sessionId, type, params) {
+    const bc = this.browserConnections.get(profileId);
+    if (!bc) return;
+    const session = bc.targetSessions.values().find(s => s.sessionId === sessionId);
+    if (!session) return;
+    this._send(session, 'Input.dispatchMouseEvent', { type, ...params });
+  }
+
+  dispatchKeyEventToSession(profileId, sessionId, type, params) {
+    const bc = this.browserConnections.get(profileId);
+    if (!bc) return;
+    const session = bc.targetSessions.values().find(s => s.sessionId === sessionId);
+    if (!session) return;
+    this._send(session, 'Input.dispatchKeyEvent', { type, ...params });
+  }
+
+  insertTextToSession(profileId, sessionId, text) {
+    const bc = this.browserConnections.get(profileId);
+    if (!bc) return;
+    const session = bc.targetSessions.values().find(s => s.sessionId === sessionId);
+    if (!session) return;
+    this._send(session, 'Input.insertText', { text });
+  }
+
   _cleanupBrowserConnection(profileId) {
     const bc = this.browserConnections.get(profileId);
     if (bc) {
       for (const [targetId, session] of bc.targetSessions) {
         this.sessionBySid.delete(session.sessionId);
+        this.targetBySid.delete(session.sessionId);
       }
       bc.targetSessions.clear();
       this.browserConnections.delete(profileId);
