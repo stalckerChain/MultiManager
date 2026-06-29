@@ -232,7 +232,7 @@ class CdpManager {
               }
             }
             if (this.onNavigate) {
-              this.onNavigate(navProfileId, navUrl);
+              this.onNavigate(navProfileId, navUrl, navSid);
             }
           }
         }

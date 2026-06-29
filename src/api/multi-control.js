@@ -95,11 +95,35 @@ router.post('/start', async (req, res) => {
       }
     };
 
-    cdpManager.onNavigate = (profileId, url) => {
+    cdpManager.onNavigate = (profileId, navUrl, sessionId) => {
       if (profileId === masterId && controller.active) {
-        logger.info({ masterId, url }, 'MULTI-CONTROL: master navigated, syncing to slaves');
+        logger.info({ masterId, url: navUrl, sessionId }, 'MULTI-CONTROL: master navigated, syncing to slaves');
+
+        if (sessionId) {
+          const masterTargetId = cdpManager.targetBySid.get(sessionId);
+          if (masterTargetId) {
+            const slaveTargetId = controller.getSlaveTabForMaster(masterTargetId);
+            if (slaveTargetId) {
+              const slaveSessionId = Array.from(cdpManager.sessionBySid.entries())
+                .find(([sid, pid]) => pid === controller.slaves.keys().next().value)?.[0];
+              for (const [slaveId] of controller.slaves) {
+                const bc = cdpManager.browserConnections.get(slaveId);
+                if (bc) {
+                  const slaveSession = bc.targetSessions.get(slaveTargetId);
+                  if (slaveSession) {
+                    cdpManager.navigateToSession(slaveId, slaveSession.sessionId, navUrl);
+                    logger.info({ slaveId, slaveTargetId, url: navUrl }, 'MULTI-CONTROL: navigated mapped slave tab');
+                    continue;
+                  }
+                }
+              }
+              return;
+            }
+          }
+        }
+
         for (const [slaveId] of controller.slaves) {
-          cdpManager.navigateTo(slaveId, url);
+          cdpManager.navigateTo(slaveId, navUrl);
         }
       }
     };
@@ -210,11 +234,34 @@ router.get('/cdp-status', (req, res) => {
   res.json(result);
 });
 
-router.post('/os-keyboard', (req, res) => {
+router.post('/os-keyboard', async (req, res) => {
   if (!controller.active) return res.json({ ok: true, skipped: 'inactive' });
 
   const event = req.body;
-  logger.info({ type: event.type, key: event.key, ctrl: event.ctrlKey, alt: event.altKey, slaveCount: controller.slaves.size }, 'OS-KEYBOARD received');
+
+  if (event.type === 'keyDown' && event.ctrlKey && !event.altKey && !event.metaKey) {
+    const key = (event.key || '').toLowerCase();
+
+    if (key === 't') {
+      logger.info('OS-KEYBOARD: Ctrl+T detected — creating tabs in slaves');
+      for (const [slaveId] of controller.slaves) {
+        try {
+          const targetId = await cdpManager.createTab(slaveId);
+          if (targetId) {
+            logger.info({ slaveId, targetId }, 'OS-KEYBOARD: created new tab in slave');
+          }
+        } catch (err) {
+          logger.error({ slaveId, error: err.message }, 'OS-KEYBOARD: failed to create tab');
+        }
+      }
+      return res.json({ ok: true, action: 'createTab' });
+    }
+
+    if (key === 'w') {
+      logger.info('OS-KEYBOARD: Ctrl+W detected — skipping (close tab not supported)');
+      return res.json({ ok: true, action: 'skip' });
+    }
+  }
 
   if (event.type === 'keyDown') {
     controller.onKeyDown(event);
