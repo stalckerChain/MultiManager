@@ -503,6 +503,33 @@ Authorization: Bearer <token>
 
 ---
 
+### POST /api/multi-control/os-keyboard
+
+Получить событие клавиатуры от OS-level hook (Electron main process). Используется внутренне для синхронизации browser shortcuts (Ctrl+L, Ctrl+T и т.д.).
+
+**Тело запроса:**
+```json
+{
+  "type": "keyDown",
+  "key": "l",
+  "code": "KeyL",
+  "windowsVirtualKeyCode": 76,
+  "ctrlKey": true,
+  "shiftKey": false,
+  "altKey": false,
+  "metaKey": false
+}
+```
+
+**Ответ (200):**
+```json
+{
+  "ok": true
+}
+```
+
+---
+
 ## Расширения
 
 ### GET /api/extensions

@@ -26,11 +26,6 @@ function wireInputToController() {
     controller.onMouseReleased(event);
   });
 
-  inputCapture.on('click', (event) => {
-    if (!controller.active) return;
-    controller.onClick(event);
-  });
-
   inputCapture.on('scroll', (event) => {
     if (!controller.active) return;
     controller.scrollTo(event);
@@ -182,6 +177,21 @@ router.get('/cdp-status', (req, res) => {
     result[controller.masterId] = cdpManager.isConnected(controller.masterId);
   }
   res.json(result);
+});
+
+router.post('/os-keyboard', (req, res) => {
+  if (!controller.active) return res.json({ ok: true, skipped: 'inactive' });
+
+  const event = req.body;
+  logger.info({ type: event.type, key: event.key, ctrl: event.ctrlKey, alt: event.altKey, slaveCount: controller.slaves.size }, 'OS-KEYBOARD received');
+
+  if (event.type === 'keyDown') {
+    controller.onKeyDown(event);
+  } else if (event.type === 'keyUp') {
+    controller.onKeyUp(event);
+  }
+
+  res.json({ ok: true });
 });
 
 module.exports = router;

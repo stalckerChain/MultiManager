@@ -9,6 +9,11 @@ vi.mock('../../src/os-input/windows-hooks.js', () => ({
   WindowsHooks: vi.fn(),
 }), { virtual: true });
 
+vi.mock('../../src/os-input/native-hooks/build/Release/hooks.node', () => ({
+  start: vi.fn(() => true),
+  stop: vi.fn(() => true),
+}), { virtual: true });
+
 import { InputCapture } from '../../src/os-input/input-capture.js';
 import { WindowTracker } from '../../src/os-input/window-tracker.js';
 
@@ -284,5 +289,161 @@ describe('WindowTracker', () => {
 
   it('isMasterFocused returns false without master', () => {
     expect(tracker.isMasterFocused()).toBe(false);
+  });
+});
+
+describe('NativeKeyboardHooks', () => {
+  let hooks;
+
+  beforeEach(async () => {
+    const mod = await import('../../src/os-input/native-hooks/index.js');
+    hooks = new mod.NativeKeyboardHooks();
+  });
+
+  it('starts in stopped state', () => {
+    expect(hooks.running).toBe(false);
+  });
+
+  it('stop is idempotent', () => {
+    hooks.stop();
+    expect(hooks.running).toBe(false);
+  });
+
+  it('converts Ctrl+L event correctly', () => {
+    const h = vi.fn();
+    hooks.on('keyDown', h);
+    hooks.running = true;
+
+    hooks._onNativeEvent({
+      wParam: 0x0100,
+      vkCode: 0x4C,
+      scanCode: 38,
+      flags: 0,
+      ctrlKey: true,
+      shiftKey: false,
+      altKey: false,
+      metaKey: false,
+      isDown: true,
+      isUp: false,
+    });
+
+    expect(h).toHaveBeenCalledTimes(1);
+    const evt = h.mock.calls[0][0];
+    expect(evt.key).toBe('l');
+    expect(evt.code).toBe('KeyL');
+    expect(evt.windowsVirtualKeyCode).toBe(0x4C);
+    expect(evt.ctrlKey).toBe(true);
+    expect(evt.altKey).toBe(false);
+  });
+
+  it('converts Ctrl+T event correctly', () => {
+    const h = vi.fn();
+    hooks.on('keyDown', h);
+    hooks.running = true;
+
+    hooks._onNativeEvent({
+      wParam: 0x0100,
+      vkCode: 0x54,
+      scanCode: 20,
+      flags: 0,
+      ctrlKey: true,
+      shiftKey: false,
+      altKey: false,
+      metaKey: false,
+      isDown: true,
+      isUp: false,
+    });
+
+    const evt = h.mock.calls[0][0];
+    expect(evt.key).toBe('t');
+    expect(evt.code).toBe('KeyT');
+    expect(evt.ctrlKey).toBe(true);
+  });
+
+  it('emits charInput for printable chars without modifiers', () => {
+    const h = vi.fn();
+    hooks.on('charInput', h);
+    hooks.running = true;
+
+    hooks._onNativeEvent({
+      wParam: 0x0100,
+      vkCode: 0x41,
+      scanCode: 30,
+      flags: 0,
+      ctrlKey: false,
+      shiftKey: false,
+      altKey: false,
+      metaKey: false,
+      isDown: true,
+      isUp: false,
+    });
+
+    expect(h).toHaveBeenCalledWith({ text: 'a' });
+  });
+
+  it('does not emit charInput for Ctrl+a', () => {
+    const h = vi.fn();
+    hooks.on('charInput', h);
+    hooks.running = true;
+
+    hooks._onNativeEvent({
+      wParam: 0x0100,
+      vkCode: 0x41,
+      scanCode: 30,
+      flags: 0,
+      ctrlKey: true,
+      shiftKey: false,
+      altKey: false,
+      metaKey: false,
+      isDown: true,
+      isUp: false,
+    });
+
+    expect(h).not.toHaveBeenCalled();
+  });
+
+  it('emits keyUp on key release', () => {
+    const h = vi.fn();
+    hooks.on('keyUp', h);
+    hooks.running = true;
+
+    hooks._onNativeEvent({
+      wParam: 0x0101,
+      vkCode: 0x11,
+      scanCode: 29,
+      flags: 0,
+      ctrlKey: false,
+      shiftKey: false,
+      altKey: false,
+      metaKey: false,
+      isDown: false,
+      isUp: true,
+    });
+
+    const evt = h.mock.calls[0][0];
+    expect(evt.key).toBe('Control');
+    expect(evt.code).toBe('ControlLeft');
+    expect(evt.windowsVirtualKeyCode).toBe(0x11);
+  });
+
+  it('does not emit when not running', () => {
+    const h = vi.fn();
+    hooks.on('keyDown', h);
+    hooks.running = false;
+
+    hooks._onNativeEvent({
+      wParam: 0x0100,
+      vkCode: 0x4C,
+      scanCode: 38,
+      flags: 0,
+      ctrlKey: false,
+      shiftKey: false,
+      altKey: false,
+      metaKey: false,
+      isDown: true,
+      isUp: false,
+    });
+
+    expect(h).not.toHaveBeenCalled();
   });
 });

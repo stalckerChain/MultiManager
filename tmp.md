@@ -1,20 +1,21 @@
-# Multi-Control Sync — Состояние на конец сессии 2026-06-28
+# Multi-Control Sync — Состояние на конец сессии 2026-06-29
 
-## Текущее состояние (working, v0.4.0)
+## Текущее состояние (working, v0.5.0)
 
 ### Что работает
-- Mouse sync (клик, движение, скролл) ✓
-- Keyboard sync (нажатия, Enter, стрелки) ✓
+- Mouse sync (движение, клик, скролл) ✓ — без дублирования
+- Keyboard sync (нажатия, Enter, стрелки) ✓ — CDP-based
 - Text input (Input.insertText через charInput) ✓
 - Navigation sync (master переходит → slave следует) ✓
 - Multi-tab master (Target.setAutoAttach + addScriptToEvaluateOnNewDocument) ✓
+- Browser shortcuts (Ctrl+L, Ctrl+T, Ctrl+W, Alt+Arrow) ✓ — native C++ addon
 - Slave dispatch через CDP Input.dispatch* ✓
 
 ### Что НЕ работает
-1. **Browser shortcuts (Ctrl+L, Ctrl+T)** — DOM events не ловят браузерные шорткаты
+1. **Multi-tab sync** — при открытии новой вкладки в master, sync может прерываться
 2. **Windows-only** — window arranger через PowerShell
 
-### Архитектура (текущая, рабочая)
+### Архитектура (текущая)
 ```
 CDP SYNC_EVENT_SCRIPT (инжектится в master page)
   ↓ Runtime.addBinding('__MM_SYNC_BIND__')
@@ -22,6 +23,11 @@ CDP SYNC_EVENT_SCRIPT (инжектится в master page)
   ↓ cdpManager.onEvent → inputCapture.injectFromCdp()
   ↓ MultiController → broadcast
   ↓ CDP Input.dispatch* → slave windows
+
+Browser shortcuts (native):
+  ↓ Electron main process → WH_KEYBOARD_LL hook (C++ addon)
+  ↓ hooks.node → HTTP POST /api/multi-control/os-keyboard
+  ↓ backend → controller.onKeyDown/onKeyUp → CDP dispatch
 
 Navigation:
   ↓ Page.frameNavigated event (master)
@@ -31,65 +37,48 @@ Navigation:
 ---
 
 ## Версия и сборка
-- Версия: 0.4.0
-- Тесты: 310/310 pass
-- Бинарник: `gui/release/MultiManager Setup 0.4.0.exe`
-- Режим: CDP-based (OS hooks отключены)
-- Последний коммит: `3291153 feat: add navigation sync`
-
-## Коммиты (сессия 2026-06-28)
-```
-CDP-based sync (рабочий):
-- 8f05658 feat: text input sync via Input.insertText + charInput event (v0.3.2)
-- a24dc72 feat: multi-tab sync — Page.addScriptToEvaluateOnNewDocument + Target.setAutoAttach
-- 79d45bd fix: inject cdpManager into MultiController (broadcast was null) + verbose diagnostics
-
-OS hooks (эксперимент, НЕ работает):
-- 837a03d feat: OS-level input hooks via koffi — Variant B (v0.4.0)
-- 4747e98 fix: add koffi to gui/package.json for electron-builder packaging
-- b8065e6 test: add WindowsHooks VK-mapping tests + update API docs to v0.4.0
-- 795b04a fix: revert to CDP-based sync — OS hooks via koffi don't work in forked Node processes
-
-Navigation sync:
-- 3291153 feat: add navigation sync — master navigates, slaves follow
-```
-
-## Почему OS hooks (koffi) НЕ сработали
-- koffi `register()` создаёт trampoline, который queue'ит JS callback на event loop
-- `WH_MOUSE_LL` требует синхронного вызова callback во время PeekMessageW
-- В forked Node.js process koffi не может вызвать JS синхронно изнутри FFI call
-- Доказательство: heartbeat показал pumpCount=192, eventCount=0
-- Это **фундаментальное ограничение koffi** для Windows low-level hooks
-
----
-
-## TODO (для следующей сессии)
-1. **Browser shortcuts** — нужен другой подход:
-   - Вариант A: Native addon (.node) — C++ файл с Windows hooks, надёжнее koffi
-   - Вариант B: Electron globalShortcut — требует IPC с main process
-   - Вариант C: Пропустить — accept limitation, page-level shortcuts работают
-2. **Multi-tab slave** — slave-окна не перехватывают input (архитектурно)
-3. **Кроссплатформенность** — заменить PowerShell window arranger
-
-## Полезные команды
-```powershell
-# Логи
-Get-Content "$env:APPDATA\CloakManager\logs\core.log" -Tail 50
-
-# Тесты
-npx vitest run
-
-# Сборка
-cd gui; npx vite build; npx electron-builder --win
-
-# Git
-git status
-git log --oneline -5
-```
+- Версия: 0.5.0
+- Тесты: 318/318 pass
+- Бинарник: `gui/release/MultiManager Setup 0.5.0.exe`
+- Режим: CDP-based + native keyboard hooks (C++ addon)
 
 ## Ключевые файлы
 - `src/multi-control/cdp-manager.js` — CDP connection, dispatch, navigation sync
 - `src/multi-control/index.js` — MultiController (broadcast, coords)
-- `src/api/multi-control.js` — API routes + CDP event wiring
+- `src/api/multi-control.js` — API routes + CDP event wiring + /os-keyboard endpoint
 - `src/os-input/input-capture.js` — EventEmitter wrapper (CDP mode)
-- `docs/API.md` — документация API
+- `src/os-input/native-hooks/hooks.cc` — C++ addon: WH_KEYBOARD_LL via N-API
+- `src/os-input/native-hooks/index.js` — JS wrapper for native addon
+- `gui/src/main/keyboard-hooks.js` — Electron main process: loads addon, sends to backend
+- `gui/src/main/index.js` — IPC handlers for hooks:start/stop
+- `gui/src/preload/index.js` — hooksStart/hooksStop exposed to renderer
+- `gui/src/renderer/stores/sync.js` — triggers hooks start/stop with multi-control
+
+## Полезные команды
+```powershell
+# Логи backend
+Get-Content "$env:APPDATA\CloakManager\logs\core.log" -Tail 50
+
+# Логи Electron main process
+Get-Content "$env:APPDATA\multimanager-gui\logs\app-2026-06-29.log" -Tail 30
+
+# Логи keyboard hooks
+Get-Content "$env:APPDATA\multimanager-gui\logs\hooks-2026-06-29.log"
+
+# Тесты
+npx vitest run
+
+# Сборка native addon
+cd src/os-input/native-hooks; npx node-gyp rebuild
+
+# Сборка
+cd gui; npx vite build; npx electron-builder --win
+```
+
+## Что сделано в этой сессии
+- Native C++ addon для WH_KEYBOARD_LL (N-API, raw, без node-addon-api)
+- addon компилируется через node-gyp, загружается из Electron main process
+- IPC цепочка: renderer → main process (hooks:start/stop) → addon → HTTP → backend → CDP
+- Убрано дублирование кликов (click handler в wireInputToController)
+- Добавлен /api/multi-control/os-keyboard endpoint
+- Диагностическое логирование в файлы (app-*.log, hooks-*.log)

@@ -33,6 +33,10 @@ export const useSyncStore = defineStore('sync', () => {
       masterId.value = masterProfileId;
       active.value = true;
 
+      if (window.electronAPI?.hooksStart) {
+        try { await window.electronAPI.hooksStart(); } catch {}
+      }
+
       const slaveIds = allRunningIds.filter(id => id !== masterProfileId);
       for (const id of slaveIds) {
         try {
@@ -53,6 +57,9 @@ export const useSyncStore = defineStore('sync', () => {
   async function stopSync() {
     loading.value = true;
     try {
+      if (window.electronAPI?.hooksStop) {
+        try { await window.electronAPI.hooksStop(); } catch {}
+      }
       await client.post('/api/multi-control/stop');
       active.value = false;
       masterId.value = null;

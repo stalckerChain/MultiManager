@@ -6,6 +6,7 @@ const { startCore, stopCore, getCorePort, getCoreToken } = require('./core-manag
 const { createTray } = require('./tray');
 const { setupUpdater } = require('./updater');
 const { setupBrowserManager } = require('./browser-manager');
+const keyboardHooks = require('./keyboard-hooks');
 
 let appVersion = '0.0.0';
 try {
@@ -161,6 +162,24 @@ async function createWindow() {
     app.quit();
   });
 
+  ipcMain.handle('hooks:start', () => {
+    log('INFO', 'hooks:start IPC received');
+    try {
+      keyboardHooks.start(getCorePort(), getCoreToken());
+      log('INFO', 'hooks:start completed');
+    } catch (err) {
+      log('ERROR', 'hooks:start failed:', err.message, err.stack);
+    }
+  });
+  ipcMain.handle('hooks:stop', () => {
+    log('INFO', 'hooks:stop IPC received');
+    try {
+      keyboardHooks.stop();
+    } catch (err) {
+      log('ERROR', 'hooks:stop failed:', err.message);
+    }
+  });
+
   tray = createTray(mainWindow, async () => {
     app.isQuitting = true;
     await gracefulShutdown();
@@ -191,6 +210,7 @@ app.on('activate', () => {
 app.on('before-quit', async () => {
   log('INFO', 'before-quit');
   app.isQuitting = true;
+  keyboardHooks.stop();
   await gracefulShutdown();
 });
 
