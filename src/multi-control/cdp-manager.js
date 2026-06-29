@@ -194,7 +194,7 @@ class CdpManager {
             this._enableInput(newSession);
           }
 
-          if (enableInput && this.onNewTab) {
+          if (this.onNewTab) {
             this.onNewTab(profileId, targetInfo, newSession);
           }
         }

@@ -144,7 +144,12 @@ class MultiController {
     if (!this.active || !this.cdp) return;
     for (const [id] of this.slaves) {
       try {
-        this.cdp.dispatchKeyEvent(id, 'keyDown', params);
+        const session = this._getSlaveSession(id);
+        if (session) {
+          this.cdp.dispatchKeyEventToSession(id, session.sessionId, 'keyDown', params);
+        } else {
+          this.cdp.dispatchKeyEvent(id, 'keyDown', params);
+        }
       } catch (err) {
         logger.error(`Multi-control: keyboard error slave ${id}`, { error: err.message });
       }
@@ -155,7 +160,12 @@ class MultiController {
     if (!this.active || !this.cdp) return;
     for (const [id] of this.slaves) {
       try {
-        this.cdp.dispatchKeyEvent(id, 'keyUp', params);
+        const session = this._getSlaveSession(id);
+        if (session) {
+          this.cdp.dispatchKeyEventToSession(id, session.sessionId, 'keyUp', params);
+        } else {
+          this.cdp.dispatchKeyEvent(id, 'keyUp', params);
+        }
       } catch (err) {
         logger.error(`Multi-control: keyboard error slave ${id}`, { error: err.message });
       }
@@ -166,7 +176,12 @@ class MultiController {
     if (!this.active || !this.cdp) return;
     for (const [id] of this.slaves) {
       try {
-        this.cdp.insertText(id, params.text);
+        const session = this._getSlaveSession(id);
+        if (session) {
+          this.cdp.insertTextToSession(id, session.sessionId, params.text);
+        } else {
+          this.cdp.insertText(id, params.text);
+        }
       } catch (err) {
         logger.error(`Multi-control: charInput error slave ${id}`, { error: err.message });
       }
@@ -178,12 +193,22 @@ class MultiController {
     for (const [id] of this.slaves) {
       try {
         const coords = this._toSlaveCoords(params.x, params.y, id);
-        this.cdp.dispatchMouseEvent(id, 'mousePressed', {
-          ...coords, button: params.button || 'left', clickCount: params.clickCount || 1,
-        });
-        this.cdp.dispatchMouseEvent(id, 'mouseReleased', {
-          ...coords, button: params.button || 'left', clickCount: params.clickCount || 1,
-        });
+        const session = this._getSlaveSession(id);
+        if (session) {
+          this.cdp.dispatchMouseEventToSession(id, session.sessionId, 'mousePressed', {
+            ...coords, button: params.button || 'left', clickCount: params.clickCount || 1,
+          });
+          this.cdp.dispatchMouseEventToSession(id, session.sessionId, 'mouseReleased', {
+            ...coords, button: params.button || 'left', clickCount: params.clickCount || 1,
+          });
+        } else {
+          this.cdp.dispatchMouseEvent(id, 'mousePressed', {
+            ...coords, button: params.button || 'left', clickCount: params.clickCount || 1,
+          });
+          this.cdp.dispatchMouseEvent(id, 'mouseReleased', {
+            ...coords, button: params.button || 'left', clickCount: params.clickCount || 1,
+          });
+        }
       } catch (err) {
         logger.error(`Multi-control: click error slave ${id}`, { error: err.message });
       }
@@ -194,11 +219,20 @@ class MultiController {
     if (!this.active || !this.cdp) return;
     for (const [id] of this.slaves) {
       try {
-        this.cdp.dispatchMouseEvent(id, 'mouseWheel', {
-          x: 0, y: 0,
-          deltaX: params.deltaX || 0,
-          deltaY: params.deltaY || 0,
-        });
+        const session = this._getSlaveSession(id);
+        if (session) {
+          this.cdp.dispatchMouseEventToSession(id, session.sessionId, 'mouseWheel', {
+            x: 0, y: 0,
+            deltaX: params.deltaX || 0,
+            deltaY: params.deltaY || 0,
+          });
+        } else {
+          this.cdp.dispatchMouseEvent(id, 'mouseWheel', {
+            x: 0, y: 0,
+            deltaX: params.deltaX || 0,
+            deltaY: params.deltaY || 0,
+          });
+        }
       } catch (err) {
         logger.error(`Multi-control: scroll error slave ${id}`, { error: err.message });
       }
@@ -220,18 +254,40 @@ class MultiController {
     for (const [id] of this.slaves) {
       try {
         const coords = this._toSlaveCoords(params.x || 0, params.y || 0, id);
-        this.cdp.dispatchMouseEvent(id, type, {
-          ...coords,
-          button: params.button,
-          clickCount: params.clickCount,
-          deltaX: params.deltaX,
-          deltaY: params.deltaY,
-        });
+        const session = this._getSlaveSession(id);
+        if (session) {
+          this.cdp.dispatchMouseEventToSession(id, session.sessionId, type, {
+            ...coords,
+            button: params.button,
+            clickCount: params.clickCount,
+            deltaX: params.deltaX,
+            deltaY: params.deltaY,
+          });
+        } else {
+          this.cdp.dispatchMouseEvent(id, type, {
+            ...coords,
+            button: params.button,
+            clickCount: params.clickCount,
+            deltaX: params.deltaX,
+            deltaY: params.deltaY,
+          });
+        }
         logger.info({ slaveId: id, type, coords }, 'Multi-control: SENT to slave');
       } catch (err) {
         logger.error(`Multi-control: mouse error slave ${id}`, { error: err.message });
       }
     }
+  }
+
+  _getSlaveSession(slaveId) {
+    if (!this.activeMasterTab || !this.cdp) return null;
+    const bc = this.cdp.browserConnections.get(slaveId);
+    if (!bc) return null;
+    const slaveTargetId = this.tabMapping.get(this.activeMasterTab);
+    if (slaveTargetId) {
+      return bc.targetSessions.get(slaveTargetId) || null;
+    }
+    return null;
   }
 
   getStatus() {

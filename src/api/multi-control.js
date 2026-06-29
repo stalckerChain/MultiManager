@@ -77,22 +77,28 @@ router.post('/start', async (req, res) => {
     };
 
     cdpManager.onNewTab = async (profileId, targetInfo, newSession) => {
-      if (profileId !== masterId || !controller.active) return;
-      logger.info({ masterTargetId: targetInfo.targetId, url: targetInfo.url }, 'MULTI-CONTROL: master opened new tab, syncing to slaves');
+      if (!controller.active) return;
 
-      for (const [slaveId] of controller.slaves) {
-        try {
-          const slaveTargetId = await cdpManager.createTab(slaveId);
-          if (slaveTargetId) {
-            controller.mapTab(targetInfo.targetId, slaveTargetId);
-            if (targetInfo.url && !targetInfo.url.startsWith('chrome://')) {
-              cdpManager.navigateToSession(slaveId, cdpManager.sessionBySid.get(Array.from(cdpManager.browserConnections.get(slaveId)?.targetSessions?.keys() || [])[0]) || '', targetInfo.url);
+      if (profileId === masterId) {
+        logger.info({ masterTargetId: targetInfo.targetId, url: targetInfo.url }, 'MULTI-CONTROL: master opened new tab, syncing to slaves');
+
+        for (const [slaveId] of controller.slaves) {
+          try {
+            const slaveTargetId = await cdpManager.createTab(slaveId);
+            if (slaveTargetId) {
+              controller.mapTab(targetInfo.targetId, slaveTargetId);
+              if (targetInfo.url && !targetInfo.url.startsWith('chrome://')) {
+                cdpManager.navigateToSession(slaveId, cdpManager.sessionBySid.get(Array.from(cdpManager.browserConnections.get(slaveId)?.targetSessions?.keys() || [])[0]) || '', targetInfo.url);
+              }
             }
+          } catch (err) {
+            logger.error({ slaveId, error: err.message }, 'MULTI-CONTROL: failed to create tab in slave');
           }
-        } catch (err) {
-          logger.error({ slaveId, error: err.message }, 'MULTI-CONTROL: failed to create tab in slave');
         }
+        return;
       }
+
+      logger.info({ profileId, targetId: targetInfo.targetId, url: targetInfo.url }, 'MULTI-CONTROL: slave opened new tab (detected)');
     };
 
     cdpManager.onNavigate = (profileId, navUrl, sessionId) => {

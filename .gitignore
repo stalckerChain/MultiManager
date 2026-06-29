@@ -17,3 +17,5 @@ gui/src/multi-control/
 gui/src/proxy/
 gui/src/typing/
 tmp/
+build/
+.mimocode/
