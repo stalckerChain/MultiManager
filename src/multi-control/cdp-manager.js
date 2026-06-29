@@ -410,8 +410,16 @@ class CdpManager {
 
   dispatchMouseEvent(profileId, type, params) {
     const session = this.sessions.get(profileId);
-    if (!session) return;
-    this._send(session, 'Input.dispatchMouseEvent', { type, ...params });
+    if (!session) {
+      logger.warn({ profileId, type }, 'CDP: dispatchMouseEvent — no session');
+      return;
+    }
+    const cdpParams = { type, ...params };
+    if (type === 'mousePressed' || type === 'mouseReleased') {
+      if (!cdpParams.clickCount || cdpParams.clickCount < 1) cdpParams.clickCount = 1;
+    }
+    logger.info({ profileId, type, x: params.x, y: params.y, button: params.button, clickCount: cdpParams.clickCount }, 'CDP: dispatchMouseEvent (fallback)');
+    this._send(session, 'Input.dispatchMouseEvent', cdpParams);
   }
 
   dispatchKeyEvent(profileId, type, params) {
@@ -524,10 +532,21 @@ class CdpManager {
 
   dispatchMouseEventToSession(profileId, sessionId, type, params) {
     const bc = this.browserConnections.get(profileId);
-    if (!bc) return;
+    if (!bc) {
+      logger.warn({ profileId }, 'CDP: dispatchMouseEventToSession — no browser connection');
+      return;
+    }
     const session = bc.targetSessions.values().find(s => s.sessionId === sessionId);
-    if (!session) return;
-    this._send(session, 'Input.dispatchMouseEvent', { type, ...params });
+    if (!session) {
+      logger.warn({ profileId, sessionId, type }, 'CDP: dispatchMouseEventToSession — session not found');
+      return;
+    }
+    const cdpParams = { type, ...params };
+    if (type === 'mousePressed' || type === 'mouseReleased') {
+      if (!cdpParams.clickCount || cdpParams.clickCount < 1) cdpParams.clickCount = 1;
+    }
+    logger.info({ profileId, sessionId: session.sessionId, type, x: params.x, y: params.y, button: params.button, clickCount: cdpParams.clickCount }, 'CDP: Input.dispatchMouseEvent');
+    this._send(session, 'Input.dispatchMouseEvent', cdpParams);
   }
 
   dispatchKeyEventToSession(profileId, sessionId, type, params) {

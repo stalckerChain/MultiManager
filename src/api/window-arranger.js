@@ -23,10 +23,10 @@ async function getScreenSize() {
       const match = stdout.match(/(\d+)x(\d+)/);
       return match ? { width: parseInt(match[1]), height: parseInt(match[2]) } : { width: 1920, height: 1080 };
     } else if (platform === 'win32') {
-      const ps = `powershell -Command "[System.Windows.Forms.Screen]::PrimaryScreen.Bounds | Select-Object Width, Height | ConvertTo-Json"`;
+      const ps = `powershell -Command "[System.Windows.Forms.Screen]::PrimaryScreen.WorkingArea | Select-Object Width, Height, X, Y | ConvertTo-Json"`;
       const { stdout } = await execAsync(ps);
       const data = JSON.parse(stdout);
-      return { width: data.Width || 1920, height: data.Height || 1080 };
+      return { width: data.Width || 1920, height: data.Height || 1080, x: data.X || 0, y: data.Y || 0 };
     }
   } catch {}
 
@@ -333,12 +333,14 @@ router.post('/grid', async (req, res) => {
     const rows = Math.ceil(windows.length / cols);
     const cellWidth = Math.floor(screen.width / cols);
     const cellHeight = Math.floor(screen.height / rows);
+    const offsetX = screen.x || 0;
+    const offsetY = screen.y || 0;
 
     let arranged = 0;
     for (let i = 0; i < windows.length; i++) {
       const col = i % cols;
       const row = Math.floor(i / cols);
-      await moveWindow(windows[i].id, col * cellWidth, row * cellHeight, cellWidth, cellHeight);
+      await moveWindow(windows[i].id, offsetX + col * cellWidth, offsetY + row * cellHeight, cellWidth, cellHeight);
       arranged++;
     }
 
@@ -355,13 +357,16 @@ router.post('/cascade', async (req, res) => {
       return res.json({ arranged: 0 });
     }
 
+    const screen = await getScreenSize();
     const offset = 30;
-    const width = 1200;
-    const height = 800;
+    const width = Math.min(1200, screen.width - 200);
+    const height = Math.min(800, screen.height - 200);
+    const startX = (screen.x || 0) + 100;
+    const startY = (screen.y || 0) + 100;
 
     let arranged = 0;
     for (let i = 0; i < windows.length; i++) {
-      await moveWindow(windows[i].id, 100 + (i * offset), 100 + (i * offset), width, height);
+      await moveWindow(windows[i].id, startX + (i * offset), startY + (i * offset), width, height);
       arranged++;
     }
 
