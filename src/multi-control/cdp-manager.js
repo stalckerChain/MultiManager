@@ -463,13 +463,22 @@ class CdpManager {
 
   async createTab(profileId, url) {
     const bc = this.browserConnections.get(profileId);
-    if (!bc) return null;
+    if (!bc) {
+      logger.error({ profileId }, 'CDP: createTab failed — no browser connection');
+      return null;
+    }
+
+    logger.info({ profileId, url }, 'CDP: createTab called');
 
     return new Promise((resolve) => {
       const id = Math.floor(Math.random() * 1e9);
-      const timeout = setTimeout(() => resolve(null), 5000);
+      const timeout = setTimeout(() => {
+        logger.warn({ profileId, id }, 'CDP: createTarget timed out');
+        bc.ws.removeListener('message', handler);
+        resolve(null);
+      }, 5000);
 
-      const params = url ? { url } : {};
+      const params = { url: url || 'about:blank' };
       bc.ws.send(JSON.stringify({ id, method: 'Target.createTarget', params }));
 
       const handler = (raw) => {
