@@ -120,3 +120,6 @@ d1443b6 fix: tab sync — clicks survive Ctrl+W + slave tab activation on switch
 1. **Ctrl+W** — закрытие вкладок в slaves (Target.closeTarget) + unmap
 2. **Window positions sync** — GUI arranger должен отправлять позиции в `/window-position` после расстановки
 3. **Кроссплатформенность** — заменить PowerShell window arranger
+
+## Исправлено в этой сессии (2026-06-30, продолжение)
+1. **Ctrl+T fix** — переделана обработка Ctrl+T: вместо `letMasterHandle` + `onNewTab` (который не работал из-за отсутствия `Target.attachedToTarget` в антидетект-браузере), теперь напрямую создаём вкладки через CDP `Target.createTarget` в master и всех slaves, с немедленным маппингом (`controller.mapTab`)

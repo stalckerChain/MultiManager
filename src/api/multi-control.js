@@ -259,8 +259,27 @@ router.post('/os-keyboard', async (req, res) => {
     const key = (event.key || '').toLowerCase();
 
     if (key === 't') {
-      logger.info('OS-KEYBOARD: Ctrl+T detected — letting master handle natively, onNewTab will sync');
-      return res.json({ ok: true, action: 'letMasterHandle' });
+      logger.info('OS-KEYBOARD: Ctrl+T detected — creating tabs in master and slaves via CDP');
+      try {
+        const masterTargetId = await cdpManager.createTab(controller.masterId);
+        if (masterTargetId) {
+          logger.info({ masterTargetId }, 'OS-KEYBOARD: created new tab in master');
+          for (const [slaveId] of controller.slaves) {
+            try {
+              const slaveTargetId = await cdpManager.createTab(slaveId);
+              if (slaveTargetId) {
+                controller.mapTab(masterTargetId, slaveId, slaveTargetId);
+                logger.info({ slaveId, slaveTargetId }, 'OS-KEYBOARD: created and mapped tab in slave');
+              }
+            } catch (err) {
+              logger.error({ slaveId, error: err.message }, 'OS-KEYBOARD: failed to create tab in slave');
+            }
+          }
+        }
+      } catch (err) {
+        logger.error({ error: err.message }, 'OS-KEYBOARD: failed to create tab in master');
+      }
+      return res.json({ ok: true, action: 'createTab' });
     }
 
     if (key === 'w') {
