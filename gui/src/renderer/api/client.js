@@ -31,7 +31,11 @@ client.interceptors.response.use(
   (error) => {
     const message = error.response?.data?.error || error.message;
     const code = error.response?.data?.code || 'ERR_UNKNOWN';
-    return Promise.reject({ message, code, status: error.response?.status });
+    const status = error.response?.status;
+    const err = new Error(message);
+    err.code = code;
+    err.status = status;
+    return Promise.reject(err);
   }
 );
 

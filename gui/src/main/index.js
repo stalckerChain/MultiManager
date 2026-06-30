@@ -219,5 +219,5 @@ process.on('uncaughtException', (err) => {
 });
 
 process.on('unhandledRejection', (reason) => {
-  log('ERROR', 'unhandledRejection:', reason);
+  log('ERROR', 'unhandledRejection:', reason?.message || reason);
 });

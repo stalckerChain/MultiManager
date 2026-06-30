@@ -164,4 +164,71 @@ describe('CdpManager', () => {
       expect(() => mgr.insertText('nonexistent', 'test')).not.toThrow();
     });
   });
+
+  describe('getPageTargets', () => {
+    it('возвращает [] если нет browser connection', async () => {
+      const result = await mgr.getPageTargets('nonexistent');
+      expect(result).toEqual([]);
+    });
+  });
+
+  describe('getActiveTargetId', () => {
+    it('возвращает null если нет browser connection', async () => {
+      const result = await mgr.getActiveTargetId('nonexistent');
+      expect(result).toBeNull();
+    });
+  });
+
+  describe('onTabActivated', () => {
+    it('инициализируется как null', () => {
+      expect(mgr.onTabActivated).toBeNull();
+    });
+
+    it('вызывается при Target.targetInfoChanged через _setupBrowserMessageHandler', () => {
+      const callback = vi.fn();
+      mgr.onTabActivated = callback;
+
+      const mockWs = { send: vi.fn(), on: vi.fn((event, h) => { if (event === 'message') handler = h; }), removeListener: vi.fn(), close: vi.fn() };
+      let handler;
+      mockWs.on = (event, h) => { if (event === 'message') handler = h; };
+
+      mgr.browserConnections.set('p1', { ws: mockWs, targetSessions: new Map() });
+      const resolveFn = vi.fn();
+      mgr._setupBrowserMessageHandler(mockWs, 'p1', true, resolveFn, vi.fn());
+
+      if (handler) {
+        handler(JSON.stringify({
+          method: 'Target.targetInfoChanged',
+          params: {
+            targetInfo: { targetId: 'tab-1', type: 'page', url: 'http://example.com' },
+          },
+        }));
+      }
+
+      expect(callback).toHaveBeenCalledWith('p1', 'tab-1');
+    });
+
+    it('не вызывает onTabActivated для не-page targetInfoChanged', () => {
+      const callback = vi.fn();
+      mgr.onTabActivated = callback;
+
+      const mockWs = { send: vi.fn(), on: vi.fn((event, h) => { if (event === 'message') handler = h; }), removeListener: vi.fn(), close: vi.fn() };
+      let handler;
+      mockWs.on = (event, h) => { if (event === 'message') handler = h; };
+
+      mgr.browserConnections.set('p1', { ws: mockWs, targetSessions: new Map() });
+      mgr._setupBrowserMessageHandler(mockWs, 'p1', true, vi.fn(), vi.fn());
+
+      if (handler) {
+        handler(JSON.stringify({
+          method: 'Target.targetInfoChanged',
+          params: {
+            targetInfo: { targetId: 'tab-1', type: 'service_worker', url: 'http://example.com' },
+          },
+        }));
+      }
+
+      expect(callback).not.toHaveBeenCalled();
+    });
+  });
 });

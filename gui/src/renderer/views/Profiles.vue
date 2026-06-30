@@ -280,8 +280,8 @@ async function bulkClean() {
 
 watch(() => appStore.initialized, (ready) => {
   if (ready) {
-    profilesStore.fetchAll();
-    syncStore.fetchStatus();
+    profilesStore.fetchAll().catch(() => {});
+    syncStore.fetchStatus().catch(() => {});
   }
 }, { immediate: true });
 </script>

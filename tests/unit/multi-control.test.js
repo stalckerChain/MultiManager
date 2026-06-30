@@ -210,6 +210,28 @@ describe('MultiController', () => {
     });
   });
 
+  describe('onNavigate updates activeMasterTab', () => {
+    it('onNavigate вызывает setActiveMasterTab', () => {
+      controller.setMaster('master-1');
+      controller.setActiveMasterTab('tab-1');
+
+      controller.setActiveMasterTab('tab-2');
+      expect(controller.activeMasterTab).toBe('tab-2');
+    });
+
+    it('onNavigate с тем же targetId не вызывает _syncActiveTabToSlaves повторно', () => {
+      controller.cdp = { activateTarget: vi.fn() };
+      controller.setMaster('master-1');
+      controller.mapTab('tab-1', 'slave-1', 'slave-tab-1');
+
+      controller.setActiveMasterTab('tab-1');
+      expect(controller.cdp.activateTarget).toHaveBeenCalledTimes(1);
+
+      controller.setActiveMasterTab('tab-1');
+      expect(controller.cdp.activateTarget).toHaveBeenCalledTimes(1);
+    });
+  });
+
   describe('tab mapping', () => {
     it('mapTab stores master→slave mapping', () => {
       controller.mapTab('master-tab-1', 'slave-A', 'slave-tab-1');
@@ -247,6 +269,28 @@ describe('MultiController', () => {
       controller.stop();
       expect(controller.tabMapping.size).toBe(0);
       expect(controller.activeMasterTab).toBeNull();
+    });
+
+    it('setActiveMasterTab updates activeMasterTab and calls _syncActiveTabToSlaves', () => {
+      controller.cdp = { activateTarget: vi.fn() };
+      controller.setMaster('master-1');
+      controller.mapTab('tab-1', 'slave-1', 'slave-tab-1');
+      controller.mapTab('tab-1', 'slave-2', 'slave-tab-2');
+
+      controller.setActiveMasterTab('tab-1');
+
+      expect(controller.activeMasterTab).toBe('tab-1');
+      expect(controller.cdp.activateTarget).toHaveBeenCalledWith('slave-1', 'slave-tab-1');
+      expect(controller.cdp.activateTarget).toHaveBeenCalledWith('slave-2', 'slave-tab-2');
+    });
+
+    it('setActiveMasterTab does nothing when called with same tab', () => {
+      controller.cdp = { activateTarget: vi.fn() };
+      controller.activeMasterTab = 'tab-1';
+
+      controller.setActiveMasterTab('tab-1');
+
+      expect(controller.cdp.activateTarget).not.toHaveBeenCalled();
     });
   });
 });

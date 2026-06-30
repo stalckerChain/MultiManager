@@ -505,7 +505,16 @@ Authorization: Bearer <token>
 
 ### POST /api/multi-control/os-keyboard
 
-Получить событие клавиатуры от OS-level hook (Electron main process). Используется внутренне для синхронизации browser shortcuts (Ctrl+L, Ctrl+T и т.д.).
+Получить событие клавиатуры от OS-level hook (Electron main process, WH_KEYBOARD_LL C++ addon). 
+
+**Перехватывает ВСЕ клавиши на уровне ОС**, включая:
+- Browser shortcuts (Ctrl+T, Ctrl+W, etc.)
+- Enter в адресной строке
+- Обычные символы при вводе в любом приложении
+
+Это единственный источник событий для ввода в browser chrome (адресная строка, tab bar), поскольку CDP SYNC_EVENT_SCRIPT ловит только DOM-события.
+
+> **Double Dispatch:** При вводе в DOM-элементе страницы (textarea, input), клавиша отправляется в slave дважды — один раз через CDP SYNC_EVENT_SCRIPT и второй раз через этот endpoint.
 
 **Тело запроса:**
 ```json

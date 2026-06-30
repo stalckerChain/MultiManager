@@ -11,6 +11,9 @@ export const useProfilesStore = defineStore('profiles', () => {
     try {
       const { data } = await client.get('/api/profiles');
       profiles.value = data;
+    } catch (err) {
+      profiles.value = [];
+      console.error('[Profiles] fetchAll failed:', err.message || err);
     } finally {
       loading.value = false;
     }

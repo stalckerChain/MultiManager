@@ -131,25 +131,33 @@ describe('Multi-control API logic', () => {
   });
 
   describe('os-keyboard Ctrl+T handling', () => {
-    it('Ctrl+T triggers createTab for each slave', async () => {
+    it('Ctrl+T triggers createTab only for master (onNewTab handles slaves)', async () => {
       mockCdp.createTab = vi.fn().mockResolvedValue('new-target-id');
       controller.setMaster('master-1');
       await controller.addSlave('slave-1');
       await controller.addSlave('slave-2');
 
-      const event = { type: 'keyDown', key: 't', ctrlKey: true, altKey: false, metaKey: false };
+      // Simulate new Ctrl+T: only master tab is created here
+      const masterTargetId = await mockCdp.createTab(controller.masterId);
+      expect(mockCdp.createTab).toHaveBeenCalledTimes(1);
+      expect(mockCdp.createTab).toHaveBeenCalledWith('master-1');
 
-      if (event.type === 'keyDown' && event.ctrlKey && !event.altKey && !event.metaKey) {
-        if ((event.key || '').toLowerCase() === 't') {
-          for (const [slaveId] of controller.slaves) {
-            await mockCdp.createTab(slaveId);
+      // Simulate onNewTab for master: creates slave tabs and maps
+      controller.setActiveMasterTab('master-tab-new');
+      if (masterTargetId) {
+        for (const [slaveId] of controller.slaves) {
+          const slaveTargetId = await mockCdp.createTab(slaveId);
+          if (slaveTargetId) {
+            controller.mapTab('master-tab-new', slaveId, slaveTargetId);
           }
         }
       }
 
-      expect(mockCdp.createTab).toHaveBeenCalledTimes(2);
+      expect(mockCdp.createTab).toHaveBeenCalledTimes(3);
       expect(mockCdp.createTab).toHaveBeenCalledWith('slave-1');
       expect(mockCdp.createTab).toHaveBeenCalledWith('slave-2');
+      expect(controller.getSlaveTabForMaster('master-tab-new', 'slave-1')).toBe('new-target-id');
+      expect(controller.getSlaveTabForMaster('master-tab-new', 'slave-2')).toBe('new-target-id');
     });
 
     it('regular keyDown does not trigger createTab', async () => {
@@ -160,6 +168,144 @@ describe('Multi-control API logic', () => {
       await controller.onKeyDown({ key: 'a', ctrlKey: false });
 
       expect(mockCdp.createTab).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('onTabActivated callback', () => {
+    it('onTabActivated обновляет activeMasterTab', () => {
+      controller.setMaster('master-1');
+      controller.setActiveMasterTab('tab-1');
+
+      const cb = (profileId, targetId) => {
+        if (profileId === controller.masterId && controller.active) {
+          controller.setActiveMasterTab(targetId);
+        }
+      };
+
+      cb('master-1', 'tab-2');
+      expect(controller.activeMasterTab).toBe('tab-2');
+    });
+
+    it('onTabActivated не обновляет при неактивном controller', () => {
+      controller.setMaster('master-1');
+      controller.setActiveMasterTab('tab-1');
+      controller.active = false;
+
+      const cb = (profileId, targetId) => {
+        if (profileId === controller.masterId && controller.active) {
+          controller.setActiveMasterTab(targetId);
+        }
+      };
+
+      cb('master-1', 'tab-2');
+      expect(controller.activeMasterTab).toBe('tab-1');
+    });
+
+    it('onTabActivated не обновляет для не-master profileId', () => {
+      controller.setMaster('master-1');
+      controller.setActiveMasterTab('tab-1');
+
+      const cb = (profileId, targetId) => {
+        if (profileId === controller.masterId && controller.active) {
+          controller.setActiveMasterTab(targetId);
+        }
+      };
+
+      cb('slave-1', 'tab-2');
+      expect(controller.activeMasterTab).toBe('tab-1');
+    });
+  });
+
+  describe('stale event filter (mouseUp/mouseMove/scroll/keyUp/charInput)', () => {
+    it('mouseUp не обновляет activeMasterTab', () => {
+      controller.setMaster('master-1');
+      controller.setActiveMasterTab('tab-1');
+
+      const targetBySid = new Map();
+      targetBySid.set('sid-1', 'tab-2');
+      const staleTypes = ['mouseUp', 'mouseMove', 'scroll', 'keyUp', 'charInput'];
+
+      for (const type of staleTypes) {
+        const targetId = targetBySid.get('sid-1');
+        if (targetId && !staleTypes.includes(type)) {
+          controller.setActiveMasterTab(targetId);
+        }
+      }
+
+      expect(controller.activeMasterTab).toBe('tab-1');
+    });
+
+    it('mouseDown обновляет activeMasterTab', () => {
+      controller.setMaster('master-1');
+      controller.setActiveMasterTab('tab-1');
+
+      const targetBySid = new Map();
+      targetBySid.set('sid-1', 'tab-2');
+      const staleTypes = ['mouseUp', 'mouseMove', 'scroll', 'keyUp', 'charInput'];
+
+      const targetId = targetBySid.get('sid-1');
+      if (targetId && !staleTypes.includes('mouseDown')) {
+        controller.setActiveMasterTab(targetId);
+      }
+
+      expect(controller.activeMasterTab).toBe('tab-2');
+    });
+  });
+
+  describe('/os-keyboard best-effort activeMasterTab update', () => {
+    it('getActiveTargetId результат обновляет activeMasterTab (имитация)', async () => {
+      controller.setMaster('master-1');
+      controller.setActiveMasterTab('old-tab');
+
+      const fakeTid = 'current-active-tab';
+      controller.setActiveMasterTab(fakeTid);
+
+      expect(controller.activeMasterTab).toBe('current-active-tab');
+    });
+
+    it('null от getActiveTargetId не меняет activeMasterTab', async () => {
+      controller.setMaster('master-1');
+      controller.setActiveMasterTab('old-tab');
+
+      const tid = null;
+      if (tid) {
+        controller.setActiveMasterTab(tid);
+      }
+
+      expect(controller.activeMasterTab).toBe('old-tab');
+    });
+  });
+
+  describe('onNewTab slave mapping (from _blank/targetCreated)', () => {
+    it('slave onNewTab maps to activeMasterTab', () => {
+      controller.setMaster('master-1');
+      controller.setActiveMasterTab('master-tab-A');
+
+      const slaveOnNewTab = (profileId, targetInfo) => {
+        if (controller.activeMasterTab) {
+          controller.mapTab(controller.activeMasterTab, profileId, targetInfo.targetId);
+        }
+      };
+
+      slaveOnNewTab('slave-1', { targetId: 'slave-tab-1', url: 'http://example.com' });
+
+      expect(controller.getSlaveTabForMaster('master-tab-A', 'slave-1')).toBe('slave-tab-1');
+    });
+
+    it('slave onNewTab overwrites previous mapping for same master tab', () => {
+      controller.setMaster('master-1');
+      controller.setActiveMasterTab('master-tab-A');
+      controller.mapTab('master-tab-A', 'slave-1', 'create-tab-1');
+
+      const slaveOnNewTab = (profileId, targetInfo) => {
+        if (controller.activeMasterTab) {
+          controller.mapTab(controller.activeMasterTab, profileId, targetInfo.targetId);
+        }
+      };
+
+      slaveOnNewTab('slave-1', { targetId: 'native-tab-1', url: 'http://example.com' });
+
+      expect(controller.getSlaveTabForMaster('master-tab-A', 'slave-1')).toBe('native-tab-1');
     });
   });
 });

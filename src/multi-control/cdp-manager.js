@@ -36,6 +36,7 @@ const SYNC_EVENT_SCRIPT = `
   }, true);
   document.addEventListener('keyup', function(e) { emit('keyUp', { key: e.key, code: e.code, windowsVirtualKeyCode: e.keyCode }); }, true);
   document.addEventListener('click', function(e) { emit('click', { x: e.pageX, y: e.pageY, button: e.button, clickCount: e.detail || 1 }); }, true);
+  document.addEventListener('visibilitychange', function() { if (!document.hidden) { emit('tabActivated', {}); } });
 })();
 `;
 
@@ -46,6 +47,7 @@ class CdpManager {
     this.onNavigate = null;
     this.onNewTab = null;
     this.onTabDestroyed = null;
+    this.onTabActivated = null;
 
     this.browserConnections = new Map();
     this.sessionBySid = new Map();
@@ -190,6 +192,11 @@ class CdpManager {
             this.sessions.set(profileId, newSession);
           }
 
+          if (!firstSessionResolved) {
+            firstSessionResolved = true;
+            resolve(newSession);
+          }
+
           if (enableInput) {
             this._enableInput(newSession);
           }
@@ -263,6 +270,34 @@ class CdpManager {
           }
         }
 
+        if (msg.method === 'Target.targetInfoChanged') {
+          const { targetInfo } = msg.params;
+          if (targetInfo.type === 'page' && this.onTabActivated) {
+            this.onTabActivated(profileId, targetInfo.targetId);
+          }
+        }
+
+        if (msg.method === 'Target.targetCreated') {
+          const { targetInfo } = msg.params;
+          if (targetInfo.type !== 'page') return;
+          const bc = this.browserConnections.get(profileId);
+          if (!bc) return;
+          if (bc.targetSessions.has(targetInfo.targetId)) return;
+
+          logger.info({
+            profileId,
+            targetId: targetInfo.targetId,
+            url: targetInfo.url,
+          }, 'CDP: TARGET CREATED — auto-attaching');
+
+          this._attachToTarget(ws, profileId, targetInfo.targetId, enableInput, (session) => {
+            if (this.onNewTab) {
+              this.onNewTab(profileId, targetInfo, session);
+            }
+          });
+          return;
+        }
+
         if (msg.method === 'Runtime.consoleAPICalled') {
           const consoleProfileId = this.sessionBySid.get(msg.sessionId);
           if (consoleProfileId && this.onEvent) {
@@ -310,13 +345,20 @@ class CdpManager {
             return;
           }
           const sessionId = msg.result.sessionId;
+
+          const bc = this.browserConnections.get(profileId);
+
+          if (this.sessionBySid.has(sessionId)) {
+            logger.info({ targetId, sessionId }, 'CDP: attachToTarget skipped — already attached via auto-attach');
+            return;
+          }
+
           const session = { ws, sessionId, targetId, profileId };
 
           this.sessionBySid.set(sessionId, profileId);
           this.targetBySid.set(sessionId, targetId);
           this.sessions.set(profileId, session);
 
-          const bc = this.browserConnections.get(profileId);
           if (bc) bc.targetSessions.set(targetId, session);
 
           if (enableInput) {
@@ -606,6 +648,48 @@ class CdpManager {
       params: { targetId },
     }));
     logger.info({ profileId, targetId }, 'CDP: activateTarget');
+  }
+
+  async getPageTargets(profileId) {
+    const bc = this.browserConnections.get(profileId);
+    if (!bc) return [];
+
+    return new Promise((resolve) => {
+      const id = Math.floor(Math.random() * 1e9);
+      const timeout = setTimeout(() => resolve([]), 3000);
+
+      bc.ws.send(JSON.stringify({ id, method: 'Target.getTargets' }));
+
+      const handler = (raw) => {
+        try {
+          const msg = JSON.parse(raw);
+          if (msg.id === id) {
+            clearTimeout(timeout);
+            bc.ws.removeListener('message', handler);
+            const targets = (msg.result?.targetInfos || []).filter(
+              t => t.type === 'page' && !t.url.startsWith('devtools://')
+            );
+            resolve(targets);
+          }
+        } catch {}
+      };
+      bc.ws.on('message', handler);
+    });
+  }
+
+  async getActiveTargetId(profileId) {
+    const targets = await this.getPageTargets(profileId);
+    if (targets.length === 0) return null;
+
+    const bc = this.browserConnections.get(profileId);
+    if (!bc) return targets[0].targetId;
+
+    for (const t of targets) {
+      if (bc.targetSessions.has(t.targetId)) {
+        return t.targetId;
+      }
+    }
+    return targets[0].targetId;
   }
 }
 
