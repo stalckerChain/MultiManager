@@ -10,6 +10,57 @@ const router = express.Router();
 
 controller.cdp = cdpManager;
 
+const pendingSync = new Set();
+
+async function syncNewMasterTab(masterTargetId) {
+  if (!controller.active || !controller.masterId) return;
+  if (pendingSync.has(masterTargetId)) return;
+  if (controller.tabMapping.has(masterTargetId)) {
+    if (masterTargetId !== controller.activeMasterTab) {
+      controller.setActiveMasterTab(masterTargetId);
+    }
+    return;
+  }
+
+  pendingSync.add(masterTargetId);
+  logger.info({ masterTargetId }, 'SYNC: discovered new master tab, creating slave tabs');
+  try {
+    for (const [slaveId] of controller.slaves) {
+      try {
+        const slaveTargetId = await cdpManager.createTab(slaveId);
+        if (slaveTargetId) {
+          controller.mapTab(masterTargetId, slaveId, slaveTargetId);
+          logger.info({ slaveId, slaveTargetId }, 'SYNC: created and mapped slave tab');
+        }
+      } catch (err) {
+        logger.error({ slaveId, error: err.message }, 'SYNC: failed to create slave tab');
+      }
+    }
+    controller.setActiveMasterTab(masterTargetId);
+    controller._syncActiveTabToSlaves(masterTargetId);
+  } finally {
+    pendingSync.delete(masterTargetId);
+  }
+}
+
+let discovering = false;
+
+async function discoverActiveTab() {
+  if (!controller.active || !controller.masterId || discovering) return;
+  discovering = true;
+  try {
+    const targets = await cdpManager.getPageTargets(controller.masterId);
+    const active = targets.find(t => t.attached) || targets[0];
+    if (active) {
+      await syncNewMasterTab(active.targetId);
+    }
+  } catch (err) {
+    logger.warn({ error: err.message }, 'DISCOVERY: getPageTargets failed');
+  } finally {
+    discovering = false;
+  }
+}
+
 function wireInputToController() {
   inputCapture.on('mouseMove', (event) => {
     if (!controller.active) return;
@@ -68,6 +119,35 @@ router.post('/start', async (req, res) => {
   try {
     cdpManager.onEvent = (profileId, event, sessionId) => {
       if (profileId === masterId && controller.active) {
+        if (event.type === 'tabActivated') {
+          return;
+        }
+
+        if (event.type === 'openTab' && event.url) {
+          logger.info({ url: event.url }, 'MULTI-CONTROL: _blank link detected, creating tabs via CDP');
+          cdpManager.createTab(masterId, event.url).then(async masterTargetId => {
+            if (masterTargetId) {
+              logger.info({ masterTargetId, url: event.url }, 'MULTI-CONTROL: created master tab for _blank link');
+              for (const [slaveId] of controller.slaves) {
+                try {
+                  const slaveTargetId = await cdpManager.createTab(slaveId, event.url);
+                  if (slaveTargetId) {
+                    controller.mapTab(masterTargetId, slaveId, slaveTargetId);
+                    logger.info({ slaveId, slaveTargetId }, 'MULTI-CONTROL: created slave tab for _blank link');
+                  }
+                } catch (err) {
+                  logger.error({ slaveId, error: err.message }, 'MULTI-CONTROL: failed to create slave tab for _blank link');
+                }
+              }
+              controller.setActiveMasterTab(masterTargetId);
+              controller._syncActiveTabToSlaves(masterTargetId);
+            }
+          }).catch(err => {
+            logger.error({ error: err.message, url: event.url }, 'MULTI-CONTROL: failed to create tab for _blank link');
+          });
+          return;
+        }
+
         const targetId = cdpManager.targetBySid.get(sessionId);
         if (targetId && !['mouseUp', 'mouseMove', 'scroll', 'keyUp', 'charInput'].includes(event.type)) {
           controller.setActiveMasterTab(targetId);
@@ -85,7 +165,7 @@ router.post('/start', async (req, res) => {
 
         for (const [slaveId] of controller.slaves) {
           try {
-            const slaveTargetId = await cdpManager.createTab(slaveId);
+            const slaveTargetId = await cdpManager.createTab(slaveId, targetInfo.url);
             if (slaveTargetId) {
               controller.mapTab(targetInfo.targetId, slaveId, slaveTargetId);
             }
@@ -170,7 +250,10 @@ router.post('/start', async (req, res) => {
     wireInputToController();
     inputCapture.start();
 
+    discoverActiveTab();
+    controller._discoveryTimer = setInterval(discoverActiveTab, 300);
     logger.info('MULTI-CONTROL: CDP input capture started for master');
+
     res.json({ status: 'active', masterId, mode: 'cdp' });
   } catch (err) {
     logger.error({ err: err.message }, 'Multi-control: failed to start');
@@ -179,6 +262,10 @@ router.post('/start', async (req, res) => {
 });
 
 router.post('/stop', async (req, res) => {
+  if (controller._discoveryTimer) {
+    clearInterval(controller._discoveryTimer);
+    controller._discoveryTimer = null;
+  }
   inputCapture.stop();
   cdpManager.onEvent = null;
   cdpManager.onNavigate = null;
@@ -286,6 +373,7 @@ router.post('/os-keyboard', async (req, res) => {
       try {
         const masterTargetId = await cdpManager.createTab(controller.masterId);
         if (masterTargetId) {
+          syncNewMasterTab(masterTargetId);
           logger.info({ masterTargetId }, 'OS-KEYBOARD: created master tab');
         }
       } catch (err) {

@@ -35,7 +35,15 @@ const SYNC_EVENT_SCRIPT = `
     }
   }, true);
   document.addEventListener('keyup', function(e) { emit('keyUp', { key: e.key, code: e.code, windowsVirtualKeyCode: e.keyCode }); }, true);
-  document.addEventListener('click', function(e) { emit('click', { x: e.pageX, y: e.pageY, button: e.button, clickCount: e.detail || 1 }); }, true);
+  document.addEventListener('click', function(e) {
+    var el = e.target;
+    while (el && el.tagName !== 'A') el = el.parentElement;
+    if (el && el.tagName === 'A' && (el.target === '_blank' || e.ctrlKey || e.metaKey || e.button === 1)) {
+      e.preventDefault();
+      emit('openTab', { url: el.href });
+    }
+    emit('click', { x: e.pageX, y: e.pageY, button: e.button, clickCount: e.detail || 1 });
+  }, true);
   document.addEventListener('visibilitychange', function() { if (!document.hidden) { emit('tabActivated', {}); } });
 })();
 `;
