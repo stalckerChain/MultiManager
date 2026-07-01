@@ -775,6 +775,37 @@ Authorization: Bearer <token>
 
 ---
 
+## Генератор отпечатков (Fingerprint)
+
+### POST /api/fingerprint/generate
+
+Сгенерировать случайный отпечаток для указанной платформы. Не создаёт профиль.
+
+**Тело запроса:**
+```json
+{
+  "platform": "macos"
+}
+```
+
+**Обязательные поля:** `platform` (windows | macos | linux)
+
+**Ответ (200):**
+```json
+{
+  "platform": "macos",
+  "user_agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7)...",
+  "screen_resolution": "2560x1600",
+  "hardware_cores": 10,
+  "hardware_memory": 16,
+  "color_depth": 24,
+  "webgl_renderer": "Apple GPU",
+  "fingerprint_seed": "a1b2c3d4-..."
+}
+```
+
+---
+
 ## Статусы профиля
 
 | Статус | Описание |

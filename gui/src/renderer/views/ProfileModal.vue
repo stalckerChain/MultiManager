@@ -106,8 +106,7 @@ function tryParse(json) {
 }
 
 async function generateFingerprint() {
-  const { data } = await client.post('/api/profiles', {
-    name: form.name || 'Generated',
+  const { data } = await client.post('/api/fingerprint/generate', {
     platform: form.platform,
   });
   form.user_agent = data.user_agent;

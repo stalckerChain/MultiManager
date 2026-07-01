@@ -59,12 +59,22 @@ router.put('/:id', (req, res) => {
     return res.status(404).json({ error: 'Профиль не найден' });
   }
 
-  const { name, proxy_id, extensions, tags, notes } = req.body;
+  const { name, proxy_id, platform, extensions, tags, notes } = req.body;
   
+  const fingerprint = platform && platform !== profile.platform
+    ? generateFingerprint(platform)
+    : null;
+
   db.prepare(`
     UPDATE profiles 
     SET name = COALESCE(?, name),
         proxy_id = ?,
+        platform = COALESCE(?, platform),
+        user_agent = COALESCE(?, user_agent),
+        screen_resolution = COALESCE(?, screen_resolution),
+        hardware_cores = COALESCE(?, hardware_cores),
+        hardware_memory = COALESCE(?, hardware_memory),
+        fingerprint_seed = COALESCE(?, fingerprint_seed),
         extensions = COALESCE(?, extensions),
         tags = COALESCE(?, tags),
         notes = COALESCE(?, notes)
@@ -72,6 +82,12 @@ router.put('/:id', (req, res) => {
   `).run(
     name || null,
     proxy_id !== undefined ? proxy_id : profile.proxy_id,
+    platform || null,
+    fingerprint ? fingerprint.user_agent : null,
+    fingerprint ? fingerprint.screen_resolution : null,
+    fingerprint ? fingerprint.hardware_cores : null,
+    fingerprint ? fingerprint.hardware_memory : null,
+    fingerprint ? fingerprint.fingerprint_seed : null,
     extensions ? JSON.stringify(extensions) : null,
     tags ? JSON.stringify(tags) : null,
     notes || null,

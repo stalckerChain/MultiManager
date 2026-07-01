@@ -671,6 +671,37 @@ Focus a specific window.
 
 ---
 
+## Fingerprint Generator
+
+### POST /api/fingerprint/generate
+
+Generate a random fingerprint for the specified platform. Does not create a profile.
+
+**Request Body:**
+```json
+{
+  "platform": "macos"
+}
+```
+
+**Required Fields:** `platform` (windows | macos | linux)
+
+**Response (200):**
+```json
+{
+  "platform": "macos",
+  "user_agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7)...",
+  "screen_resolution": "2560x1600",
+  "hardware_cores": 10,
+  "hardware_memory": 16,
+  "color_depth": 24,
+  "webgl_renderer": "Apple GPU",
+  "fingerprint_seed": "a1b2c3d4-..."
+}
+```
+
+---
+
 ## Profile Statuses
 
 | Status | Description |

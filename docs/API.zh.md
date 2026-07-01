@@ -671,6 +671,37 @@ Authorization: Bearer <token>
 
 ---
 
+## 指纹生成器
+
+### POST /api/fingerprint/generate
+
+为指定平台生成随机指纹。不会创建配置文件。
+
+**请求体：**
+```json
+{
+  "platform": "macos"
+}
+```
+
+**必填字段：** `platform`（windows | macos | linux）
+
+**响应 (200)：**
+```json
+{
+  "platform": "macos",
+  "user_agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7)...",
+  "screen_resolution": "2560x1600",
+  "hardware_cores": 10,
+  "hardware_memory": 16,
+  "color_depth": 24,
+  "webgl_renderer": "Apple GPU",
+  "fingerprint_seed": "a1b2c3d4-..."
+}
+```
+
+---
+
 ## 配置文件状态
 
 | 状态 | 描述 |

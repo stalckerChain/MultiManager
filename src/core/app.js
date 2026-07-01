@@ -9,6 +9,7 @@ const multiControlRouter = require('../api/multi-control');
 const windowArrangerRouter = require('../api/window-arranger');
 const extensionsRouter = require('../api/extensions');
 const logsRouter = require('../api/logs');
+const fingerprintRouter = require('../api/fingerprint');
 const { setupWebSocket } = require('./websocket');
 
 const app = express();
@@ -28,6 +29,7 @@ app.use('/api/multi-control', multiControlRouter);
 app.use('/api/window-arranger', windowArrangerRouter);
 app.use('/api/extensions', extensionsRouter);
 app.use('/api/logs', logsRouter);
+app.use('/api/fingerprint', fingerprintRouter);
 
 app.use((err, req, res, next) => {
   logger.error({ err: err.message, stack: err.stack }, 'Unhandled server error');
