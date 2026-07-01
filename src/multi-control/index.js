@@ -190,6 +190,7 @@ class MultiController {
 
   async onKeyDown(params) {
     if (!this.active || !this.cdp) return;
+    if (params.ctrlKey && ['t', 'n', 'w'].includes((params.key || '').toLowerCase())) return;
     for (const [id] of this.slaves) {
       try {
         const session = this._getSlaveSession(id);

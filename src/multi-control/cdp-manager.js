@@ -34,8 +34,9 @@ const SYNC_EVENT_SCRIPT = `
     if (e.key.length === 1 && !e.ctrlKey && !e.metaKey && !e.altKey) {
       emit('charInput', { text: e.key });
     }
-    // Блокируем браузерные шорткаты (проверяем e.code — он не зависит от раскладки)
-    if (e.ctrlKey && (e.code === 'KeyT' || e.code === 'KeyN' || e.code === 'KeyW')) {
+    // Блокируем Ctrl+N (новое окно) и Ctrl+W (закрыть вкладку) — они не поддерживаются
+    // Ctrl+T НЕ блокируем: пусть браузер открывает вкладку нативно, discoverActiveTab подхватит
+    if (e.ctrlKey && (e.code === 'KeyN' || e.code === 'KeyW')) {
       e.preventDefault();
     }
   }, true);

@@ -253,7 +253,7 @@ if (event.type === 'keyDown' && event.key === 'Enter') {
 
 ## Версия
 
-Текущая: v0.9.2 (HTTP /json polling + manual attach + native slave tab detection)
+Текущая: v0.9.5 (HTTP /json polling + native browser Ctrl+T)
 
 ## История версий
 
@@ -308,6 +308,34 @@ if (event.type === 'keyDown' && event.key === 'Enter') {
 | Файл | Изменение |
 |------|-----------|
 | `src/multi-control/cdp-manager.js` | SYNC_EVENT_SCRIPT: `e.preventDefault()` для Ctrl+T/Ctrl+N/Ctrl+W в keydown handler'е. Событие уходит в Node.js, но браузер не создаёт нативный таб |
+| `docs/MULTI-CONTROL.md` | Обновлена версия |
+
+### v0.9.5 (2026-07-02) — Eliminate duplicate tab on Ctrl+T (CDP createTab → native browser)
+
+**Проблема (v0.9.3+v0.9.4 не решили):** При Ctrl+T создавалось 2 таба в каждом окне:
+1. CDP `createTab('about:blank')` — от обработчика `/os-keyboard`
+2. Нативный `chrome://newtab/` — физический Ctrl+T дошёл до браузера (антидетект-браузер игнорирует `e.preventDefault()`)
+
+**Корень:** Антидетект-браузер не блокирует Ctrl+T через `e.preventDefault()` (вероятно, перехватывает шорткат на уровне browser chrome). Поэтому каждый Ctrl+T порождал две синхронизации для разных master targetId.
+
+**Исправление (стратегия меняется):**
+
+| Файл | Изменение |
+|------|-----------|
+| `src/api/multi-control.js` | `/os-keyboard` Ctrl+T больше не вызывает `cdpManager.createTab`. Позволяем браузеру открыть таб нативно, `discoverActiveTab` (HTTP polling) подхватывает и синхронизирует |
+| `src/multi-control/index.js` | `onKeyDown` фильтрует Ctrl+T/Ctrl+N/Ctrl+W — не диспатчит их в слейвы (предотвращает побочные эффекты) |
+| `src/multi-control/cdp-manager.js` | SYNC_EVENT_SCRIPT: удалён `e.preventDefault()` для `KeyT` (теперь НЕ блокируем нативный Ctrl+T), оставлен для `KeyN` и `KeyW` |
+| `docs/MULTI-CONTROL.md` | Обновлена версия |
+
+### v0.9.4 (2026-07-01) — Fix preventDefault for non-Latin keyboard layouts
+
+**Проблема:** `e.key` зависит от раскладки клавиатуры. На русской раскладке `e.key='т'` для физической клавиши T, из-за чего `e.preventDefault()` не срабатывал и браузер открывал нативный таб.
+
+**Исправление:**
+
+| Файл | Изменение |
+|------|-----------|
+| `src/multi-control/cdp-manager.js` | Заменён `e.key` на `e.code` (`KeyT`/`KeyN`/`KeyW`) — не зависит от раскладки |
 | `docs/MULTI-CONTROL.md` | Обновлена версия |
 
 ### v0.8.0 (2026-06-30) — Стабильная синхронизация activeMasterTab
