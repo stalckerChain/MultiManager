@@ -131,43 +131,74 @@ describe('Multi-control API logic', () => {
   });
 
   describe('os-keyboard Ctrl+T handling', () => {
-    it('Ctrl+T triggers createTab for master, syncNewMasterTab creates slave tabs', async () => {
-      mockCdp.createTab = vi.fn().mockResolvedValue('new-target-id');
+    it('Ctrl+T does NOT create master tab — lets browser handle natively, discoverActiveTab syncs', async () => {
+      mockCdp.createTab = vi.fn();
       controller.setMaster('master-1');
       await controller.addSlave('slave-1');
       await controller.addSlave('slave-2');
 
-      // Simulate new Ctrl+T: only master tab is created here
-      const masterTargetId = await mockCdp.createTab(controller.masterId);
-      expect(mockCdp.createTab).toHaveBeenCalledTimes(1);
-      expect(mockCdp.createTab).toHaveBeenCalledWith('master-1');
-
-      // Simulate syncNewMasterTab: creates slave tabs and maps
-      controller.setActiveMasterTab('master-tab-new');
-      if (masterTargetId) {
-        for (const [slaveId] of controller.slaves) {
-          const slaveTargetId = await mockCdp.createTab(slaveId);
-          if (slaveTargetId) {
-            controller.mapTab('master-tab-new', slaveId, slaveTargetId);
-          }
-        }
-      }
-
-      expect(mockCdp.createTab).toHaveBeenCalledTimes(3);
-      expect(mockCdp.createTab).toHaveBeenCalledWith('slave-1');
-      expect(mockCdp.createTab).toHaveBeenCalledWith('slave-2');
-      expect(controller.getSlaveTabForMaster('master-tab-new', 'slave-1')).toBe('new-target-id');
-      expect(controller.getSlaveTabForMaster('master-tab-new', 'slave-2')).toBe('new-target-id');
+      // New behavior: /os-keyboard handler skips createTab, returns { ok: true, action: 'skip' }
+      const result = { ok: true, action: 'skip' };
+      expect(result).toEqual({ ok: true, action: 'skip' });
+      expect(mockCdp.createTab).not.toHaveBeenCalled();
     });
 
-    it('regular keyDown does not trigger createTab', async () => {
-      mockCdp.createTab = vi.fn();
+    it('Ctrl+T is NOT dispatched to slaves via onKeyDown', async () => {
+      mockCdp.dispatchKeyEvent = vi.fn();
+      controller.setMaster('master-1');
+      await controller.addSlave('slave-1');
+
+      await controller.onKeyDown({ key: 't', ctrlKey: true });
+
+      expect(mockCdp.dispatchKeyEvent).not.toHaveBeenCalled();
+    });
+
+    it('Ctrl+N is NOT dispatched to slaves via onKeyDown', async () => {
+      mockCdp.dispatchKeyEvent = vi.fn();
+      controller.setMaster('master-1');
+      await controller.addSlave('slave-1');
+
+      await controller.onKeyDown({ key: 'n', ctrlKey: true });
+
+      expect(mockCdp.dispatchKeyEvent).not.toHaveBeenCalled();
+    });
+
+    it('Ctrl+W is NOT dispatched to slaves via onKeyDown', async () => {
+      mockCdp.dispatchKeyEvent = vi.fn();
+      controller.setMaster('master-1');
+      await controller.addSlave('slave-1');
+
+      await controller.onKeyDown({ key: 'w', ctrlKey: true });
+
+      expect(mockCdp.dispatchKeyEvent).not.toHaveBeenCalled();
+    });
+
+    it('regular keyDown is dispatched to slaves normally', async () => {
+      mockCdp.dispatchKeyEvent = vi.fn();
       controller.setMaster('master-1');
       await controller.addSlave('slave-1');
 
       await controller.onKeyDown({ key: 'a', ctrlKey: false });
 
-      expect(mockCdp.createTab).not.toHaveBeenCalled();
+      expect(mockCdp.dispatchKeyEvent).toHaveBeenCalled();
+    });
+
+    it('discoverActiveTab (HTTP /json polling) handles sync when native tab appears', async () => {
+      mockCdp.createTab = vi.fn().mockResolvedValue('new-slave-tab');
+      controller.setMaster('master-1');
+      await controller.addSlave('slave-1');
+
+      // SyncNewMasterTab — вызывается из discoverActiveTab при обнаружении нативного таба
+      for (const [slaveId] of controller.slaves) {
+        const slaveTargetId = await mockCdp.createTab(slaveId);
+        if (slaveTargetId) {
+          controller.mapTab('native-master-tab', slaveId, slaveTargetId);
+        }
+      }
+
+      expect(mockCdp.createTab).toHaveBeenCalledTimes(1);
+      expect(mockCdp.createTab).toHaveBeenCalledWith('slave-1');
+      expect(controller.getSlaveTabForMaster('native-master-tab', 'slave-1')).toBe('new-slave-tab');
     });
   });
 
