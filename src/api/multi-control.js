@@ -46,17 +46,37 @@ async function syncNewMasterTab(masterTargetId, masterTabUrl) {
       return;
     }
 
-    logger.info({ masterTargetId, url: masterTabUrl }, 'SYNC: discovered new master tab, creating slave tabs');
+    logger.info({ masterTargetId, url: masterTabUrl }, 'SYNC: discovered new master tab, syncing slaves');
     for (const [slaveId] of controller.slaves) {
       try {
-        const slaveTargetId = await cdpManager.createTab(slaveId, masterTabUrl);
-        if (slaveTargetId) {
-          await cdpManager.attachToExistingTarget(slaveId, slaveTargetId);
-          controller.mapTab(masterTargetId, slaveId, slaveTargetId);
-          logger.info({ slaveId, slaveTargetId }, 'SYNC: created and mapped slave tab');
+        // Сначала ищем нативный таб в слейве — мог открыться от диспатченного ивента.
+        // Делаем 2 попытки с паузой, т.к. браузер может не успеть открыть таб сразу.
+        let nativeTab = null;
+        for (let attempt = 0; attempt < 2; attempt++) {
+          const slaveTabs = await cdpManager.getHttpTabs(slaveId);
+          const slaveBc = cdpManager.browserConnections.get(slaveId);
+          const slaveKnown = slaveBc ? slaveBc.targetSessions : null;
+          nativeTab = slaveKnown
+            ? slaveTabs.find(t => t.type === 'page' && !slaveKnown.has(t.targetId))
+            : null;
+          if (nativeTab) break;
+          if (attempt === 0) await new Promise(r => setTimeout(r, 150));
+        }
+
+        if (nativeTab) {
+          await cdpManager.attachToExistingTarget(slaveId, nativeTab.targetId);
+          controller.mapTab(masterTargetId, slaveId, nativeTab.targetId);
+          logger.info({ slaveId, slaveTargetId: nativeTab.targetId }, 'SYNC: mapped existing native slave tab');
+        } else {
+          const slaveTargetId = await cdpManager.createTab(slaveId, masterTabUrl);
+          if (slaveTargetId) {
+            await cdpManager.attachToExistingTarget(slaveId, slaveTargetId);
+            controller.mapTab(masterTargetId, slaveId, slaveTargetId);
+            logger.info({ slaveId, slaveTargetId }, 'SYNC: created and mapped slave tab');
+          }
         }
       } catch (err) {
-        logger.error({ slaveId, error: err.message }, 'SYNC: failed to create slave tab');
+        logger.error({ slaveId, error: err.message }, 'SYNC: failed to sync slave tab');
       }
     }
     controller.setActiveMasterTab(masterTargetId);
