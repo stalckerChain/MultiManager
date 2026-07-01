@@ -253,7 +253,7 @@ if (event.type === 'keyDown' && event.key === 'Enter') {
 
 ## Версия
 
-Текущая: v0.9.5 (HTTP /json polling + native browser Ctrl+T)
+Текущая: v0.9.6 (HTTP /json polling + native browser Ctrl+T/W)
 
 ## История версий
 
@@ -308,6 +308,18 @@ if (event.type === 'keyDown' && event.key === 'Enter') {
 | Файл | Изменение |
 |------|-----------|
 | `src/multi-control/cdp-manager.js` | SYNC_EVENT_SCRIPT: `e.preventDefault()` для Ctrl+T/Ctrl+N/Ctrl+W в keydown handler'е. Событие уходит в Node.js, но браузер не создаёт нативный таб |
+| `docs/MULTI-CONTROL.md` | Обновлена версия |
+
+### v0.9.6 (2026-07-02) — Fix Ctrl+W close tab + close slave tabs on master tab destroy
+
+**Проблема:** Ctrl+W не работал — `e.preventDefault()` в sync script и `/os-keyboard` handler блокировали закрытие вкладки.
+
+**Исправление:**
+
+| Файл | Изменение |
+|------|-----------|
+| `src/multi-control/cdp-manager.js` | Убран `e.preventDefault()` для `KeyW` — браузер закрывает вкладку нативно. Добавлен метод `closeTarget(profileId, targetId)` для CDP `Target.closeTarget` |
+| `src/api/multi-control.js` | `onTabDestroyed` теперь закрывает соответствующие slave-табы через `closeTarget` при уничтожении master-таба (Ctrl+W или X) |
 | `docs/MULTI-CONTROL.md` | Обновлена версия |
 
 ### v0.9.5 (2026-07-02) — Eliminate duplicate tab on Ctrl+T (CDP createTab → native browser)

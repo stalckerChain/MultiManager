@@ -246,6 +246,13 @@ router.post('/start', async (req, res) => {
     cdpManager.onTabDestroyed = (profileId, targetId) => {
       if (!controller.active) return;
       if (profileId === masterId) {
+        const bySlave = controller.tabMapping.get(targetId);
+        if (bySlave) {
+          for (const [slaveId, slaveTargetId] of bySlave) {
+            cdpManager.closeTarget(slaveId, slaveTargetId);
+            logger.info({ slaveId, slaveTargetId, masterTargetId: targetId }, 'MULTI-CONTROL: closed slave tab on master tab destroy');
+          }
+        }
         controller.unmapTab(targetId);
       } else {
         controller._unmapBySlaveTargetId(targetId);
@@ -399,7 +406,7 @@ router.post('/os-keyboard', async (req, res) => {
     }
 
     if (key === 'w') {
-      logger.info('OS-KEYBOARD: Ctrl+W detected — skipping (close tab not supported)');
+      logger.info('OS-KEYBOARD: Ctrl+W detected, letting browser handle natively (onTabDestroyed will clean up)');
       return res.json({ ok: true, action: 'skip' });
     }
   }

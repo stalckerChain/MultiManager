@@ -34,9 +34,10 @@ const SYNC_EVENT_SCRIPT = `
     if (e.key.length === 1 && !e.ctrlKey && !e.metaKey && !e.altKey) {
       emit('charInput', { text: e.key });
     }
-    // Блокируем Ctrl+N (новое окно) и Ctrl+W (закрыть вкладку) — они не поддерживаются
-    // Ctrl+T НЕ блокируем: пусть браузер открывает вкладку нативно, discoverActiveTab подхватит
-    if (e.ctrlKey && (e.code === 'KeyN' || e.code === 'KeyW')) {
+    // Блокируем только Ctrl+N (новое окно) — не поддерживается
+    // Ctrl+T и Ctrl+W НЕ блокируем: пусть браузер обрабатывает нативно,
+    // discoverActiveTab / onTabDestroyed подхватят
+    if (e.ctrlKey && e.code === 'KeyN') {
       e.preventDefault();
     }
   }, true);
@@ -655,6 +656,18 @@ class CdpManager {
       params: { targetId },
     }));
     logger.info({ profileId, targetId }, 'CDP: activateTarget');
+  }
+
+  closeTarget(profileId, targetId) {
+    const bc = this.browserConnections.get(profileId);
+    if (!bc) return;
+    const id = Math.floor(Math.random() * 1e9);
+    bc.ws.send(JSON.stringify({
+      id,
+      method: 'Target.closeTarget',
+      params: { targetId },
+    }));
+    logger.info({ profileId, targetId }, 'CDP: closeTarget');
   }
 
   async getPageTargets(profileId) {
