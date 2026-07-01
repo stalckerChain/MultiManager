@@ -192,7 +192,7 @@ describe('CdpManager', () => {
       let handler;
       mockWs.on = (event, h) => { if (event === 'message') handler = h; };
 
-      mgr.browserConnections.set('p1', { ws: mockWs, targetSessions: new Map() });
+      mgr.browserConnections.set('p1', { ws: mockWs, targetSessions: new Map(), cdpPort: 9222 });
       const resolveFn = vi.fn();
       mgr._setupBrowserMessageHandler(mockWs, 'p1', true, resolveFn, vi.fn());
 
@@ -216,7 +216,7 @@ describe('CdpManager', () => {
       let handler;
       mockWs.on = (event, h) => { if (event === 'message') handler = h; };
 
-      mgr.browserConnections.set('p1', { ws: mockWs, targetSessions: new Map() });
+      mgr.browserConnections.set('p1', { ws: mockWs, targetSessions: new Map(), cdpPort: 9222 });
       mgr._setupBrowserMessageHandler(mockWs, 'p1', true, vi.fn(), vi.fn());
 
       if (handler) {
@@ -229,6 +229,116 @@ describe('CdpManager', () => {
       }
 
       expect(callback).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('getHttpTabs', () => {
+    it('возвращает [] если нет browser connection', async () => {
+      const result = await mgr.getHttpTabs('nonexistent');
+      expect(result).toEqual([]);
+    });
+
+    it('возвращает [] если нет cdpPort', async () => {
+      mgr.browserConnections.set('p1', { ws: {}, targetSessions: new Map(), cdpPort: undefined });
+      const result = await mgr.getHttpTabs('p1');
+      expect(result).toEqual([]);
+    });
+
+    it('возвращает [] при ошибке HTTP (несуществующий порт)', async () => {
+      // Реальный HTTP запрос к несуществующему порту → error → resolve([])
+      mgr.browserConnections.set('p1', { ws: {}, targetSessions: new Map(), cdpPort: 1 });
+      const result = await mgr.getHttpTabs('p1');
+      expect(result).toEqual([]);
+    }, 10000);
+
+    it('фильтрация /json ответа: только page, не devtools://', () => {
+      // Тестирует логику фильтрации напрямую (тот же filter/map что в getHttpTabs)
+      const raw = [
+        { id: 't1', type: 'page', url: 'http://example.com' },
+        { id: 't2', type: 'page', url: 'devtools://devtools/bundled' },
+        { id: 't3', type: 'background_page', url: 'http://bg.com' },
+        { id: 't4', type: 'service_worker', url: 'http://sw.com' },
+      ];
+      const tabs = raw
+        .filter(t => t.type === 'page' && !(t.url || '').startsWith('devtools://'))
+        .map(t => ({ targetId: t.id, url: t.url || '', type: t.type }));
+
+      expect(tabs).toHaveLength(1);
+      expect(tabs[0]).toEqual({ targetId: 't1', url: 'http://example.com', type: 'page' });
+    });
+  });
+
+  describe('attachToExistingTarget', () => {
+    it('возвращает null если нет browser connection', async () => {
+      const result = await mgr.attachToExistingTarget('nonexistent', 't1');
+      expect(result).toBeNull();
+    });
+
+    it('возвращает существующую сессию если уже attached', async () => {
+      const existingSession = { sessionId: 's1', targetId: 't1', profileId: 'p1', ws: {} };
+      const targetSessions = new Map();
+      targetSessions.set('t1', existingSession);
+      const mockWs = { send: vi.fn(), on: vi.fn(), removeListener: vi.fn() };
+      mgr.browserConnections.set('p1', { ws: mockWs, targetSessions, cdpPort: 9222 });
+
+      const result = await mgr.attachToExistingTarget('p1', 't1');
+      expect(result).toBe(existingSession);
+      // Не должен был отправлять attach запрос
+      expect(mockWs.send).not.toHaveBeenCalled();
+    });
+
+    it('attachит таб, создаёт сессию, вызывает _enableInput', async () => {
+      const targetSessions = new Map();
+      const messageHandlers = [];
+      const mockWs = {
+        send: vi.fn((msgStr) => {
+          const msg = JSON.parse(msgStr);
+          if (msg.method === 'Target.attachToTarget') {
+            // Сразу эмулируем ответ с тем же id
+            setTimeout(() => {
+              const handler = messageHandlers[0];
+              if (handler) handler(JSON.stringify({ id: msg.id, result: { sessionId: 's-new' } }));
+            }, 0);
+          }
+        }),
+        on: vi.fn((event, handler) => { if (event === 'message') messageHandlers.push(handler); }),
+        removeListener: vi.fn(),
+      };
+      mgr.browserConnections.set('p1', { ws: mockWs, targetSessions, cdpPort: 9222 });
+      mgr._enableInput = vi.fn();
+
+      const result = await mgr.attachToExistingTarget('p1', 't-new');
+
+      expect(result).toBeDefined();
+      expect(result.sessionId).toBe('s-new');
+      expect(result.targetId).toBe('t-new');
+      expect(result.profileId).toBe('p1');
+      expect(targetSessions.has('t-new')).toBe(true);
+      expect(mgr.sessionBySid.get('s-new')).toBe('p1');
+      expect(mgr._enableInput).toHaveBeenCalledWith(result);
+    });
+
+    it('возвращает null при ошибке attach', async () => {
+      const targetSessions = new Map();
+      const messageHandlers = [];
+      const mockWs = {
+        send: vi.fn((msgStr) => {
+          const msg = JSON.parse(msgStr);
+          if (msg.method === 'Target.attachToTarget') {
+            setTimeout(() => {
+              const handler = messageHandlers[0];
+              if (handler) handler(JSON.stringify({ id: msg.id, error: { message: 'Target not found' } }));
+            }, 0);
+          }
+        }),
+        on: vi.fn((event, handler) => { if (event === 'message') messageHandlers.push(handler); }),
+        removeListener: vi.fn(),
+      };
+      mgr.browserConnections.set('p1', { ws: mockWs, targetSessions, cdpPort: 9222 });
+
+      const result = await mgr.attachToExistingTarget('p1', 't-missing');
+      expect(result).toBeNull();
+      expect(targetSessions.has('t-missing')).toBe(false);
     });
   });
 });

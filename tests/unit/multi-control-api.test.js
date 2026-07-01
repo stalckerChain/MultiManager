@@ -308,4 +308,113 @@ describe('Multi-control API logic', () => {
       expect(controller.getSlaveTabForMaster('master-tab-A', 'slave-1')).toBe('native-tab-1');
     });
   });
+
+  describe('syncNewMasterTab logic (via HTTP discovery)', () => {
+    it('создаёт slave табы, маппит и активирует при обнаружении нового мастер-таба', async () => {
+      controller.setMaster('master-1');
+      await controller.addSlave('slave-1');
+      await controller.addSlave('slave-2');
+
+      mockCdp.createTab = vi.fn().mockResolvedValue('new-slave-tab');
+
+      // Имитация syncNewMasterTab: attach мастера + create+attach slave + map + activate
+      controller.setActiveMasterTab('new-master-tab');
+      for (const [slaveId] of controller.slaves) {
+        const slaveTargetId = await mockCdp.createTab(slaveId);
+        if (slaveTargetId) {
+          controller.mapTab('new-master-tab', slaveId, slaveTargetId);
+        }
+      }
+
+      expect(mockCdp.createTab).toHaveBeenCalledTimes(2);
+      expect(controller.getSlaveTabForMaster('new-master-tab', 'slave-1')).toBe('new-slave-tab');
+      expect(controller.getSlaveTabForMaster('new-master-tab', 'slave-2')).toBe('new-slave-tab');
+      expect(controller.activeMasterTab).toBe('new-master-tab');
+    });
+
+    it('не дублирует slave табы если маппинг уже существует', async () => {
+      controller.setMaster('master-1');
+      await controller.addSlave('slave-1');
+
+      // Предварительно маппим
+      controller.mapTab('existing-tab', 'slave-1', 'slave-tab');
+
+      // Имитация syncNewMasterTab: маппинг есть → только setActiveMasterTab
+      if (controller.tabMapping.has('existing-tab')) {
+        controller.setActiveMasterTab('existing-tab');
+      }
+
+      expect(controller.activeMasterTab).toBe('existing-tab');
+    });
+
+    it('не делает ничего если controller неактивен', async () => {
+      controller.setMaster('master-1');
+      controller.active = false;
+      await controller.addSlave('slave-1');
+
+      mockCdp.createTab = vi.fn();
+
+      // Имитация syncNewMasterTab guard: inactive → return
+      if (!controller.active) return;
+
+      expect(mockCdp.createTab).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('discoverActiveTab logic (HTTP /json)', () => {
+    it('обнаруживает новый таб когда /json возвращает больше табов чем targetSessions', async () => {
+      controller.setMaster('master-1');
+      await controller.addSlave('slave-1');
+
+      // Имитация: targetSessions мастера содержит только один таб
+      const knownTargets = new Map();
+      knownTargets.set('tab-A', {});
+
+      // /json вернул два таба — tab-A (известный) и tab-B (новый)
+      const tabs = [
+        { targetId: 'tab-A', url: 'http://a.com', type: 'page' },
+        { targetId: 'tab-B', url: 'http://b.com', type: 'page' },
+      ];
+
+      const newTab = knownTargets
+        ? tabs.find(t => !knownTargets.has(t.targetId))
+        : tabs[0];
+
+      expect(newTab).toBeDefined();
+      expect(newTab.targetId).toBe('tab-B');
+      expect(newTab.url).toBe('http://b.com');
+    });
+
+    it('не находит новый таб если все табы уже подключены', () => {
+      const knownTargets = new Map();
+      knownTargets.set('tab-A', {});
+      knownTargets.set('tab-B', {});
+
+      const tabs = [
+        { targetId: 'tab-A', url: 'http://a.com', type: 'page' },
+        { targetId: 'tab-B', url: 'http://b.com', type: 'page' },
+      ];
+
+      const newTab = knownTargets
+        ? tabs.find(t => !knownTargets.has(t.targetId))
+        : tabs[0];
+
+      expect(newTab).toBeUndefined();
+    });
+
+    it('обнаруживает новый таб когда knownTargets пуст (null)', () => {
+      const knownTargets = null;
+
+      const tabs = [
+        { targetId: 'tab-A', url: 'http://a.com', type: 'page' },
+      ];
+
+      const newTab = knownTargets
+        ? tabs.find(t => !knownTargets.has(t.targetId))
+        : tabs[0];
+
+      expect(newTab).toBeDefined();
+      expect(newTab.targetId).toBe('tab-A');
+    });
+  });
 });

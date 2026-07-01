@@ -1,4 +1,5 @@
 const WebSocket = require('ws');
+const http = require('http');
 const { logger } = require('../logger');
 
 const SYNC_EVENT_SCRIPT = `
@@ -36,12 +37,6 @@ const SYNC_EVENT_SCRIPT = `
   }, true);
   document.addEventListener('keyup', function(e) { emit('keyUp', { key: e.key, code: e.code, windowsVirtualKeyCode: e.keyCode }); }, true);
   document.addEventListener('click', function(e) {
-    var el = e.target;
-    while (el && el.tagName !== 'A') el = el.parentElement;
-    if (el && el.tagName === 'A' && (el.target === '_blank' || e.ctrlKey || e.metaKey || e.button === 1)) {
-      e.preventDefault();
-      emit('openTab', { url: el.href });
-    }
     emit('click', { x: e.pageX, y: e.pageY, button: e.button, clickCount: e.detail || 1 });
   }, true);
   document.addEventListener('visibilitychange', function() { if (!document.hidden) { emit('tabActivated', {}); } });
@@ -63,8 +58,6 @@ class CdpManager {
   }
 
   async _discoverWsUrl(cdpPort) {
-    const http = require('http');
-
     const versions = ['/json/version', '/json'];
     for (const path of versions) {
       try {
@@ -112,6 +105,7 @@ class CdpManager {
         this.browserConnections.set(profileId, {
           ws,
           targetSessions: new Map(),
+          cdpPort,
         });
 
         this._setupBrowserMessageHandler(ws, profileId, enableInput, resolve, reject);
@@ -698,6 +692,106 @@ class CdpManager {
       }
     }
     return targets[0].targetId;
+  }
+
+  /**
+   * Список табов через HTTP DevTools endpoint GET /json.
+   *
+   * В отличие от getPageTargets (через WS Target.getTargets), этот путь НЕ зависит
+   * от CDP-подписок и надёжно возвращает ВСЕ табы браузера, включая нативно открытые
+   * (_blank, адресная строка). Антидетект-браузер не шлёт Target.targetCreated для
+   * таких табов через WS, поэтому единственный надёжный источник — HTTP /json.
+   *
+   * @returns {Promise<Array<{targetId: string, url: string, type: string}>>}
+   */
+  async getHttpTabs(profileId) {
+    const bc = this.browserConnections.get(profileId);
+    const cdpPort = bc?.cdpPort;
+    if (!cdpPort) return [];
+
+    return new Promise((resolve) => {
+      const req = http.get(`http://127.0.0.1:${cdpPort}/json`, { timeout: 3000 }, (res) => {
+        let body = '';
+        res.on('data', (chunk) => { body += chunk; });
+        res.on('end', () => {
+          try {
+            const data = JSON.parse(body);
+            if (!Array.isArray(data)) return resolve([]);
+            const tabs = data
+              .filter(t => t.type === 'page' && !(t.url || '').startsWith('devtools://'))
+              .map(t => ({ targetId: t.id, url: t.url || '', type: t.type }));
+            resolve(tabs);
+          } catch {
+            resolve([]);
+          }
+        });
+      });
+      req.on('error', () => resolve([]));
+      req.on('timeout', () => { req.destroy(); resolve([]); });
+    });
+  }
+
+  /**
+   * Подключение (attach) к уже существующему табу, который был открыт нативно
+   * (_blank, адресная строка) или через createTab. Антидетект не шлёт
+   * Target.attachedToTarget, поэтому attach нужно вызвать вручную, иначе таб не
+   * попадёт в targetSessions и ввод (dispatchKeyEvent/insertText) на нём невозможен.
+   *
+   * @returns {Promise<object|null>} сессия или null при ошибке
+   */
+  async attachToExistingTarget(profileId, targetId) {
+    const bc = this.browserConnections.get(profileId);
+    if (!bc) {
+      logger.warn({ profileId, targetId }, 'CDP: attachToExistingTarget — no browser connection');
+      return null;
+    }
+    if (bc.targetSessions.has(targetId)) {
+      return bc.targetSessions.get(targetId);
+    }
+
+    return new Promise((resolve) => {
+      const attachId = Math.floor(Math.random() * 1e9);
+      const timeout = setTimeout(() => {
+        bc.ws.removeListener('message', handler);
+        logger.warn({ profileId, targetId }, 'CDP: attachToExistingTarget timed out');
+        resolve(null);
+      }, 5000);
+
+      bc.ws.send(JSON.stringify({
+        id: attachId,
+        method: 'Target.attachToTarget',
+        params: { targetId, flatten: true },
+      }));
+
+      const handler = (raw) => {
+        try {
+          const msg = JSON.parse(raw);
+          if (msg.id === attachId) {
+            clearTimeout(timeout);
+            bc.ws.removeListener('message', handler);
+            if (msg.error) {
+              logger.error({ profileId, targetId, error: msg.error.message }, 'CDP: attachToExistingTarget failed');
+              resolve(null);
+              return;
+            }
+            const sessionId = msg.result.sessionId;
+            if (!sessionId || this.sessionBySid.has(sessionId)) {
+              logger.info({ targetId, sessionId }, 'CDP: attachToExistingTarget — session exists, skipping');
+              resolve(bc.targetSessions.get(targetId) || null);
+              return;
+            }
+            const session = { ws: bc.ws, sessionId, targetId, profileId };
+            this.sessionBySid.set(sessionId, profileId);
+            this.targetBySid.set(sessionId, targetId);
+            bc.targetSessions.set(targetId, session);
+            this._enableInput(session);
+            logger.info({ profileId, targetId, sessionId }, 'CDP: attachToExistingTarget attached');
+            resolve(session);
+          }
+        } catch {}
+      };
+      bc.ws.on('message', handler);
+    });
   }
 }
 

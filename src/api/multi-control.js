@@ -11,10 +11,39 @@ const router = express.Router();
 controller.cdp = cdpManager;
 
 const pendingSync = new Set();
+const attachedMasterTabs = new Set();
 
-async function syncNewMasterTab(masterTargetId) {
+/**
+ * Синхронизация нового таба мастера в слейвы.
+ *
+ * Для каждого слейва: создаёт таб через CDP, немедленно attach'ит его (антидетект
+ * не шлёт Target.attachedToTarget), маппит и активирует. Также attach'ит таб в самом
+ * мастере и переводит activeMasterTab на него (вновь открытый таб = активный).
+ *
+ * @param {string} masterTargetId - targetId нового таба мастера
+ * @param {string} masterTabUrl - URL нового таба (для создания аналогичных в слейвах)
+ */
+async function syncNewMasterTab(masterTargetId, masterTabUrl) {
   if (!controller.active || !controller.masterId) return;
   if (pendingSync.has(masterTargetId)) return;
+
+  // Attach таб мастера (если ещё не подключён), чтобы на нём работал ввод
+  if (!attachedMasterTabs.has(masterTargetId)) {
+    pendingSync.add(masterTargetId);
+    try {
+      const masterBc = cdpManager.browserConnections.get(controller.masterId);
+      if (masterBc && !masterBc.targetSessions.has(masterTargetId)) {
+        await cdpManager.attachToExistingTarget(controller.masterId, masterTargetId);
+      }
+      attachedMasterTabs.add(masterTargetId);
+    } catch (err) {
+      logger.error({ masterTargetId, error: err.message }, 'SYNC: failed to attach master tab');
+    } finally {
+      pendingSync.delete(masterTargetId);
+    }
+  }
+
+  // Если маппинг уже есть (таб синхронизирован ранее) — только обновляем активный
   if (controller.tabMapping.has(masterTargetId)) {
     if (masterTargetId !== controller.activeMasterTab) {
       controller.setActiveMasterTab(masterTargetId);
@@ -23,12 +52,15 @@ async function syncNewMasterTab(masterTargetId) {
   }
 
   pendingSync.add(masterTargetId);
-  logger.info({ masterTargetId }, 'SYNC: discovered new master tab, creating slave tabs');
+  logger.info({ masterTargetId, url: masterTabUrl }, 'SYNC: discovered new master tab, creating slave tabs');
   try {
     for (const [slaveId] of controller.slaves) {
       try {
-        const slaveTargetId = await cdpManager.createTab(slaveId);
+        const slaveTargetId = await cdpManager.createTab(slaveId, masterTabUrl);
         if (slaveTargetId) {
+          // Немедленный attach: антидетект не пришлёт Target.attachedToTarget,
+          // поэтому таб не попадёт в targetSessions без ручного attach.
+          await cdpManager.attachToExistingTarget(slaveId, slaveTargetId);
           controller.mapTab(masterTargetId, slaveId, slaveTargetId);
           logger.info({ slaveId, slaveTargetId }, 'SYNC: created and mapped slave tab');
         }
@@ -45,17 +77,34 @@ async function syncNewMasterTab(masterTargetId) {
 
 let discovering = false;
 
+/**
+ * Обнаружение новых табов мастера через HTTP /json.
+ *
+ * Антидетект НЕ шлёт Target.targetCreated для нативно открытых табов через WS,
+ * поэтому единственный надёжный источник — HTTP DevTools endpoint. Сравниваем
+ * список табов из /json с уже подключёнными (targetSessions) мастера. Вновь
+ * появившийся page-таб = новый активный таб (браузер автофокусирует его).
+ */
 async function discoverActiveTab() {
   if (!controller.active || !controller.masterId || discovering) return;
   discovering = true;
   try {
-    const targets = await cdpManager.getPageTargets(controller.masterId);
-    const active = targets.find(t => t.attached) || targets[0];
-    if (active) {
-      await syncNewMasterTab(active.targetId);
+    const tabs = await cdpManager.getHttpTabs(controller.masterId);
+    if (tabs.length === 0) return;
+
+    const masterBc = cdpManager.browserConnections.get(controller.masterId);
+    const knownTargets = masterBc ? masterBc.targetSessions : null;
+
+    // Новый таб = его ещё нет в targetSessions мастера
+    const newTab = knownTargets
+      ? tabs.find(t => !knownTargets.has(t.targetId))
+      : tabs[0];
+
+    if (newTab) {
+      await syncNewMasterTab(newTab.targetId, newTab.url);
     }
   } catch (err) {
-    logger.warn({ error: err.message }, 'DISCOVERY: getPageTargets failed');
+    logger.warn({ error: err.message }, 'DISCOVERY: getHttpTabs failed');
   } finally {
     discovering = false;
   }
@@ -123,31 +172,6 @@ router.post('/start', async (req, res) => {
           return;
         }
 
-        if (event.type === 'openTab' && event.url) {
-          logger.info({ url: event.url }, 'MULTI-CONTROL: _blank link detected, creating tabs via CDP');
-          cdpManager.createTab(masterId, event.url).then(async masterTargetId => {
-            if (masterTargetId) {
-              logger.info({ masterTargetId, url: event.url }, 'MULTI-CONTROL: created master tab for _blank link');
-              for (const [slaveId] of controller.slaves) {
-                try {
-                  const slaveTargetId = await cdpManager.createTab(slaveId, event.url);
-                  if (slaveTargetId) {
-                    controller.mapTab(masterTargetId, slaveId, slaveTargetId);
-                    logger.info({ slaveId, slaveTargetId }, 'MULTI-CONTROL: created slave tab for _blank link');
-                  }
-                } catch (err) {
-                  logger.error({ slaveId, error: err.message }, 'MULTI-CONTROL: failed to create slave tab for _blank link');
-                }
-              }
-              controller.setActiveMasterTab(masterTargetId);
-              controller._syncActiveTabToSlaves(masterTargetId);
-            }
-          }).catch(err => {
-            logger.error({ error: err.message, url: event.url }, 'MULTI-CONTROL: failed to create tab for _blank link');
-          });
-          return;
-        }
-
         const targetId = cdpManager.targetBySid.get(sessionId);
         if (targetId && !['mouseUp', 'mouseMove', 'scroll', 'keyUp', 'charInput'].includes(event.type)) {
           controller.setActiveMasterTab(targetId);
@@ -160,6 +184,7 @@ router.post('/start', async (req, res) => {
       if (!controller.active) return;
 
       if (profileId === masterId) {
+        attachedMasterTabs.add(targetInfo.targetId);
         controller.setActiveMasterTab(targetInfo.targetId);
         logger.info({ masterTargetId: targetInfo.targetId, url: targetInfo.url }, 'MULTI-CONTROL: master opened new tab, syncing to slaves');
 
@@ -167,6 +192,7 @@ router.post('/start', async (req, res) => {
           try {
             const slaveTargetId = await cdpManager.createTab(slaveId, targetInfo.url);
             if (slaveTargetId) {
+              await cdpManager.attachToExistingTarget(slaveId, slaveTargetId);
               controller.mapTab(targetInfo.targetId, slaveId, slaveTargetId);
             }
           } catch (err) {
@@ -266,6 +292,8 @@ router.post('/stop', async (req, res) => {
     clearInterval(controller._discoveryTimer);
     controller._discoveryTimer = null;
   }
+  pendingSync.clear();
+  attachedMasterTabs.clear();
   inputCapture.stop();
   cdpManager.onEvent = null;
   cdpManager.onNavigate = null;
@@ -373,7 +401,7 @@ router.post('/os-keyboard', async (req, res) => {
       try {
         const masterTargetId = await cdpManager.createTab(controller.masterId);
         if (masterTargetId) {
-          syncNewMasterTab(masterTargetId);
+          await syncNewMasterTab(masterTargetId, 'about:blank');
           logger.info({ masterTargetId }, 'OS-KEYBOARD: created master tab');
         }
       } catch (err) {
@@ -386,6 +414,14 @@ router.post('/os-keyboard', async (req, res) => {
       logger.info('OS-KEYBOARD: Ctrl+W detected — skipping (close tab not supported)');
       return res.json({ ok: true, action: 'skip' });
     }
+  }
+
+  // Перед Enter убеждаемся, что activeMasterTab актуален. Антидетект не сообщает
+  // о нативно открытых табах через WS, поэтому polling /json может отставать на
+  // ≤300мс. Enter критичен (навигация по адресу/отправка формы), остальные клавиши
+  // только накапливаются в адресной строке. Без этого Enter уходит в устаревший таб.
+  if (event.type === 'keyDown' && event.key === 'Enter') {
+    await discoverActiveTab();
   }
 
   if (event.type === 'keyDown') {

@@ -1,5 +1,7 @@
 ## Проблема: Enter в адресной строке второго таба открывает третий таб в слейвах
 
+### Статус: ИСПРАВЛЕНО (v0.9.0, 2026-07-01)
+
 ### Описание
 
 1. **Запущено 3 аккаунта**, включена синхронизация
@@ -11,108 +13,72 @@
 7. `_getSlaveSession` ищет по `activeMasterTab` (= Tab A) — Enter уходит в Tab A' (первый таб слейва)
 8. Enter в Tab A' активирует `_blank` ссылку на странице → **открывается третий таб (Tab C')** в слейвах
 
-### Корневая причина
+### Корневая причина (подтверждена логами core.log, сессия pid 24800)
 
-**Антидетект-браузер не экспортирует нативно-открытые табы через CDP.**
+**Антидетект-браузер не экспортирует нативно-открытые табы через CDP WebSocket:**
 - `Target.targetCreated` не приходит
 - `Target.attachedToTarget` не приходит (auto-attach не работает для новых табов)
-- `Target.getTargets()` не возвращает нативно-открытые табы
-- Сессия для нового таба не создаётся → события `Page.frameNavigated` не приходят
-- Система полностью слепа к существованию Tab B и Tab B'
+- `Target.getTargets()` через WS не возвращает нативно-открытые табы
+
+**Доказательства из логов:**
+- `openTab` / `_blank` = **0 раз** во всём логе (перехват кликов в sync-script не работал)
+- `master opened new tab` = **0 раз**
+- `tabMappingSize:1` во **всех** 11 Enter-событиях — маппинг никогда не разрастался
+- Все навигации шли в **одни и те же** target'ы (стартовый таб)
+
+### Доп. баг (найден при анализе)
+
+Даже когда `createTab()` через WS создавал таб, он **не делал attach** (attach происходит только в обработчике `Target.attachedToTarget`/`targetCreated`, который антидетект не шлёт). Созданный таб не попадал в `targetSessions`, и `_getSlaveSession` всё равно падал в фолбэк на первый таб.
 
 ---
 
-## Хронология попыток исправления
+## Решение v0.9.0: HTTP `/json` polling + sync создания/фокуса табов
 
-### Попытка 1: Вариант C — `getTargets` в `/os-keyboard` + `tabActivated`
+HTTP DevTools endpoint `GET /json` — **другой кодовой путь Chromium**, не зависящий от WS-подписок.
+`_discoverWsUrl()` уже успешно им пользуется. Polling `/json` каждые ~300мс надёжно находит новые табы.
 
-**Что сделано:**
-- Best-effort `getPageTargets` перед каждым keyDown в `/os-keyboard` (таймаут 300ms)
-- `tabActivated` в `onEvent` → вызов `getPageTargets`
+**Важное ограничение:** `/json` НЕ помечает активный таб (поле `attached` = DevTools-подключение, а не фокус окна).
+Эвристика: браузер автофокусирует **вновь открытый** таб → вновь появившийся в `/json` page-tab = новый активный.
 
-**Почему не сработало:**
-- Логи ни разу не показали `discoveredNewTab`
-- `getPageTargets` не возвращает таймаут 300ms (всегда пустой массив)
-- Даже если бы вернул, маппинга для нового таба нет → `_getSlaveSession` падает на первый доступный
+### Изменения в коде
 
----
+| Файл | Изменение |
+|------|-----------|
+| `src/multi-control/cdp-manager.js` | Импорт `http` на верхнем уровне; хранение `cdpPort` в `browserConnections`; метод `getHttpTabs()` (HTTP GET /json, надёжный обход сломанного WS); метод `attachToExistingTarget()` (ручной attach для нативно-открытых/созданных табов + `_enableInput`); убран `_blank`-перехват из `SYNC_EVENT_SCRIPT` (мёртвый код, 0 срабатываний) |
+| `src/api/multi-control.js` | `discoverActiveTab()` переписана через `getHttpTabs()` (вместо сломанного `getPageTargets` через WS); `syncNewMasterTab(masterTargetId, url)` — attach мастера + create+attach slave + map + activate; `onNewTab` для мастера теперь attach'ит slave табы; `/os-keyboard` делает `await discoverActiveTab()` перед Enter (ввод в актуальный таб); убран мёртвый `openTab` handler |
+| `tests/unit/cdp-manager.test.js` | Тесты `getHttpTabs` (фолбэки + логика фильтрации), `attachToExistingTarget` (существующая сессия, attach+enableInput, ошибка) |
+| `tests/unit/multi-control-api.test.js` | Тесты `syncNewMasterTab` (создание slave табов, дедуп по маппингу, guard inactive), `discoverActiveTab` (обнаружение нового таба по разнице knownTargets/`/json`) |
 
-### Попытка 2: `syncNewMasterTab` — создание табов в слейвах при обнаружении
+### Что починило фикс
 
-**Что сделано:**
-- Функция `syncNewMasterTab(masterTargetId)`:
-  - Если таб уже замаплен → только `setActiveMasterTab`
-  - Если новый таб → `createTab` в каждом слейве, `mapTab`, `setActiveMasterTab`, `_syncActiveTabToSlaves`
-- `pendingSync` Set для защиты от гонок
-
-**Почему не сработало:**
-- `getPageTargets` не возвращает нативно-открытые табы
-- `syncNewMasterTab` никогда не вызывается с targetId нового таба
-- Единственные `SYNC:` в логах — для начального таба (когда slaves ещё не добавлены)
+1. Клик по `_blank` → нативный таб B в мастере → `/json` polling через ≤300мс находит его → `attachToExistingTarget` мастера → `createTab`+`attachToExistingTarget` в слейвах → `setActiveMasterTab(B)` + `activateTarget` в слейвах
+2. Переключение на таб B, ввод `ya.ru`, Enter → `/os-keyboard` делает `await discoverActiveTab()` (подтверждает B активен) → Enter идёт в маппленный таб B' слейвов → **правильная навигация, без лишнего 3-го таба**
 
 ---
 
-### Попытка 3: Вариант D — setInterval polling 300ms
+## Предыдущие попытки ( архив — НЕ сработали)
 
-**Что сделано:**
-- Убран `getPageTargets` из `/os-keyboard` (не блокирует ввод)
-- Убран `getPageTargets` из `tabActivated`
-- Добавлен `discoverActiveTab()` с `discovering` guard
-- `setInterval(discoverActiveTab, 300)` в `start()`
-- Очистка таймера в `stop()`
-- `discoverActiveTab` вызывает `getPageTargets` со штатным таймаутом 3s
+### Попытка 1–3: WS-based обнаружение (getPageTargets / polling через Target.getTargets)
+**Почему не сработало:** `getPageTargets` через WS не возвращает нативно-открытые табы. `tabMappingSize` всегда 1.
 
-**Почему не сработало:**
-- `getPageTargets` успешно возвращает начальный таб
-- Но **НЕ возвращает** нативно-открытый Tab B
-- Polling находит только уже замапленный таб → `syncNewMasterTab` ничего не делает
-- `tabMappingSize` всегда 1
+### Попытка 4: Перехват `_blank` кликов в sync-script (openTab handler)
+**Почему не сработало:** 0 срабатываний в логах. Не работает на chrome:// страницах и страницах без DOM. Удалён как мёртвый код.
 
 ---
 
-### Попытка 4: Перехват `_blank` кликов в sync script
+## Что проверить после тестирования на реальном браузере
 
-**Что сделано:**
-- В `SYNC_EVENT_SCRIPT` изменён обработчик `click`:
-  - Определяет `<a target="_blank">` (или ctrl+click, middle-click)
-  - `preventDefault()` — блокирует нативное открытие таба
-  - Эмитит `openTab` с URL
-- В `onEvent` добавлена обработка `openTab`:
-  - `createTab(masterId, url)` — создаёт таб через CDP
-  - Создаёт табы во всех слейвах с тем же URL
-  - Маппит, обновляет `activeMasterTab`
-  - `inputCapture.injectFromCdp` не вызывается (click не уходит в слейвы)
-- В `onNewTab` для мастера URL передаётся в `createTab(slaveId, targetInfo.url)`
+1. **Главный риск:** если антидетект блокирует даже HTTP `/json` для нативных табов (маловероятно — `_discoverWsUrl` уже им пользуется). Признак успеха: в логе появятся `SYNC: discovered new master tab` с URL нового таба.
+2. Polling 300мс добавит задержку ≤300мс перед синхронизацией нового таба — приемлемо.
+3. `await` перед Enter добавит ~десятки мс задержки ввода — незаметно.
 
-**Статус:** не протестировано. Потенциальная проблема — `window.open` и CDP-созданные табы могут тоже не триггерить CDP-события в антидетект-браузере.
+Если `/json` тоже слеп — альтернатива «URL-aware dispatch» из истории ниже.
 
 ---
 
-## Что нужно доработать
+## Файлы
 
-### Если `openTab` не сработает (CDP не создаёт таб)
-
-Проверить, что `cdpManager.createTab()` отправляет `Target.createTarget` и получает ответ. Если браузер не отвечает на `Target.createTarget` (блокирует), нужен другой подход.
-
-### Альтернатива: URL-aware dispatch
-
-Вместо обнаружения табов — пересылать нажатия Enter в **каждый** таб слейва, чей URL совпадает с URL активного таба мастера. Для получения URL слейвов использовать `getPageTargets` на слейвах (не на мастере). Если браузер не экспортирует табы даже на слейвах — не сработает.
-
-### Альтернатива: Native window focus tracker
-
-Добавить в native addon (`.node`, `koffi`) отслеживание фокуса окна. Когда пользователь переключается на Tab B в мастере, native addon может:
-1. Определить targetId окна через Win32 API (GetForegroundWindow → связать с CDP target)
-2. Или определить URL из заголовка окна
-
-### Альтернатива: Замена ядра браузера
-
-Если CloakBrowser не поддерживает авто-аттач к новым табам — это баг/ограничение ядра. Возможно, в новой версии CloakBrowser это исправлено.
-
----
-
-## Файлы, изменённые в ходе исправления
-
-| Файл | Изменения |
-|---|---|
-| `src/api/multi-control.js` | syncNewMasterTab, polling timer, openTab handler, onNewTab url passthrough |
-| `src/multi-control/cdp-manager.js` | _blank intercept в SYNC_EVENT_SCRIPT |
+| Файл | Назначение |
+|------|-----------|
+| `src/multi-control/cdp-manager.js` | `getHttpTabs`, `attachToExistingTarget`, хранение `cdpPort` |
+| `src/api/multi-control.js` | `discoverActiveTab`/`syncNewMasterTab` через HTTP, `await` перед Enter |
