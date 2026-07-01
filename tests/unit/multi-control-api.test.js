@@ -131,7 +131,7 @@ describe('Multi-control API logic', () => {
   });
 
   describe('os-keyboard Ctrl+T handling', () => {
-    it('Ctrl+T triggers createTab only for master (onNewTab handles slaves)', async () => {
+    it('Ctrl+T triggers createTab for master, syncNewMasterTab creates slave tabs', async () => {
       mockCdp.createTab = vi.fn().mockResolvedValue('new-target-id');
       controller.setMaster('master-1');
       await controller.addSlave('slave-1');
@@ -142,7 +142,7 @@ describe('Multi-control API logic', () => {
       expect(mockCdp.createTab).toHaveBeenCalledTimes(1);
       expect(mockCdp.createTab).toHaveBeenCalledWith('master-1');
 
-      // Simulate onNewTab for master: creates slave tabs and maps
+      // Simulate syncNewMasterTab: creates slave tabs and maps
       controller.setActiveMasterTab('master-tab-new');
       if (masterTargetId) {
         for (const [slaveId] of controller.slaves) {

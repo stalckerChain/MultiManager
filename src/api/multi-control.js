@@ -186,21 +186,7 @@ router.post('/start', async (req, res) => {
       if (profileId === masterId) {
         attachedMasterTabs.add(targetInfo.targetId);
         controller.setActiveMasterTab(targetInfo.targetId);
-        logger.info({ masterTargetId: targetInfo.targetId, url: targetInfo.url }, 'MULTI-CONTROL: master opened new tab, syncing to slaves');
-
-        for (const [slaveId] of controller.slaves) {
-          try {
-            const slaveTargetId = await cdpManager.createTab(slaveId, targetInfo.url);
-            if (slaveTargetId) {
-              await cdpManager.attachToExistingTarget(slaveId, slaveTargetId);
-              controller.mapTab(targetInfo.targetId, slaveId, slaveTargetId);
-            }
-          } catch (err) {
-            logger.error({ slaveId, error: err.message }, 'MULTI-CONTROL: failed to create tab in slave');
-          }
-        }
-
-        controller._syncActiveTabToSlaves(targetInfo.targetId);
+        logger.info({ masterTargetId: targetInfo.targetId, url: targetInfo.url }, 'MULTI-CONTROL: master new tab tracked, slave sync deferred to syncNewMasterTab');
         return;
       }
 
@@ -397,7 +383,7 @@ router.post('/os-keyboard', async (req, res) => {
     const key = (event.key || '').toLowerCase();
 
     if (key === 't') {
-      logger.info('OS-KEYBOARD: Ctrl+T detected, creating master tab (onNewTab will handle slaves)');
+      logger.info('OS-KEYBOARD: Ctrl+T detected, creating master tab (syncNewMasterTab will handle slaves)');
       try {
         const masterTargetId = await cdpManager.createTab(controller.masterId);
         if (masterTargetId) {

@@ -218,7 +218,7 @@ if (event.type === 'keyDown' && event.key === 'Enter') {
 | Файл | Изменение |
 |------|-----------|
 | `src/multi-control/cdp-manager.js` | `getHttpTabs()` — HTTP GET /json, `attachToExistingTarget()` — ручной attach с `_enableInput`; хранение `cdpPort` в `browserConnections`; `http` импорт на верхнем уровне; удалён `_blank`-перехват из `SYNC_EVENT_SCRIPT` |
-| `src/api/multi-control.js` | `discoverActiveTab()` через `getHttpTabs()` (вместо `getPageTargets`); `syncNewMasterTab(targetId, url)` — attach мастера + create+attach slave + map + activate; `attachedMasterTabs` Set; `onNewTab` теперь делает attach slave табов; `/os-keyboard` делает `await discoverActiveTab()` перед Enter; очистка `pendingSync`/`attachedMasterTabs` в `/stop`; удалён мёртвый `openTab` handler |
+| `src/api/multi-control.js` | `discoverActiveTab()` через `getHttpTabs()` (вместо `getPageTargets`); `syncNewMasterTab(targetId, url)` — attach мастера + create+attach slave + map + activate; `attachedMasterTabs` Set; `onNewTab` для мастера только трекает таб (создание slave делает `syncNewMasterTab`); `/os-keyboard` делает `await discoverActiveTab()` перед Enter; очистка `pendingSync`/`attachedMasterTabs` в `/stop`; удалён мёртвый `openTab` handler |
 | `tests/unit/cdp-manager.test.js` | Тесты `getHttpTabs` (фолбэки, фильтрация), `attachToExistingTarget` (существующая сессия, attach+enableInput, ошибка) |
 | `tests/unit/multi-control-api.test.js` | Тесты `syncNewMasterTab` (создание slave, дедуп, guard inactive), `discoverActiveTab` (обнаружение по разнице knownTargets/`/json`) |
 
@@ -253,7 +253,7 @@ if (event.type === 'keyDown' && event.key === 'Enter') {
 
 ## Версия
 
-Текущая: v0.9.0 (HTTP /json polling + manual attach для нативных табов)
+Текущая: v0.9.1 (HTTP /json polling + manual attach + fix duplicate slave tabs)
 
 ## История версий
 
@@ -266,7 +266,7 @@ if (event.type === 'keyDown' && event.key === 'Enter') {
 | Файл | Изменение |
 |------|-----------|
 | `src/multi-control/cdp-manager.js` | `getHttpTabs()` — HTTP GET /json; `attachToExistingTarget()` — ручной attach с `_enableInput`; хранение `cdpPort` в `browserConnections`; удалён `_blank`-перехват из `SYNC_EVENT_SCRIPT` |
-| `src/api/multi-control.js` | `discoverActiveTab()` через `getHttpTabs()`; `syncNewMasterTab(targetId, url)` — attach мастера + create+attach slave + map + activate; `attachedMasterTabs` Set; `onNewTab` attach'ит slave табы; `await discoverActiveTab()` перед Enter; очистка `pendingSync`/`attachedMasterTabs` в `/stop`; удалён мёртвый `openTab` handler |
+| `src/api/multi-control.js` | `discoverActiveTab()` через `getHttpTabs()`; `syncNewMasterTab(targetId, url)` — attach мастера + create+attach slave + map + activate; `attachedMasterTabs` Set; `onNewTab` только трекает таб мастера (создание slave делает `syncNewMasterTab`); `await discoverActiveTab()` перед Enter; очистка `pendingSync`/`attachedMasterTabs` в `/stop`; удалён мёртвый `openTab` handler |
 | `tests/unit/cdp-manager.test.js` | Тесты `getHttpTabs`, `attachToExistingTarget` |
 | `tests/unit/multi-control-api.test.js` | Тесты `syncNewMasterTab`, `discoverActiveTab` |
 
@@ -274,6 +274,17 @@ if (event.type === 'keyDown' && event.key === 'Enter') {
 - `discoverActiveTab()` переписана: запрос `/json` через HTTP (вместо `Target.getTargets` через WS). Новый таб = page-таб из `/json`, отсутствующий в `targetSessions` мастера.
 - `syncNewMasterTab()` теперь attach'ит таб мастера (чтобы работал ввод) и делает ручной attach созданных slave табов (антидетект не шлёт `attachedToTarget`).
 - `/os-keyboard`: перед `keyDown` с `Enter` вызывается `await discoverActiveTab()` — Enter гарантированно уходит в актуальный таб.
+
+### v0.9.1 (2026-07-01) — Fix duplicate slave tabs on tab creation
+
+**Проблема:** `onNewTab` (от `Target.targetCreated`) И `syncNewMasterTab` (от HTTP polling) оба создавали табы в слейвах → каждый новый таб мастера порождал 2 таба в каждом слейве.
+
+**Исправление:**
+
+| Файл | Изменение |
+|------|-----------|
+| `src/api/multi-control.js` | `onNewTab` для мастера больше не создаёт slave табы — только трекает (`attachedMasterTabs.add`, `setActiveMasterTab`). Всё создание slave табов делает `syncNewMasterTab` |
+| `tests/unit/multi-control-api.test.js` | Обновлён тест Ctrl+T — теперь проверяет `syncNewMasterTab` вместо `onNewTab` |
 
 ### v0.8.0 (2026-06-30) — Стабильная синхронизация activeMasterTab
 
