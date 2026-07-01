@@ -34,8 +34,8 @@ const SYNC_EVENT_SCRIPT = `
     if (e.key.length === 1 && !e.ctrlKey && !e.metaKey && !e.altKey) {
       emit('charInput', { text: e.key });
     }
-    // Блокируем браузерные шорткаты, которые обрабатываются мульти-контролем
-    if (e.ctrlKey && (e.key === 't' || e.key === 'T' || e.key === 'n' || e.key === 'N' || e.key === 'w' || e.key === 'W')) {
+    // Блокируем браузерные шорткаты (проверяем e.code — он не зависит от раскладки)
+    if (e.ctrlKey && (e.code === 'KeyT' || e.code === 'KeyN' || e.code === 'KeyW')) {
       e.preventDefault();
     }
   }, true);

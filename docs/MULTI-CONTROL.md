@@ -299,6 +299,17 @@ if (event.type === 'keyDown' && event.key === 'Enter') {
 | `src/api/multi-control.js` | `syncNewMasterTab`: перед `createTab` проверяет HTTP `/json` слейва на наличие нативного таба (2 попытки с 150ms паузой). Если найден — attach+map вместо создания. `pendingSync` — единый блок на всю функцию |
 | `docs/MULTI-CONTROL.md` | Обновлена история |
 
+### v0.9.3 (2026-07-01) — Prevent native Ctrl+T in master browser
+
+**Проблема:** Нативный OS-хук не блокирует Ctrl+T (`CallNextHookEx`). Браузер мастера получает шорткат и открывает нативный таб поверх CDP-созданного → в мастере 2 таба, в слейвах — табы для каждого.
+
+**Исправление:**
+
+| Файл | Изменение |
+|------|-----------|
+| `src/multi-control/cdp-manager.js` | SYNC_EVENT_SCRIPT: `e.preventDefault()` для Ctrl+T/Ctrl+N/Ctrl+W в keydown handler'е. Событие уходит в Node.js, но браузер не создаёт нативный таб |
+| `docs/MULTI-CONTROL.md` | Обновлена версия |
+
 ### v0.8.0 (2026-06-30) — Стабильная синхронизация activeMasterTab
 
 **Проблема:** После клика по `_blank` ссылке и переключения на новый таб, клавиши из адресной строки (Enter, символы) уходили в первый таб слейвов вместо второго, из-за того что `activeMasterTab` не обновлялся.
