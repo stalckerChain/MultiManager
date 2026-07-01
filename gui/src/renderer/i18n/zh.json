@@ -49,6 +49,7 @@
   "proxies": {
     "title": "代理管理器",
     "add": "添加代理",
+    "edit": "编辑代理",
     "checkSelected": "检查选中",
     "deleteUnused": "删除未使用",
     "bulkImport": "批量导入",

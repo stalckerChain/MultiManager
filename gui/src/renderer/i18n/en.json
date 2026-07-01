@@ -49,6 +49,7 @@
   "proxies": {
     "title": "Proxy Manager",
     "add": "Add Proxy",
+    "edit": "Edit Proxy",
     "checkSelected": "Check Selected",
     "deleteUnused": "Delete Unused",
     "bulkImport": "Bulk Import",
