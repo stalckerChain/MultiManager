@@ -406,8 +406,20 @@ router.post('/os-keyboard', async (req, res) => {
     }
 
     if (key === 'w') {
-      logger.info('OS-KEYBOARD: Ctrl+W detected, letting browser handle natively (onTabDestroyed will clean up)');
-      return res.json({ ok: true, action: 'skip' });
+      logger.info({ activeMasterTab: controller.activeMasterTab }, 'OS-KEYBOARD: Ctrl+W detected, closing slave tabs via CDP');
+      const activeTab = controller.activeMasterTab;
+      if (activeTab) {
+        const bySlave = controller.tabMapping.get(activeTab);
+        if (bySlave) {
+          for (const [slaveId, slaveTargetId] of bySlave) {
+            cdpManager.closeTarget(slaveId, slaveTargetId);
+            logger.info({ slaveId, slaveTargetId, masterTargetId: activeTab }, 'OS-KEYBOARD: closed slave tab on Ctrl+W');
+          }
+        }
+        controller.unmapTab(activeTab);
+      }
+      // Browser сам закроет master-таб (preventDefault для KeyW удалён из sync script)
+      return res.json({ ok: true, action: 'closeTab' });
     }
   }
 
