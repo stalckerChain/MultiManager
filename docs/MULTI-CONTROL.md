@@ -253,7 +253,7 @@ if (event.type === 'keyDown' && event.key === 'Enter') {
 
 ## Версия
 
-Текущая: v0.9.1 (HTTP /json polling + manual attach + fix duplicate slave tabs)
+Текущая: v0.9.2 (HTTP /json polling + manual attach + native slave tab detection)
 
 ## История версий
 
@@ -285,6 +285,19 @@ if (event.type === 'keyDown' && event.key === 'Enter') {
 |------|-----------|
 | `src/api/multi-control.js` | `onNewTab` для мастера больше не создаёт slave табы — только трекает (`attachedMasterTabs.add`, `setActiveMasterTab`). Всё создание slave табов делает `syncNewMasterTab` |
 | `tests/unit/multi-control-api.test.js` | Обновлён тест Ctrl+T — теперь проверяет `syncNewMasterTab` вместо `onNewTab` |
+
+### v0.9.2 (2026-07-01) — Native slave tab detection + single pendingSync guard
+
+**Проблема (v0.9.1 не решил):** Когда мастер кликает `_blank` ссылку, ивент диспатчится в слейв через `Input.dispatchMouseEvent`. Слейв тоже открывает таб нативно. Затем `syncNewMasterTab` создаёт ещё один таб через CDP → 2 таба в слейве.
+
+Дополнительная проблема: `pendingSync` захватывался в двух отдельных `try/finally` блоках, создавая окно для race condition между polling и Ctrl+T.
+
+**Исправления:**
+
+| Файл | Изменение |
+|------|-----------|
+| `src/api/multi-control.js` | `syncNewMasterTab`: перед `createTab` проверяет HTTP `/json` слейва на наличие нативного таба (2 попытки с 150ms паузой). Если найден — attach+map вместо создания. `pendingSync` — единый блок на всю функцию |
+| `docs/MULTI-CONTROL.md` | Обновлена история |
 
 ### v0.8.0 (2026-06-30) — Стабильная синхронизация activeMasterTab
 
