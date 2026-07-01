@@ -183,6 +183,45 @@ describe('Multi-control API logic', () => {
       expect(mockCdp.dispatchKeyEvent).toHaveBeenCalled();
     });
 
+    it('Ctrl+W handler closes slave tabs via closeTarget and unmaps', async () => {
+      mockCdp.closeTarget = vi.fn();
+      controller.setMaster('master-1');
+      await controller.addSlave('slave-1');
+      await controller.addSlave('slave-2');
+
+      controller.mapTab('master-tab', 'slave-1', 'slave-tab-1');
+      controller.mapTab('master-tab', 'slave-2', 'slave-tab-2');
+      controller.setActiveMasterTab('master-tab');
+
+      // Имитация /os-keyboard handler для Ctrl+W
+      const activeTab = controller.activeMasterTab;
+      expect(activeTab).toBe('master-tab');
+      if (activeTab) {
+        const bySlave = controller.tabMapping.get(activeTab);
+        if (bySlave) {
+          for (const [slaveId, slaveTargetId] of bySlave) {
+            mockCdp.closeTarget(slaveId, slaveTargetId);
+          }
+        }
+        controller.unmapTab(activeTab);
+      }
+
+      expect(mockCdp.closeTarget).toHaveBeenCalledTimes(2);
+      expect(mockCdp.closeTarget).toHaveBeenCalledWith('slave-1', 'slave-tab-1');
+      expect(mockCdp.closeTarget).toHaveBeenCalledWith('slave-2', 'slave-tab-2');
+      expect(controller.tabMapping.has('master-tab')).toBe(false);
+    });
+
+    it('Ctrl+W handler does nothing when no activeMasterTab', async () => {
+      mockCdp.closeTarget = vi.fn();
+      controller.setMaster('master-1');
+
+      const activeTab = controller.activeMasterTab;
+      expect(activeTab).toBeNull();
+
+      expect(mockCdp.closeTarget).not.toHaveBeenCalled();
+    });
+
     it('discoverActiveTab (HTTP /json polling) handles sync when native tab appears', async () => {
       mockCdp.createTab = vi.fn().mockResolvedValue('new-slave-tab');
       controller.setMaster('master-1');

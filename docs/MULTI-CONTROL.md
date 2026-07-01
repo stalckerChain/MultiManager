@@ -253,7 +253,7 @@ if (event.type === 'keyDown' && event.key === 'Enter') {
 
 ## Версия
 
-Текущая: v0.9.6 (HTTP /json polling + native browser Ctrl+T/W)
+Текущая: v0.9.7 (HTTP /json polling + native browser Ctrl+T/W)
 
 ## История версий
 
