@@ -26,40 +26,31 @@ const attachedMasterTabs = new Set();
 async function syncNewMasterTab(masterTargetId, masterTabUrl) {
   if (!controller.active || !controller.masterId) return;
   if (pendingSync.has(masterTargetId)) return;
+  pendingSync.add(masterTargetId);
 
-  // Attach таб мастера (если ещё не подключён), чтобы на нём работал ввод
-  if (!attachedMasterTabs.has(masterTargetId)) {
-    pendingSync.add(masterTargetId);
-    try {
+  try {
+    // Attach таб мастера (если ещё не подключён), чтобы на нём работал ввод
+    if (!attachedMasterTabs.has(masterTargetId)) {
       const masterBc = cdpManager.browserConnections.get(controller.masterId);
       if (masterBc && !masterBc.targetSessions.has(masterTargetId)) {
         await cdpManager.attachToExistingTarget(controller.masterId, masterTargetId);
       }
       attachedMasterTabs.add(masterTargetId);
-    } catch (err) {
-      logger.error({ masterTargetId, error: err.message }, 'SYNC: failed to attach master tab');
-    } finally {
-      pendingSync.delete(masterTargetId);
     }
-  }
 
-  // Если маппинг уже есть (таб синхронизирован ранее) — только обновляем активный
-  if (controller.tabMapping.has(masterTargetId)) {
-    if (masterTargetId !== controller.activeMasterTab) {
-      controller.setActiveMasterTab(masterTargetId);
+    // Если маппинг уже есть (таб синхронизирован ранее) — только обновляем активный
+    if (controller.tabMapping.has(masterTargetId)) {
+      if (masterTargetId !== controller.activeMasterTab) {
+        controller.setActiveMasterTab(masterTargetId);
+      }
+      return;
     }
-    return;
-  }
 
-  pendingSync.add(masterTargetId);
-  logger.info({ masterTargetId, url: masterTabUrl }, 'SYNC: discovered new master tab, creating slave tabs');
-  try {
+    logger.info({ masterTargetId, url: masterTabUrl }, 'SYNC: discovered new master tab, creating slave tabs');
     for (const [slaveId] of controller.slaves) {
       try {
         const slaveTargetId = await cdpManager.createTab(slaveId, masterTabUrl);
         if (slaveTargetId) {
-          // Немедленный attach: антидетект не пришлёт Target.attachedToTarget,
-          // поэтому таб не попадёт в targetSessions без ручного attach.
           await cdpManager.attachToExistingTarget(slaveId, slaveTargetId);
           controller.mapTab(masterTargetId, slaveId, slaveTargetId);
           logger.info({ slaveId, slaveTargetId }, 'SYNC: created and mapped slave tab');
