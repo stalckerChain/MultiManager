@@ -45,12 +45,18 @@ async function syncNewMasterTab(masterTargetId, masterTabUrl) {
         if (nativeTab) {
           await cdpManager.attachToExistingTarget(slaveId, nativeTab.targetId);
           controller.mapTab(masterTargetId, slaveId, nativeTab.targetId);
+          if (masterTargetId !== controller.activeMasterTab) {
+            controller._enforceSlaveFocusOnActiveTab(slaveId);
+          }
           logger.info({ slaveId, slaveTargetId: nativeTab.targetId }, 'SYNC: mapped existing native slave tab');
         } else {
           const slaveTargetId = await cdpManager.createTab(slaveId, masterTabUrl);
           if (slaveTargetId) {
             await cdpManager.attachToExistingTarget(slaveId, slaveTargetId);
             controller.mapTab(masterTargetId, slaveId, slaveTargetId);
+            if (masterTargetId !== controller.activeMasterTab) {
+              controller._enforceSlaveFocusOnActiveTab(slaveId);
+            }
             logger.info({ slaveId, slaveTargetId }, 'SYNC: created and mapped slave tab');
           }
         }
@@ -219,6 +225,9 @@ router.post('/start', async (req, res) => {
         const masterTargetId = controller.tabIndex[slaveIdx];
         if (masterTargetId) {
           controller.mapTab(masterTargetId, profileId, targetInfo.targetId);
+          if (masterTargetId !== controller.activeMasterTab) {
+            controller._enforceSlaveFocusOnActiveTab(profileId);
+          }
           logger.info({ slaveId: profileId, masterTargetId, slaveTargetId: targetInfo.targetId, tabIndex: slaveIdx }, 'MULTI-CONTROL: mapped slave tab by tabIndex order');
         } else {
           logger.info({ profileId, targetId: targetInfo.targetId, url: targetInfo.url, slaveIdx }, 'MULTI-CONTROL: slave opened new tab (no matching master tab in tabIndex)');

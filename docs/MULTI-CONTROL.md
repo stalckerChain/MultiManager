@@ -365,12 +365,30 @@ if (event.type === 'keyDown' && event.key === 'Enter') {
 11. **Фокус на предыдущий таб при destroy** — `_maybeSwitchToPrevTab` использует `tabIndex` для переключения на предыдущий таб в порядке создания
 12. **Трёхшаговая активация фокуса в Slave** — `Target.activateTarget` (переключение вкладки) → `Page.bringToFront` (вывод на передний план) → `DOM.focus` (программный фокус ввода). Без `DOM.focus` движок Chromium игнорирует эмулируемые события `Input.dispatchKeyEvent`/`dispatchMouseEvent`
 13. **`visibilitychange` как единственный надёжный детектор переключения вкладок** — `Target.targetInfoChanged` не содержит признака активации вкладки. `visibilitychange` ловит все сценарии: Ctrl+Tab, Ctrl+Shift+Tab, Ctrl+1..9, клики по tab bar. Событие передаётся через `Runtime.bindingCalled` → разрешение `targetId` из `sessionId`
+14. **Принудительная реактивация фона в Slave при background-табах** — `_enforceSlaveFocusOnActiveTab` отправляет `Target.activateTarget` (fire-and-forget) сразу после `mapTab`, если новый таб не является `activeMasterTab`. Chromium в Slave автоактивирует табы, созданные через `Input.dispatchMouseEvent` — без этой команды фокус остаётся на неверном табе
 
 ## Версия
 
-Текущая: v0.11.1 (no forced activation on background tabs + visibilitychange → tabActivated)
+Текущая: v0.12.0 (enforceSlaveFocusOnActiveTab — принудительная реактивация фона при background-табах)
 
 ## История версий
+
+### v0.12.0 (2026-07-03) — Fix: enforce focus on active tab in slaves after background tab creation
+
+**Проблема:** Middle-click по ссылке или "открыть в новом табе" через контекстное меню в Master открывает вкладку в фоне (фокус остаётся на исходной). При диспатче события мыши в Slave, Chromium в Slave-окне автоматически активирует новую вкладку — фокус уходит на неё, ломая синхронизацию.
+
+**Корень:** `Input.dispatchMouseEvent` с button 'middle' в Chromium Slave создаёт и активирует новый таб, в то время как в Master таб остаётся фоновым. Предыдущее решение (v0.11.1) отложило активацию до `tabActivated`, но не реактивировало исходный таб в Slave принудительно.
+
+**Исправления:**
+
+| Файл | Изменение |
+|------|-----------|
+| `src/multi-control/index.js` | Добавлен `_enforceSlaveFocusOnActiveTab(slaveId)` — fire-and-forget `Target.activateTarget` для принудительного возврата фокуса на вкладку, соответствующую `activeMasterTab` |
+| `src/api/multi-control.js` | `syncNewMasterTab`: после `mapTab` для каждого slave, если `masterTargetId !== activeMasterTab`, вызывается `_enforceSlaveFocusOnActiveTab`. `onNewTab` для slave: то же после `mapTab` по `tabIndex` |
+| `tests/unit/multi-control.test.js` | 4 новых теста: `_enforceSlaveFocusOnActiveTab` (активация правильного таба, guard без activeMasterTab, guard без маппинга, без cdp) |
+| `tests/unit/multi-control-api.test.js` | 5 новых/обновлённых тестов: реактивация activeMasterTab, отсутствие реактивации когда таб == active, когда activeMasterTab не задан |
+
+**Поведение:** Middle-click / контекстное меню → таб создаётся в Slaves → `_enforceSlaveFocusOnActiveTab` немедленно реактивирует исходный таб в каждом Slave (Chromium не успевает "закрепить" фокус на новом табе). Когда Master реально переключается (Ctrl+Tab, клик по tab bar, `visibilitychange` → `tabActivated`) — фокус в Slaves переключается на соответствующий таб через штатный `_syncActiveTabToSlaves`.
 
 ### v0.11.1 (2026-07-03) — Fix: no forced activation on background tabs (middle-click, context menu)
 

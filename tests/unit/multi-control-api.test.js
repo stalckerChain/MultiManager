@@ -40,6 +40,10 @@ class MockCdpManager {
     return Promise.resolve();
   }
 
+  activateTarget(profileId, targetId) {
+    this.activateCalls.push({ profileId, tabId: targetId });
+  }
+
   navigateTab(profileId, tabId, url) {
     this.navigateCalls.push({ profileId, tabId, url });
     return Promise.resolve();
@@ -59,6 +63,14 @@ class MockCdpManager {
     this.masterTabMap.delete(`${masterTabId}:${profileId}`);
   }
 
+  _enforceSlaveFocusOnActiveTab(slaveId) {
+    if (!this.activeMasterTab) return;
+    const slaveTargetId = this.getSlaveTabForMaster(this.activeMasterTab, slaveId);
+    if (slaveTargetId) {
+      this.activateTarget(slaveId, slaveTargetId);
+    }
+  }
+
   // onEvent не мокаем — тесты напрямую вызывают callback
 }
 
@@ -69,7 +81,7 @@ describe('syncNewMasterTab (matches api/multi-control)', () => {
   let ctrl;
   let mockCdp;
 
-  // syncNewMasterTab — копия из src/api/multi-control.js (без форсированной активации)
+  // syncNewMasterTab — копия из src/api/multi-control.js (с форсированной реактивацией activeMasterTab)
   async function syncNewMasterTab(targetId, url) {
     const profiles = ctrl.getProfiles();
     const slaves = profiles.filter(p => p !== ctrl.masterId);
@@ -78,6 +90,9 @@ describe('syncNewMasterTab (matches api/multi-control)', () => {
       if (existing) continue;
       const slaveTabId = await mockCdp.createTab(slaveId, url);
       ctrl.setSlaveTabForMaster(targetId, slaveId, slaveTabId);
+      if (targetId !== ctrl.activeMasterTab) {
+        ctrl._enforceSlaveFocusOnActiveTab(slaveId);
+      }
     }
   }
 
@@ -113,8 +128,28 @@ describe('syncNewMasterTab (matches api/multi-control)', () => {
     }
   });
 
-  it('never activates slave tabs (activation deferred to tabActivated)', async () => {
+  it('does not activate when activeMasterTab is not set', async () => {
     await syncNewMasterTab('tab-m1', 'http://example.com');
+    expect(mockCdp.activateCalls).toHaveLength(0);
+  });
+
+  it('reactivates activeMasterTab in slaves when new tab is background (middle-click)', async () => {
+    ctrl.setSlaveTabForMaster('current-tab', 'slave-1', 'slave-current-tab');
+    ctrl.setSlaveTabForMaster('current-tab', 'slave-2', 'slave-current-tab-2');
+    ctrl.activeMasterTab = 'current-tab';
+    await syncNewMasterTab('background-tab', 'http://bg.com');
+    // Должен реактивировать current-tab в обоих слейвах
+    expect(mockCdp.activateCalls).toHaveLength(2);
+    expect(mockCdp.activateCalls[0]).toEqual({ profileId: 'slave-1', tabId: 'slave-current-tab' });
+    expect(mockCdp.activateCalls[1]).toEqual({ profileId: 'slave-2', tabId: 'slave-current-tab-2' });
+  });
+
+  it('does not reactivate when new tab IS the active master tab', async () => {
+    ctrl.setSlaveTabForMaster('current-tab', 'slave-1', 'slave-tab');
+    ctrl.activeMasterTab = 'current-tab';
+    await syncNewMasterTab('current-tab', 'http://current.com');
+    // activateCalls[0] мог быть вызван, но только если требуется реактивация
+    // Для current-tab: targetId === activeMasterTab → force-reactivation не срабатывает
     expect(mockCdp.activateCalls).toHaveLength(0);
   });
 
@@ -511,7 +546,7 @@ describe('onNewTab callback (matches api/multi-control)', () => {
   let tabIndex;
   let browserConnections;
 
-  // onNewTab callback — обновлённая версия с tabIndex (без форсированной активации)
+  // onNewTab callback — обновлённая версия с tabIndex + force-reactivation
   function onNewTab(profileId, targetInfo) {
     if (!ctrl.active) return;
     if (profileId === ctrl.masterId) {
@@ -524,6 +559,9 @@ describe('onNewTab callback (matches api/multi-control)', () => {
       const masterTargetId = tabIndex[slaveIdx];
       if (masterTargetId) {
         ctrl.mapTab(masterTargetId, profileId, targetInfo.targetId);
+        if (masterTargetId !== ctrl.activeMasterTab) {
+          ctrl._enforceSlaveFocusOnActiveTab(profileId);
+        }
       }
     }
   }
@@ -536,6 +574,7 @@ describe('onNewTab callback (matches api/multi-control)', () => {
     ctrl.lastNewTabTargetId = null;
     ctrl.mapTab = vi.fn();
     ctrl.setActiveMasterTab = vi.fn();
+    ctrl.activateCalls = [];
     tabIndex = ['master-tab-1', 'master-tab-2'];
     browserConnections = new Map();
     const ts1 = new Map();
@@ -581,6 +620,45 @@ describe('onNewTab callback (matches api/multi-control)', () => {
     onNewTab('slave-1', { targetId: 't2', url: 'http://example.com' });
     // targetSessions.size = 2, slaveIdx = 1, tabIndex[1] = 'master-tab-2'
     expect(ctrl.mapTab).toHaveBeenCalledWith('master-tab-2', 'slave-1', 't2');
+  });
+
+  it('calls _enforceSlaveFocusOnActiveTab when new slave tab is not active master tab', () => {
+    ctrl.activeMasterTab = 'master-tab-1';
+    const ts1 = new Map();
+    ts1.set('initial-tab', { sessionId: 's1' });
+    ts1.set('new-slave-tab', { sessionId: 's2' });
+    browserConnections.set('slave-1', { targetSessions: ts1 });
+    ctrl._enforceSlaveFocusOnActiveTab = vi.fn();
+
+    onNewTab('slave-1', { targetId: 'new-slave-tab', url: 'http://example.com' });
+
+    expect(ctrl._enforceSlaveFocusOnActiveTab).toHaveBeenCalledWith('slave-1');
+  });
+
+  it('does not call enforceSlaveFocus when new slave tab IS the active master tab', () => {
+    ctrl.activeMasterTab = 'master-tab-2';
+    const ts1 = new Map();
+    ts1.set('initial-tab', { sessionId: 's1' });
+    ts1.set('new-slave-tab', { sessionId: 's2' });
+    browserConnections.set('slave-1', { targetSessions: ts1 });
+    ctrl._enforceSlaveFocusOnActiveTab = vi.fn();
+
+    onNewTab('slave-1', { targetId: 'new-slave-tab', url: 'http://example.com' });
+
+    // tabIndex[1] = 'master-tab-2' = activeMasterTab → no enforce
+    expect(ctrl._enforceSlaveFocusOnActiveTab).not.toHaveBeenCalled();
+  });
+
+  it('does not call enforceSlaveFocus when activeMasterTab is not set', () => {
+    const ts1 = new Map();
+    ts1.set('initial-tab', { sessionId: 's1' });
+    ts1.set('new-slave-tab', { sessionId: 's2' });
+    browserConnections.set('slave-1', { targetSessions: ts1 });
+    ctrl.activateCalls = [];
+
+    onNewTab('slave-1', { targetId: 'new-slave-tab', url: 'http://example.com' });
+
+    expect(ctrl.activateCalls).toHaveLength(0);
   });
 });
 

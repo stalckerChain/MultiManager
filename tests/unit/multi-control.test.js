@@ -479,4 +479,46 @@ describe('MultiController', () => {
       expect(controller.activeMasterTab).toBe('tab-1');
     });
   });
+
+  describe('_enforceSlaveFocusOnActiveTab', () => {
+    it('вызывает activateTarget для правильного slave таба', () => {
+      mockCdp.activateTarget = vi.fn();
+      controller.setMaster('master-1');
+      controller.mapTab('active-tab', 'slave-1', 'active-slave-tab');
+      controller.setActiveMasterTab('active-tab');
+
+      controller._enforceSlaveFocusOnActiveTab('slave-1');
+
+      expect(mockCdp.activateTarget).toHaveBeenCalledWith('slave-1', 'active-slave-tab');
+    });
+
+    it('не вызывает activateTarget если нет activeMasterTab', () => {
+      mockCdp.activateTarget = vi.fn();
+      controller.setMaster('master-1');
+      controller.mapTab('some-tab', 'slave-1', 'some-slave-tab');
+
+      controller._enforceSlaveFocusOnActiveTab('slave-1');
+
+      expect(mockCdp.activateTarget).not.toHaveBeenCalled();
+    });
+
+    it('не вызывает activateTarget если нет маппинга для activeMasterTab', () => {
+      mockCdp.activateTarget = vi.fn();
+      controller.setMaster('master-1');
+      controller.setActiveMasterTab('unknown-tab');
+
+      controller._enforceSlaveFocusOnActiveTab('slave-1');
+
+      expect(mockCdp.activateTarget).not.toHaveBeenCalled();
+    });
+
+    it('не падает если нет cdp', () => {
+      controller.cdp = null;
+      controller.setMaster('master-1');
+      controller.mapTab('active-tab', 'slave-1', 'active-slave-tab');
+      controller.setActiveMasterTab('active-tab');
+
+      expect(() => controller._enforceSlaveFocusOnActiveTab('slave-1')).not.toThrow();
+    });
+  });
 });

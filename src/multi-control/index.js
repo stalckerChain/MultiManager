@@ -131,6 +131,15 @@ class MultiController {
     }
   }
 
+  _enforceSlaveFocusOnActiveTab(slaveId) {
+    if (!this.activeMasterTab || !this.cdp) return;
+    const slaveTargetId = this.getSlaveTabForMaster(this.activeMasterTab, slaveId);
+    if (slaveTargetId) {
+      this.cdp.activateTarget(slaveId, slaveTargetId);
+      logger.info({ slaveId, masterTab: this.activeMasterTab, slaveTargetId }, 'Multi-control: enforced focus on active tab in slave');
+    }
+  }
+
   getTabIndex(masterTargetId) {
     return this.tabIndex.indexOf(masterTargetId);
   }
