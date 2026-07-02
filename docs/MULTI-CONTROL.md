@@ -33,14 +33,21 @@ CDP SYNC_EVENT_SCRIPT (инжектится в master page)
 
 ## Tab Mapping (1:N)
 
+### Структуры данных
+
 ```
 tabMapping = Map<masterTargetId, Map<slaveId, slaveTargetId>>
+tabIndex   = Array<masterTargetId>  // упорядоченная матрица (порядок создания)
 ```
 
-- `MapTab(masterTargetId, slaveId, slaveTargetId)` — добавить маппинг
-- `UnmapTab(masterTargetId, slaveId?)` — удалить маппинг
-- `GetSlaveTabForMaster(masterTargetId, slaveId)` — получить slave-вкладку
+- `tabMapping` — связь master-таба с slave-табами (1:N)
+- `tabIndex` — массив masterTargetId в порядке их создания. Используется для маппинга slave-табов по индексу: если master создал N-й таб, то новый slave-таб с индексом N-1 маппится на master-таб с тем же индексом
+- `mapTab(masterTargetId, slaveId, slaveTargetId)` — добавить маппинг + запись в tabIndex
+- `unmapTab(masterTargetId, slaveId?)` — удалить маппинг + очистка tabIndex
+- `getSlaveTabForMaster(masterTargetId, slaveId)` — получить slave-вкладку
+- `getTabIndex(masterTargetId)` / `getActiveTabIndex()` — получить индекс таба в tabIndex
 - `_getSlaveSession(slaveId)` — найти CDP-сессию slave через activeMasterTab → tabMapping
+- `_maybeSwitchToPrevTab(destroyedMasterTargetId)` — при закрытии активного таба переключает фокус на предыдущий в tabIndex
 
 ## Ключевые эндпоинты
 
@@ -106,22 +113,48 @@ tabMapping = Map<masterTargetId, Map<slaveId, slaveTargetId>>
    - Для каждого слейва: проверяет наличие нативного таба через HTTP `/json` → если найден — attach+map, иначе `createTab`+attach+map
    - Устанавливает `activeMasterTab` и синхронизирует активацию в слейвы
 
-### `_blank` ссылки и `window.open` (РАБОТАЕТ через HTTP /json polling, v0.9.0)
+### `_blank` ссылки и `window.open` (РАБОТАЕТ через HTTP /json polling + tabIndex, v0.10.0)
 
 **Проблема:** Антидетект-браузер не экспортирует нативно-открытые табы через CDP WebSocket:
 - `Target.setAutoAttach` не работает → `Target.attachedToTarget` не приходит
 - `Target.targetCreated` не приходит для нативно открытых табов
 - `Target.getTargets()` через WS не возвращает такие табы
 
-**Решение (v0.9.0):** HTTP DevTools endpoint `GET /json` — другой кодовый путь Chromium, не зависящий от WS-подписок. Polling `/json` каждые ~300мс находит новые табы:
+**Решение (v0.9.0):** HTTP DevTools endpoint `GET /json` — другой кодовый путь Chromium, не зависящий от WS-подписок. Polling `/json` каждые ~300мс находит новые табы.
 
-1. Пользователь кликает `_blank` → master открывает Tab B нативно
-2. Polling `/json` на master через ≤300мс находит Tab B (нет в `targetSessions`)
-3. `attachToExistingTarget(masterId, Tab B)` — ручной attach + `_enableInput`
-4. `createTab(slaveId, url)` + `attachToExistingTarget(slaveId, slaveTab)` для каждого slave
-5. `mapTab(Tab B, slaveId, slaveTab)` + `setActiveMasterTab(Tab B)`
+**Доработка (v0.10.0):** Поиск нативных табов слейва через `tabMapping` вместо `targetSessions`:
+
+1. Пользователь кликает `_blank` → master открывает Tab B нативно. Событие мыши диспатчится в slave → slave тоже открывает Tab B' нативно
+2. Polling `/json` на master через ≤300мс находит Tab B
+3. `syncNewMasterTab(B)`:
+   - Attach'ит Tab B (мастер)
+   - Для каждого slave вызывает `_findNativeSlaveTab()`:
+     - HTTP GET `/json` слейва
+     - Сравнивает с `tabMapping` (НЕ с `targetSessions`) — таб есть в `/json`, но его ещё нет в `tabMapping` для этого slave → нативный таб
+   - Если найден — `attachToExistingTarget` + `mapTab(B, slaveId, B')`
+   - Если нет (тайминг) — `createTab` + `attachToExistingTarget` + `mapTab(B, slaveId, B'')`
+4. `setActiveMasterTab(B)` + `_syncActiveTabToSlaves(B)`
 
 **Клики по `_blank` больше не перехватываются в sync-script** — мёртвый код удалён (0 срабатываний в логах).
+
+### onNewTab для slave (v0.10.0)
+
+Раньше при `Target.targetCreated`/`attachedToTarget` для slave-таба, `onNewTab` маппил его на `controller.activeMasterTab`. Это было **некорректно**: активным мог быть старый таб, а новый таб маппился на него вместо правильного нового master-таба.
+
+**Исправление (v0.10.0):** маппинг по порядку создания через `tabIndex`:
+
+```javascript
+const bc = cdpManager.browserConnections.get(profileId);
+if (bc) {
+  const slaveIdx = bc.targetSessions.size - 1;  // N-й таб слейва
+  const masterTargetId = controller.tabIndex[slaveIdx];  // N-й таб мастера
+  if (masterTargetId) {
+    controller.mapTab(masterTargetId, profileId, targetInfo.targetId);
+  }
+}
+```
+
+Надёжность достигается тем, что `targetSessions.set()` вызывается до `onNewTab`, поэтому `bc.targetSessions.size` всегда отражает актуальное количество табов.
 
 ## Навигация (Navigation Sync)
 
@@ -170,13 +203,45 @@ _getSlaveSession(slaveId) {
 
 **WS-based подход (v0.7.0–v0.8.1) не сработал для нативных табов:** антидетект-браузер не шлёт ни `Target.targetCreated`, ни `Target.attachedToTarget` для табов, открытых через `_blank` или адресную строку. `Target.getTargets()` через WS тоже не возвращает их.
 
-**Рабочее решение — HTTP DevTools endpoint `GET /json`:**
+**Рабочее решение — HTTP DevTools endpoint `GET /json` + tabIndex matrix:**
 
 1. **Polling** `discoverActiveTab()` раз в 300мс (setInterval при старте)
 2. Запрос `GET http://127.0.0.1:{cdpPort}/json` — **другой кодовой путь Chromium**, не зависящий от WS-подписок
-3. Сравнение списка табов из `/json` с `targetSessions` мастера
+3. Сравнение списка табов из `/json` с известными табами мастера
 4. Вновь появившийся page-таб = новый активный (эвристика: браузер автофокусирует новый таб)
-5. `syncNewMasterTab(targetId, url)`: attach мастера → createTab+attach в слейвах → mapTab → setActiveMasterTab
+5. `syncNewMasterTab(targetId, url)`: attach мастера → поиск нативных slave-табов через `/json` + tabMapping → createTab (если не найдены) → mapTab (добавляет в tabIndex) → setActiveMasterTab
+
+**Поиск нативных slave-табов** (отличие от v0.9.2):
+- Старая логика (v0.9.2): сравнивала `/json` с `targetSessions` слейва — проигрывала race condition с CDP auto-attach (нативный таб уже был в `targetSessions`, но не в `tabMapping`)
+- Новая логика (v0.10.0): сравнивает `/json` с `tabMapping` для конкретного slave — находит таб, даже если auto-attach уже добавил его в `targetSessions`
+
+## Закрытие вкладок и возврат фокуса (v0.10.0)
+
+### Ctrl+W
+Native hook → `/os-keyboard` → закрытие slave-табов через CDP `Target.closeTarget` → удаление маппинга (`unmapTab`). Браузер мастера закрывает таб нативно.
+
+### Target.targetDestroyed
+`onTabDestroyed`:
+1. Для master-таба: закрывает соответствующие slave-табы, удаляет маппинг
+2. Вызывает `_maybeSwitchToPrevTab(targetId)`:
+   - Если закрытый таб был активным — переключает `activeMasterTab` на предыдущий в `tabIndex`
+   - Если закрытый таб не был активным — ничего не делает
+3. Для slave-таба: `_unmapBySlaveTargetId` — находит master-таб по slaveTargetId и удаляет маппинг + вызывает `_maybeSwitchToPrevTab`
+
+### Алгоритм `_maybeSwitchToPrevTab`
+```javascript
+_maybeSwitchToPrevTab(destroyedMasterTargetId) {
+  if (this.activeMasterTab !== destroyedMasterTargetId) return;
+  const destroyedIdx = this.tabIndex.indexOf(destroyedMasterTargetId);
+  if (destroyedIdx <= 0) {
+    if (this.tabIndex.length > 0) {
+      this.setActiveMasterTab(this.tabIndex[0]);  // первый доступный
+    }
+    return;
+  }
+  this.setActiveMasterTab(this.tabIndex[destroyedIdx - 1]);  // предыдущий
+}
+```
 
 ### attachToExistingTarget (ключевой метод)
 
@@ -226,7 +291,7 @@ if (event.type === 'keyDown' && event.key === 'Enter') {
 
 ### Известные ограничения
 
-- **Duplicate tabs (уменьшено в v0.9.0):** При `_blank` в slave создаётся 1 таб через `createTab()` (маппится). Ранее мог открыться второй нативный таб от синхронизированного клика — теперь `_blank`-перехват удалён из sync-script, поэтому клик не блокируется и нативный таб не открывается. Но если на странице есть `window.open` без CDP-перехвата — дубликат возможен.
+- **Orphaned native tabs (уменьшено в v0.10.0):** Если нативный slave-таб открыт (от диспатченного ивента), но не обнаружен `_findNativeSlaveTab` (тайминг), `syncNewMasterTab` создаёт CDP-таб. Нативный таб остаётся orphaned. `_findNativeSlaveTab` теперь использует сравнение с `tabMapping` вместо `targetSessions`, что значительно снижает вероятность.
 - **Polling latency:** Обнаружение нового таба через HTTP /json может занимать до 300мс. Enter перед `/os-keyboard` делает `await discoverActiveTab()` — это добавляет до ~50-100мс к вводу.
 - **HTTP /json недоступен:** Если браузер не отвечает на HTTP DevTools endpoint (заблокирован, сломан), система слепнет к новым табам. `_discoverWsUrl` уже использует `/json`, так что риск мал.
 
@@ -235,8 +300,8 @@ if (event.type === 'keyDown' && event.key === 'Enter') {
 | Файл | Назначение |
 |------|-----------|
 | `src/multi-control/cdp-manager.js` | CDP connection, dispatch, navigation, createTab, activateTarget |
-| `src/multi-control/index.js` | MultiController (broadcast, tabMapping 1:N) |
-| `src/api/multi-control.js` | API routes + CDP event wiring + os-keyboard + tab mapping |
+| `src/multi-control/index.js` | MultiController (broadcast, tabMapping 1:N, tabIndex matrix, focus switching) |
+| `src/api/multi-control.js` | API routes + CDP event wiring + os-keyboard + tab mapping + slave tab discovery |
 | `src/api/window-arranger.js` | Window arranger (taskbar-aware) |
 | `src/os-input/input-capture.js` | EventEmitter wrapper (CDP mode) |
 | `src/os-input/native-hooks/hooks.cc` | C++ addon: WH_KEYBOARD_LL via N-API |
@@ -248,16 +313,35 @@ if (event.type === 'keyDown' && event.key === 'Enter') {
 2. **Native C++ addon** для WH_KEYBOARD_LL — koffi trampoline не работает для синхронных callback
 3. **Гибрид**: CDP для mouse/keyboard + native hooks для browser shortcuts
 4. **Tab mapping 1:N** — `Map<masterTargetId, Map<slaveId, slaveTargetId>>` каждый slave маппится отдельно
-5. **onClick = no-op** — mousePressed+mouseReleased из mouseDown/mouseUp уже генерируют DOM click
-6. **WorkingArea** вместо Bounds — taskbar-aware window positioning
-7. **Прямой createTab для Ctrl+T** — `Target.setAutoAttach` не работает в антидетект-браузере, поэтому создаём вкладки через API напрямую
-8. **HTTP /json polling** — единственный надёжный способ обнаружить нативно-открытые табы в антидетект-браузере; WS-based методы (`targetCreated`, `getTargets`) не работают
+5. **tabIndex matrix** — `Array<masterTargetId>` для маппинга по порядку создания. Позволяет `onNewTab` для slave корректно определять master-таб по индексу (N-й slave → N-й master)
+6. **onClick = no-op** — mousePressed+mouseReleased из mouseDown/mouseUp уже генерируют DOM click
+7. **WorkingArea** вместо Bounds — taskbar-aware window positioning
+8. **Прямой createTab для Ctrl+T** — `Target.setAutoAttach` не работает в антидетект-браузере, поэтому создаём вкладки через API напрямую
+9. **HTTP /json polling** — единственный надёжный способ обнаружить нативно-открытые табы в антидетект-браузере; WS-based методы (`targetCreated`, `getTargets`) не работают
+10. **Поиск нативных slave-табов через tabMapping** (не targetSessions) — исключает race condition с CDP auto-attach. Нативный таб может быть уже в `targetSessions`, но не в `tabMapping` — значит, это наш кандидат
+11. **Фокус на предыдущий таб при destroy** — `_maybeSwitchToPrevTab` использует `tabIndex` для переключения на предыдущий таб в порядке создания
 
 ## Версия
 
-Текущая: v0.9.7 (HTTP /json polling + native browser Ctrl+T/W)
+Текущая: v0.10.0 (tabIndex matrix + native slave tab discovery + focus return)
 
 ## История версий
+
+### v0.10.0 (2026-07-03) — Dynamic tab sync: tabIndex matrix, native slave tab fix, focus return
+
+**Проблемы:**
+1. `onNewTab` для slave маппил новый таб на `activeMasterTab` (старый таб) вместо нового master-таба — критический баг, ломавший синхронизацию при `_blank`/`window.open`
+2. `syncNewMasterTab` искал нативные slave-табы через `targetSessions`, проигрывая race condition с CDP `Target.setAutoAttach` — нативный таб уже был в `targetSessions`, поиск не находил его, создавался дубликат
+3. При закрытии master-таба фокус синхронизации не возвращался на предыдущий таб
+
+**Исправления:**
+
+| Файл | Изменение |
+|------|-----------|
+| `src/multi-control/index.js` | Добавлен `tabIndex` (упорядоченный массив masterTargetId). `mapTab` добавляет в `tabIndex` при первом маппинге. `unmapTab`/`_unmapBySlaveTargetId` чистят `tabIndex`. Добавлен `_maybeSwitchToPrevTab` — возврат фокуса на предыдущий таб. Добавлены `getTabIndex`/`getActiveTabIndex` |
+| `src/api/multi-control.js` | `onNewTab` для slave: маппинг по `tabIndex[slaveIdx]` вместо `activeMasterTab`. `syncNewMasterTab`: поиск нативных табов через `_findNativeSlaveTab` (сравнение `/json` с `tabMapping`, не с `targetSessions`). `onTabDestroyed` вызывает `_maybeSwitchToPrevTab` |
+| `tests/unit/multi-control.test.js` | 11 новых тестов: tabIndex (ordered matrix, порядок, очистка), getTabIndex/getActiveTabIndex, _maybeSwitchToPrevTab (3 сценария), _unmapBySlaveTargetId + focus |
+| `tests/unit/multi-control-api.test.js` | Обновлены тесты onNewTab (tabIndex-based mapping), onTabDestroyed (focus return) |
 
 ### v0.9.0 (2026-07-01) — HTTP /json polling + manual attach
 
