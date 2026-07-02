@@ -293,4 +293,125 @@ describe('MultiController', () => {
       expect(controller.cdp.activateTarget).not.toHaveBeenCalled();
     });
   });
+
+  describe('tabIndex (ordered matrix)', () => {
+    it('mapTab adds entry to tabIndex in order', () => {
+      controller.mapTab('master-tab-1', 'slave-A', 'slave-tab-A');
+      controller.mapTab('master-tab-2', 'slave-A', 'slave-tab-B');
+      controller.mapTab('master-tab-3', 'slave-A', 'slave-tab-C');
+
+      expect(controller.tabIndex).toEqual(['master-tab-1', 'master-tab-2', 'master-tab-3']);
+    });
+
+    it('mapTab reuses existing tabIndex entry for same master tab', () => {
+      controller.mapTab('master-tab-1', 'slave-A', 'slave-tab-A');
+      controller.mapTab('master-tab-1', 'slave-B', 'slave-tab-B');
+
+      expect(controller.tabIndex).toEqual(['master-tab-1']);
+    });
+
+    it('unmapTab removes from tabIndex', () => {
+      controller.mapTab('master-tab-1', 'slave-A', 'slave-tab-A');
+      controller.mapTab('master-tab-2', 'slave-A', 'slave-tab-B');
+      controller.unmapTab('master-tab-1');
+
+      expect(controller.tabIndex).toEqual(['master-tab-2']);
+    });
+
+    it('unmapTab with slaveId removes from tabIndex when last slave', () => {
+      controller.mapTab('master-tab-1', 'slave-A', 'slave-tab-A');
+      controller.mapTab('master-tab-1', 'slave-B', 'slave-tab-B');
+      controller.unmapTab('master-tab-1', 'slave-A');
+
+      expect(controller.tabIndex).toEqual(['master-tab-1']);
+
+      controller.unmapTab('master-tab-1', 'slave-B');
+
+      expect(controller.tabIndex).toEqual([]);
+    });
+
+    it('stop clears tabIndex', () => {
+      controller.mapTab('master-tab-1', 'slave-A', 'slave-tab-A');
+      controller.mapTab('master-tab-2', 'slave-A', 'slave-tab-B');
+      controller.stop();
+
+      expect(controller.tabIndex).toEqual([]);
+    });
+
+    it('getTabIndex returns correct index', () => {
+      controller.mapTab('tab-A', 's1', 'st1');
+      controller.mapTab('tab-B', 's1', 'st2');
+      controller.mapTab('tab-C', 's1', 'st3');
+
+      expect(controller.getTabIndex('tab-A')).toBe(0);
+      expect(controller.getTabIndex('tab-B')).toBe(1);
+      expect(controller.getTabIndex('tab-C')).toBe(2);
+      expect(controller.getTabIndex('unknown')).toBe(-1);
+    });
+
+    it('getActiveTabIndex returns index of active tab', () => {
+      controller.mapTab('tab-A', 's1', 'st1');
+      controller.mapTab('tab-B', 's1', 'st2');
+
+      controller.setActiveMasterTab('tab-A');
+      expect(controller.getActiveTabIndex()).toBe(0);
+
+      controller.setActiveMasterTab('tab-B');
+      expect(controller.getActiveTabIndex()).toBe(1);
+    });
+
+    it('getActiveTabIndex returns -1 when no active tab', () => {
+      expect(controller.getActiveTabIndex()).toBe(-1);
+    });
+  });
+
+  describe('tab focus on destroy', () => {
+    it('_maybeSwitchToPrevTab switches to previous tab in tabIndex', () => {
+      controller.cdp = { activateTarget: vi.fn() };
+      controller.setMaster('master-1');
+      controller.mapTab('tab-1', 'slave-1', 'st1');
+      controller.mapTab('tab-2', 'slave-1', 'st2');
+      controller.mapTab('tab-3', 'slave-1', 'st3');
+
+      controller.setActiveMasterTab('tab-3');
+      controller._maybeSwitchToPrevTab('tab-3');
+
+      expect(controller.activeMasterTab).toBe('tab-2');
+    });
+
+    it('_maybeSwitchToPrevTab does nothing if destroyed tab not active', () => {
+      controller.cdp = { activateTarget: vi.fn() };
+      controller.setMaster('master-1');
+      controller.mapTab('tab-1', 'slave-1', 'st1');
+      controller.setActiveMasterTab('tab-1');
+
+      controller._maybeSwitchToPrevTab('tab-2');
+
+      expect(controller.activeMasterTab).toBe('tab-1');
+    });
+
+    it('_maybeSwitchToPrevTab switches to first tab when destroying first active tab', () => {
+      controller.cdp = { activateTarget: vi.fn() };
+      controller.setMaster('master-1');
+      controller.mapTab('tab-1', 'slave-1', 'st1');
+      controller.mapTab('tab-2', 'slave-1', 'st2');
+
+      controller.setActiveMasterTab('tab-1');
+      controller.unmapTab('tab-1');
+      controller._maybeSwitchToPrevTab('tab-1');
+
+      expect(controller.activeMasterTab).toBe('tab-2');
+    });
+
+    it('_unmapBySlaveTargetId calls _maybeSwitchToPrevTab', () => {
+      controller.cdp = { activateTarget: vi.fn() };
+      controller.setMaster('master-1');
+      controller.mapTab('tab-1', 'slave-1', 'st1');
+      controller.mapTab('tab-2', 'slave-1', 'st2');
+      controller.setActiveMasterTab('tab-2');
+
+      controller._unmapBySlaveTargetId('st2');
+      expect(controller.activeMasterTab).toBe('tab-1');
+    });
+  });
 });

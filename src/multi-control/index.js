@@ -13,6 +13,7 @@ class MultiController {
     this.windowPositions = new Map();
     this.cdp = cdpManagerRef || null;
     this.tabMapping = new Map();
+    this.tabIndex = [];
     this.activeMasterTab = null;
   }
 
@@ -44,6 +45,7 @@ class MultiController {
     this.masterScroll = { scrollX: 0, scrollY: 0 };
     this.windowPositions.clear();
     this.tabMapping.clear();
+    this.tabIndex = [];
     this.activeMasterTab = null;
     if (this.throttleTimer) {
       clearTimeout(this.throttleTimer);
@@ -59,9 +61,11 @@ class MultiController {
 
   mapTab(masterTargetId, slaveId, slaveTargetId) {
     let bySlave = this.tabMapping.get(masterTargetId);
+    const isNewEntry = !bySlave;
     if (!bySlave) {
       bySlave = new Map();
       this.tabMapping.set(masterTargetId, bySlave);
+      this.tabIndex.push(masterTargetId);
     }
     bySlave.set(slaveId, slaveTargetId);
     logger.info({ masterTargetId, slaveId, slaveTargetId }, 'Multi-control: tab mapped');
@@ -72,9 +76,19 @@ class MultiController {
     if (!bySlave) return;
     if (slaveId) {
       bySlave.delete(slaveId);
+      if (bySlave.size === 0) {
+        this.tabMapping.delete(masterTargetId);
+        this._removeFromTabIndex(masterTargetId);
+      }
     } else {
       this.tabMapping.delete(masterTargetId);
+      this._removeFromTabIndex(masterTargetId);
     }
+  }
+
+  _removeFromTabIndex(masterTargetId) {
+    const idx = this.tabIndex.indexOf(masterTargetId);
+    if (idx !== -1) this.tabIndex.splice(idx, 1);
   }
 
   _unmapBySlaveTargetId(slaveTargetId) {
@@ -83,7 +97,11 @@ class MultiController {
         if (stid === slaveTargetId) {
           bySlave.delete(sid);
           logger.info({ masterTargetId: masterTid, slaveId: sid, slaveTargetId }, 'Multi-control: slave tab destroyed, unmapped');
-          if (bySlave.size === 0) this.tabMapping.delete(masterTid);
+          if (bySlave.size === 0) {
+            this.tabMapping.delete(masterTid);
+            this._removeFromTabIndex(masterTid);
+          }
+          this._maybeSwitchToPrevTab(masterTid);
           return;
         }
       }
@@ -95,6 +113,31 @@ class MultiController {
     if (!bySlave) return null;
     if (slaveId) return bySlave.get(slaveId) || null;
     return bySlave.values().next().value || null;
+  }
+
+  _maybeSwitchToPrevTab(destroyedMasterTargetId) {
+    if (this.activeMasterTab !== destroyedMasterTargetId) return;
+    const destroyedIdx = this.tabIndex.indexOf(destroyedMasterTargetId);
+    if (destroyedIdx <= 0) {
+      if (this.tabIndex.length > 0) {
+        this.setActiveMasterTab(this.tabIndex[0]);
+      }
+      return;
+    }
+    const prevIdx = destroyedIdx - 1;
+    const prevTargetId = this.tabIndex[prevIdx];
+    if (prevTargetId) {
+      this.setActiveMasterTab(prevTargetId);
+    }
+  }
+
+  getTabIndex(masterTargetId) {
+    return this.tabIndex.indexOf(masterTargetId);
+  }
+
+  getActiveTabIndex() {
+    if (!this.activeMasterTab) return -1;
+    return this.getTabIndex(this.activeMasterTab);
   }
 
   setActiveMasterTab(targetId) {

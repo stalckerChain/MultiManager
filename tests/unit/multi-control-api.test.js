@@ -513,17 +513,23 @@ describe('onNavigate callback (matches api/multi-control)', () => {
 describe('onNewTab callback (matches api/multi-control)', () => {
   let ctrl;
   let mockCdp;
+  let tabIndex;
+  let browserConnections;
 
-  // onNewTab callback из api/multi-control.js строки 215-230
-  function onNewTab(profileId, targetId, url) {
-    if (profileId === ctrl.masterId && ctrl.active) {
-      ctrl.lastNewTabTargetId = targetId;
-      const profiles = ctrl.getProfiles();
-      for (const slaveId of profiles) {
-        if (slaveId === ctrl.masterId) continue;
-        mockCdp.createTab(slaveId, url).then(slaveTabId => {
-          ctrl.setSlaveTabForMaster(targetId, slaveId, slaveTabId);
-        });
+  // onNewTab callback — обновлённая версия с tabIndex
+  function onNewTab(profileId, targetInfo) {
+    if (!ctrl.active) return;
+    if (profileId === ctrl.masterId) {
+      ctrl.lastNewTabTargetId = targetInfo.targetId;
+      ctrl.setActiveMasterTab(targetInfo.targetId);
+      return;
+    }
+    const bc = browserConnections.get(profileId);
+    if (bc) {
+      const slaveIdx = bc.targetSessions.size - 1;
+      const masterTargetId = tabIndex[slaveIdx];
+      if (masterTargetId) {
+        ctrl.mapTab(masterTargetId, profileId, targetInfo.targetId);
       }
     }
   }
@@ -534,44 +540,53 @@ describe('onNewTab callback (matches api/multi-control)', () => {
     ctrl.masterId = 'master-1';
     ctrl.active = true;
     ctrl.lastNewTabTargetId = null;
-    ctrl.getProfiles = () => ['master-1', 'slave-1', 'slave-2'];
-    mockCdp.createCalls = 0;
-    mockCdp.createCallsLog = undefined;
+    ctrl.mapTab = vi.fn();
+    ctrl.setActiveMasterTab = vi.fn();
+    tabIndex = ['master-tab-1', 'master-tab-2'];
+    browserConnections = new Map();
+    const ts1 = new Map();
+    ts1.set('initial-tab', { sessionId: 's1' });
+    browserConnections.set('slave-1', { targetSessions: ts1 });
   });
 
-  it('creates slave tabs on new master tab', () => {
-    onNewTab('master-1', 'new-tab-1', 'http://new-tab.com');
+  it('tracks new master tab and sets active', () => {
+    onNewTab('master-1', { targetId: 'new-tab-1', url: 'http://new-tab.com' });
     expect(ctrl.lastNewTabTargetId).toBe('new-tab-1');
-    // createTab вызывается асинхронно (setTimeout 0 или Promise), но наш mock синхронный
-    expect(mockCdp.createCalls).toBe(2);
+    expect(ctrl.setActiveMasterTab).toHaveBeenCalledWith('new-tab-1');
   });
 
-  it('ignores new tab from slave profiles', () => {
-    onNewTab('slave-1', 'new-tab-1', 'http://new-tab.com');
-    expect(ctrl.lastNewTabTargetId).toBeNull();
-    expect(mockCdp.createCalls).toBe(0);
+  it('ignores new tab from slave profiles when no tabIndex match', () => {
+    tabIndex.length = 0;
+    onNewTab('slave-1', { targetId: 'new-slave-tab', url: 'http://new.com' });
+    expect(ctrl.mapTab).not.toHaveBeenCalled();
   });
 
   it('ignores new tab when inactive', () => {
     ctrl.active = false;
-    onNewTab('master-1', 'new-tab-1', 'http://new-tab.com');
+    onNewTab('master-1', { targetId: 'new-tab-1', url: 'http://new-tab.com' });
     expect(ctrl.lastNewTabTargetId).toBeNull();
-    expect(mockCdp.createCalls).toBe(0);
   });
 
-  it('creates tabs for each slave', () => {
-    onNewTab('master-1', 'new-tab-1', 'http://multi.com');
-    expect(mockCdp.createCalls).toBe(2);
+  it('maps slave tab by tabIndex order', () => {
+    const ts = new Map();
+    ts.set('initial-tab', { sessionId: 's1' });
+    ts.set('new-slave-tab', { sessionId: 's2' });
+    browserConnections.set('slave-2', { targetSessions: ts });
+
+    onNewTab('slave-2', { targetId: 'new-slave-tab', url: 'http://new.com' });
+    // targetSessions.size = 2, slaveIdx = 1, tabIndex[1] = 'master-tab-2'
+    expect(ctrl.mapTab).toHaveBeenCalledWith('master-tab-2', 'slave-2', 'new-slave-tab');
   });
 
-  it('does not create tab for master profile', () => {
-    onNewTab('master-1', 'new-tab-1', 'http://no-master.com');
-    // Проверяем что createTab не вызывался с masterId
-    if (mockCdp.createCallsLog) {
-      for (const call of mockCdp.createCallsLog) {
-        expect(call.profileId).not.toBe(ctrl.masterId);
-      }
-    }
+  it('maps slave by correct tabIndex when multiple slaves', () => {
+    const ts1 = new Map();
+    ts1.set('t1', { sessionId: 's1' });
+    ts1.set('t2', { sessionId: 's2' });
+    browserConnections.set('slave-1', { targetSessions: ts1 });
+
+    onNewTab('slave-1', { targetId: 't2', url: 'http://example.com' });
+    // targetSessions.size = 2, slaveIdx = 1, tabIndex[1] = 'master-tab-2'
+    expect(ctrl.mapTab).toHaveBeenCalledWith('master-tab-2', 'slave-1', 't2');
   });
 });
 
@@ -582,9 +597,10 @@ describe('onTabDestroyed callback (matches api/multi-control)', () => {
   let ctrl;
   let mockCdp;
 
-  // onTabDestroyed callback из api/multi-control.js строки 235-250
+  // onTabDestroyed callback из api/multi-control.js
   function onTabDestroyed(profileId, tabId) {
-    if (profileId === ctrl.masterId && ctrl.active) {
+    if (!ctrl.active) return;
+    if (profileId === ctrl.masterId) {
       const profiles = ctrl.getProfiles();
       for (const slaveId of profiles) {
         if (slaveId === ctrl.masterId) continue;
@@ -593,6 +609,11 @@ describe('onTabDestroyed callback (matches api/multi-control)', () => {
           mockCdp.destroyTab(slaveId, slaveTabId);
           ctrl.removeSlaveForMaster(tabId, slaveId);
         }
+      }
+      if (ctrl._maybeSwitchToPrevTab) ctrl._maybeSwitchToPrevTab(tabId);
+    } else {
+      if (ctrl._maybeSwitchToPrevTab && ctrl._unmapBySlaveId) {
+        ctrl._unmapBySlaveId(tabId);
       }
     }
   }

@@ -49,20 +49,7 @@ async function syncNewMasterTab(masterTargetId, masterTabUrl) {
     logger.info({ masterTargetId, url: masterTabUrl }, 'SYNC: discovered new master tab, syncing slaves');
     for (const [slaveId] of controller.slaves) {
       try {
-        // Сначала ищем нативный таб в слейве — мог открыться от диспатченного ивента.
-        // Делаем 2 попытки с паузой, т.к. браузер может не успеть открыть таб сразу.
-        let nativeTab = null;
-        for (let attempt = 0; attempt < 2; attempt++) {
-          const slaveTabs = await cdpManager.getHttpTabs(slaveId);
-          const slaveBc = cdpManager.browserConnections.get(slaveId);
-          const slaveKnown = slaveBc ? slaveBc.targetSessions : null;
-          nativeTab = slaveKnown
-            ? slaveTabs.find(t => t.type === 'page' && !slaveKnown.has(t.targetId))
-            : null;
-          if (nativeTab) break;
-          if (attempt === 0) await new Promise(r => setTimeout(r, 150));
-        }
-
+        let nativeTab = await _findNativeSlaveTab(slaveId);
         if (nativeTab) {
           await cdpManager.attachToExistingTarget(slaveId, nativeTab.targetId);
           controller.mapTab(masterTargetId, slaveId, nativeTab.targetId);
@@ -84,6 +71,39 @@ async function syncNewMasterTab(masterTargetId, masterTabUrl) {
   } finally {
     pendingSync.delete(masterTargetId);
   }
+}
+
+/**
+ * Поиск нативного таба в слейве, открытого от диспатченного ивента.
+ *
+ * В отличие от старой логики (сравнение /json с targetSessions), этот метод
+ * сравнивает /json с уже замапленными в tabMapping табами слейва. Это
+ * исключает race condition с CDP auto-attach: нативный таб может быть уже
+ * в targetSessions, но его ещё нет в tabMapping — значит, это наш кандидат.
+ *
+ * Делает 2 попытки с паузой 150мс, т.к. браузер может не успеть открыть таб.
+ *
+ * @param {string} slaveId
+ * @returns {Promise<{targetId: string, url: string}|null>}
+ */
+async function _findNativeSlaveTab(slaveId) {
+  for (let attempt = 0; attempt < 2; attempt++) {
+    const slaveTabs = await cdpManager.getHttpTabs(slaveId);
+    const mappedIds = _getMappedSlaveTabIds(slaveId);
+    const candidate = slaveTabs.find(t => t.type === 'page' && !mappedIds.has(t.targetId));
+    if (candidate) return candidate;
+    if (attempt === 0) await new Promise(r => setTimeout(r, 150));
+  }
+  return null;
+}
+
+function _getMappedSlaveTabIds(slaveId) {
+  const ids = new Set();
+  for (const [, bySlave] of controller.tabMapping) {
+    const tid = bySlave.get(slaveId);
+    if (tid) ids.add(tid);
+  }
+  return ids;
 }
 
 let discovering = false;
@@ -201,11 +221,16 @@ router.post('/start', async (req, res) => {
         return;
       }
 
-      if (controller.activeMasterTab) {
-        controller.mapTab(controller.activeMasterTab, profileId, targetInfo.targetId);
-        logger.info({ slaveId: profileId, masterTargetId: controller.activeMasterTab, slaveTargetId: targetInfo.targetId }, 'MULTI-CONTROL: mapped slave tab from targetCreated');
-      } else {
-        logger.info({ profileId, targetId: targetInfo.targetId, url: targetInfo.url }, 'MULTI-CONTROL: slave opened new tab (no active master tab to map)');
+      const bc = cdpManager.browserConnections.get(profileId);
+      if (bc) {
+        const slaveIdx = bc.targetSessions.size - 1;
+        const masterTargetId = controller.tabIndex[slaveIdx];
+        if (masterTargetId) {
+          controller.mapTab(masterTargetId, profileId, targetInfo.targetId);
+          logger.info({ slaveId: profileId, masterTargetId, slaveTargetId: targetInfo.targetId, tabIndex: slaveIdx }, 'MULTI-CONTROL: mapped slave tab by tabIndex order');
+        } else {
+          logger.info({ profileId, targetId: targetInfo.targetId, url: targetInfo.url, slaveIdx }, 'MULTI-CONTROL: slave opened new tab (no matching master tab in tabIndex)');
+        }
       }
     };
 
@@ -254,6 +279,8 @@ router.post('/start', async (req, res) => {
           }
         }
         controller.unmapTab(targetId);
+        controller._maybeSwitchToPrevTab(targetId);
+        logger.info({ targetId, newActiveTab: controller.activeMasterTab }, 'MULTI-CONTROL: focus returned to previous tab after destroy');
       } else {
         controller._unmapBySlaveTargetId(targetId);
       }
