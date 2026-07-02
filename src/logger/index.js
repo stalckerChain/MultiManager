@@ -39,11 +39,14 @@ const targets = [
 ];
 
 if (process.env.NODE_ENV !== 'production') {
-  targets.unshift({
-    target: 'pino-pretty',
-    options: {},
-    level: 'info',
-  });
+  try {
+    require.resolve('pino-pretty');
+    targets.unshift({
+      target: 'pino-pretty',
+      options: {},
+      level: 'info',
+    });
+  } catch {}
 }
 
 const logger = pino({

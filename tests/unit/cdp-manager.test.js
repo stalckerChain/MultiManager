@@ -268,7 +268,88 @@ describe('CdpManager', () => {
     });
   });
 
-  describe('attachToExistingTarget', () => {
+  describe('activateAndFocusTarget', () => {
+  function createWsWithAutoReply() {
+    const messageHandlers = [];
+    const ws = {
+      send: vi.fn((msgStr) => {
+        const msg = JSON.parse(msgStr);
+        setTimeout(() => {
+          for (const h of messageHandlers) {
+            h(JSON.stringify({ id: msg.id, result: {} }));
+          }
+        }, 0);
+      }),
+      on: vi.fn((event, handler) => { if (event === 'message') messageHandlers.push(handler); }),
+      removeListener: vi.fn(),
+      close: vi.fn(),
+    };
+    return { ws, messageHandlers };
+  }
+
+  it('не падает если нет browser connection', async () => {
+    await expect(mgr.activateAndFocusTarget('nonexistent', 't1')).resolves.toBeUndefined();
+  });
+
+  it('вызывает цепочку Target.activateTarget -> Page.bringToFront -> DOM.focus', async () => {
+    const { ws } = createWsWithAutoReply();
+    const session = { ws, sessionId: 's1', targetId: 't1', profileId: 'p1' };
+    const targetSessions = new Map();
+    targetSessions.set('t1', session);
+    mgr.browserConnections.set('p1', { ws, targetSessions, cdpPort: 9222 });
+
+    await mgr.activateAndFocusTarget('p1', 't1');
+
+    const allSends = ws.send.mock.calls.map(c => JSON.parse(c[0]));
+    const methods = allSends.map(m => m.method);
+
+    expect(methods).toContain('Target.activateTarget');
+    expect(methods).toContain('Page.bringToFront');
+    expect(methods).toContain('DOM.enable');
+    expect(methods).toContain('DOM.focus');
+    expect(methods).toContain('Runtime.evaluate');
+
+    const activateCall = allSends.find(m => m.method === 'Target.activateTarget');
+    expect(activateCall.params).toEqual({ targetId: 't1' });
+    expect(activateCall.sessionId).toBeUndefined();
+
+    const bringToFrontCall = allSends.find(m => m.method === 'Page.bringToFront');
+    expect(bringToFrontCall.sessionId).toBe('s1');
+
+    const focusCall = allSends.find(m => m.method === 'DOM.focus');
+    expect(focusCall.params).toEqual({ nodeId: 1 });
+    expect(focusCall.sessionId).toBe('s1');
+  });
+
+  it('вызывает document.body.focus() как fallback', async () => {
+    const { ws } = createWsWithAutoReply();
+    const session = { ws, sessionId: 's1', targetId: 't1', profileId: 'p1' };
+    const targetSessions = new Map();
+    targetSessions.set('t1', session);
+    mgr.browserConnections.set('p1', { ws, targetSessions, cdpPort: 9222 });
+
+    await mgr.activateAndFocusTarget('p1', 't1');
+
+    const allSends = ws.send.mock.calls.map(c => JSON.parse(c[0]));
+    const evalCall = allSends.find(m => m.method === 'Runtime.evaluate');
+    expect(evalCall).toBeDefined();
+    expect(evalCall.params.expression).toContain('document.body && document.body.focus()');
+    expect(evalCall.sessionId).toBe('s1');
+  });
+
+  it('работает без targetSessions (только activateTarget)', async () => {
+    const { ws } = createWsWithAutoReply();
+    mgr.browserConnections.set('p1', { ws, targetSessions: new Map(), cdpPort: 9222 });
+
+    await mgr.activateAndFocusTarget('p1', 't1');
+
+    const allSends = ws.send.mock.calls.map(c => JSON.parse(c[0]));
+    expect(allSends.length).toBe(1);
+    expect(allSends[0].method).toBe('Target.activateTarget');
+  });
+});
+
+describe('attachToExistingTarget', () => {
     it('возвращает null если нет browser connection', async () => {
       const result = await mgr.attachToExistingTarget('nonexistent', 't1');
       expect(result).toBeNull();

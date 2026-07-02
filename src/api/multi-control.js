@@ -67,7 +67,7 @@ async function syncNewMasterTab(masterTargetId, masterTabUrl) {
       }
     }
     controller.setActiveMasterTab(masterTargetId);
-    controller._syncActiveTabToSlaves(masterTargetId);
+    await controller._syncActiveTabToSlaves(masterTargetId);
   } finally {
     pendingSync.delete(masterTargetId);
   }

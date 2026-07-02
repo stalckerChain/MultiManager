@@ -7,6 +7,8 @@ function createMockCdp() {
     dispatchKeyEvent: vi.fn(),
     insertText: vi.fn(),
     getPageScroll: vi.fn().mockResolvedValue({ scrollX: 0, scrollY: 0 }),
+    activateAndFocusTarget: vi.fn().mockResolvedValue(undefined),
+    getPageTargets: vi.fn().mockResolvedValue([]),
   };
 }
 
@@ -220,15 +222,15 @@ describe('MultiController', () => {
     });
 
     it('onNavigate с тем же targetId не вызывает _syncActiveTabToSlaves повторно', () => {
-      controller.cdp = { activateTarget: vi.fn() };
+      controller.cdp = { activateAndFocusTarget: vi.fn().mockResolvedValue(undefined), getPageTargets: vi.fn().mockResolvedValue([]) };
       controller.setMaster('master-1');
       controller.mapTab('tab-1', 'slave-1', 'slave-tab-1');
 
       controller.setActiveMasterTab('tab-1');
-      expect(controller.cdp.activateTarget).toHaveBeenCalledTimes(1);
+      expect(controller.cdp.activateAndFocusTarget).toHaveBeenCalledTimes(1);
 
       controller.setActiveMasterTab('tab-1');
-      expect(controller.cdp.activateTarget).toHaveBeenCalledTimes(1);
+      expect(controller.cdp.activateAndFocusTarget).toHaveBeenCalledTimes(1);
     });
   });
 
@@ -271,26 +273,89 @@ describe('MultiController', () => {
       expect(controller.activeMasterTab).toBeNull();
     });
 
-    it('setActiveMasterTab updates activeMasterTab and calls _syncActiveTabToSlaves', () => {
-      controller.cdp = { activateTarget: vi.fn() };
+    it('setActiveMasterTab updates activeMasterTab and calls _syncActiveTabToSlaves', async () => {
+      controller.cdp = { activateAndFocusTarget: vi.fn().mockResolvedValue(undefined), getPageTargets: vi.fn().mockResolvedValue([]) };
       controller.setMaster('master-1');
       controller.mapTab('tab-1', 'slave-1', 'slave-tab-1');
       controller.mapTab('tab-1', 'slave-2', 'slave-tab-2');
 
       controller.setActiveMasterTab('tab-1');
+      await new Promise(resolve => setTimeout(resolve, 0));
 
       expect(controller.activeMasterTab).toBe('tab-1');
-      expect(controller.cdp.activateTarget).toHaveBeenCalledWith('slave-1', 'slave-tab-1');
-      expect(controller.cdp.activateTarget).toHaveBeenCalledWith('slave-2', 'slave-tab-2');
+      expect(controller.cdp.activateAndFocusTarget).toHaveBeenCalledWith('slave-1', 'slave-tab-1');
+      expect(controller.cdp.activateAndFocusTarget).toHaveBeenCalledWith('slave-2', 'slave-tab-2');
     });
 
     it('setActiveMasterTab does nothing when called with same tab', () => {
-      controller.cdp = { activateTarget: vi.fn() };
+      controller.cdp = { activateAndFocusTarget: vi.fn().mockResolvedValue(undefined), getPageTargets: vi.fn().mockResolvedValue([]) };
       controller.activeMasterTab = 'tab-1';
 
       controller.setActiveMasterTab('tab-1');
 
-      expect(controller.cdp.activateTarget).not.toHaveBeenCalled();
+      expect(controller.cdp.activateAndFocusTarget).not.toHaveBeenCalled();
+    });
+
+    it('_syncActiveTabToSlaves находит таб в slave по URL при отсутствии маппинга', async () => {
+      controller.cdp = {
+        activateAndFocusTarget: vi.fn().mockResolvedValue(undefined),
+        getPageTargets: vi.fn((profileId) => {
+          if (profileId === 'master-1') {
+            return Promise.resolve([{ targetId: 'mt1', url: 'http://example.com/page1', type: 'page' }]);
+          }
+          return Promise.resolve([
+            { targetId: 'st1', url: 'http://other.com', type: 'page' },
+            { targetId: 'st2', url: 'http://example.com/page1', type: 'page' },
+          ]);
+        }),
+      };
+      controller.setMaster('master-1');
+      await controller.addSlave('slave-1');
+
+      // Устанавливаем matching target как active и синхронизируем
+      await controller._syncActiveTabToSlaves('mt1');
+
+      // Должен найти st2 по URL и вызвать activateAndFocusTarget
+      expect(controller.cdp.activateAndFocusTarget).toHaveBeenCalledWith('slave-1', 'st2');
+      // Проверяем, что маппинг создан
+      expect(controller.getSlaveTabForMaster('mt1', 'slave-1')).toBe('st2');
+    });
+
+    it('_syncActiveTabToSlaves использует index fallback если URL не совпадает', async () => {
+      controller.cdp = {
+        activateAndFocusTarget: vi.fn().mockResolvedValue(undefined),
+        getPageTargets: vi.fn((profileId) => {
+          if (profileId === 'master-1') {
+            return Promise.resolve([
+              { targetId: 'mt1', url: 'about:blank', type: 'page' },
+              { targetId: 'mt2', url: 'http://example.com/page2', type: 'page' },
+            ]);
+          }
+          return Promise.resolve([
+            { targetId: 'st1', url: 'about:blank', type: 'page' },
+            { targetId: 'st2', url: 'http://example.com/page2', type: 'page' },
+          ]);
+        }),
+      };
+      controller.setMaster('master-1');
+      await controller.addSlave('slave-1');
+      controller.mapTab('mt1', 'slave-1', 'st1');
+      controller.mapTab('mt2', 'slave-1', 'st2');
+
+      // mt2 already has mapping — should use it
+      await controller._syncActiveTabToSlaves('mt2');
+      expect(controller.cdp.activateAndFocusTarget).toHaveBeenCalledWith('slave-1', 'st2');
+    });
+
+    it('_syncActiveTabToSlaves не падает если master target не найден', async () => {
+      controller.cdp = {
+        activateAndFocusTarget: vi.fn().mockResolvedValue(undefined),
+        getPageTargets: vi.fn().mockResolvedValue([]),
+      };
+      controller.setMaster('master-1');
+
+      await expect(controller._syncActiveTabToSlaves('nonexistent')).resolves.toBeUndefined();
+      expect(controller.cdp.activateAndFocusTarget).not.toHaveBeenCalled();
     });
   });
 
@@ -367,7 +432,7 @@ describe('MultiController', () => {
 
   describe('tab focus on destroy', () => {
     it('_maybeSwitchToPrevTab switches to previous tab in tabIndex', () => {
-      controller.cdp = { activateTarget: vi.fn() };
+      controller.cdp = { activateAndFocusTarget: vi.fn().mockResolvedValue(undefined), getPageTargets: vi.fn().mockResolvedValue([]) };
       controller.setMaster('master-1');
       controller.mapTab('tab-1', 'slave-1', 'st1');
       controller.mapTab('tab-2', 'slave-1', 'st2');
@@ -380,7 +445,7 @@ describe('MultiController', () => {
     });
 
     it('_maybeSwitchToPrevTab does nothing if destroyed tab not active', () => {
-      controller.cdp = { activateTarget: vi.fn() };
+      controller.cdp = { activateAndFocusTarget: vi.fn().mockResolvedValue(undefined), getPageTargets: vi.fn().mockResolvedValue([]) };
       controller.setMaster('master-1');
       controller.mapTab('tab-1', 'slave-1', 'st1');
       controller.setActiveMasterTab('tab-1');
@@ -391,7 +456,7 @@ describe('MultiController', () => {
     });
 
     it('_maybeSwitchToPrevTab switches to first tab when destroying first active tab', () => {
-      controller.cdp = { activateTarget: vi.fn() };
+      controller.cdp = { activateAndFocusTarget: vi.fn().mockResolvedValue(undefined), getPageTargets: vi.fn().mockResolvedValue([]) };
       controller.setMaster('master-1');
       controller.mapTab('tab-1', 'slave-1', 'st1');
       controller.mapTab('tab-2', 'slave-1', 'st2');
@@ -404,7 +469,7 @@ describe('MultiController', () => {
     });
 
     it('_unmapBySlaveTargetId calls _maybeSwitchToPrevTab', () => {
-      controller.cdp = { activateTarget: vi.fn() };
+      controller.cdp = { activateAndFocusTarget: vi.fn().mockResolvedValue(undefined), getPageTargets: vi.fn().mockResolvedValue([]) };
       controller.setMaster('master-1');
       controller.mapTab('tab-1', 'slave-1', 'st1');
       controller.mapTab('tab-2', 'slave-1', 'st2');

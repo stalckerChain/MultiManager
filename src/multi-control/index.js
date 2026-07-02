@@ -147,15 +147,45 @@ class MultiController {
     this._syncActiveTabToSlaves(targetId);
   }
 
-  _syncActiveTabToSlaves(masterTargetId) {
+  async _syncActiveTabToSlaves(masterTargetId) {
     if (!this.cdp) return;
+
     const bySlave = this.tabMapping.get(masterTargetId);
-    if (!bySlave) return;
-    for (const [slaveId, slaveTargetId] of bySlave) {
+    if (bySlave && bySlave.size > 0) {
+      for (const [slaveId, slaveTargetId] of bySlave) {
+        try {
+          await this.cdp.activateAndFocusTarget(slaveId, slaveTargetId);
+        } catch (err) {
+          logger.error(`Multi-control: activateAndFocusTarget error slave ${slaveId}`, { error: err.message });
+        }
+      }
+      return;
+    }
+
+    const masterTargets = await this.cdp.getPageTargets(this.masterId);
+    const masterTarget = masterTargets.find(t => t.targetId === masterTargetId);
+    if (!masterTarget) {
+      logger.warn({ masterTargetId }, 'Multi-control: master target not found in getPageTargets');
+      return;
+    }
+
+    const masterUrl = masterTarget.url;
+    const masterIndex = this.getTabIndex(masterTargetId);
+
+    for (const [slaveId] of this.slaves) {
       try {
-        this.cdp.activateTarget(slaveId, slaveTargetId);
+        const slaveTargets = await this.cdp.getPageTargets(slaveId);
+        let slaveTarget = slaveTargets.find(t => t.url === masterUrl && t.url && t.url !== 'about:blank');
+        if (!slaveTarget && masterIndex >= 0 && masterIndex < slaveTargets.length) {
+          slaveTarget = slaveTargets[masterIndex];
+        }
+        if (slaveTarget) {
+          this.mapTab(masterTargetId, slaveId, slaveTarget.targetId);
+          await this.cdp.activateAndFocusTarget(slaveId, slaveTarget.targetId);
+          logger.info({ slaveId, slaveTargetId: slaveTarget.targetId, url: masterUrl }, 'Multi-control: synced slave tab by URL/index');
+        }
       } catch (err) {
-        logger.error(`Multi-control: activateTarget error slave ${slaveId}`, { error: err.message });
+        logger.error(`Multi-control: tab sync error slave ${slaveId}`, { error: err.message });
       }
     }
   }

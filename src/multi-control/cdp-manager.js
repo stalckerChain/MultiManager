@@ -458,6 +458,65 @@ class CdpManager {
     }));
   }
 
+  _sendAndWait(ws, method, params, sessionId) {
+    return new Promise((resolve, reject) => {
+      const id = Math.floor(Math.random() * 1e9);
+      const timeout = setTimeout(() => {
+        ws.removeListener('message', handler);
+        resolve(null);
+      }, 10000);
+
+      const handler = (raw) => {
+        try {
+          const msg = JSON.parse(raw);
+          if (msg.id === id) {
+            clearTimeout(timeout);
+            ws.removeListener('message', handler);
+            if (msg.error) {
+              reject(new Error(msg.error.message));
+            } else {
+              resolve(msg.result);
+            }
+          }
+        } catch {}
+      };
+      ws.on('message', handler);
+
+      const payload = { id, method, params };
+      if (sessionId) payload.sessionId = sessionId;
+      ws.send(JSON.stringify(payload));
+    });
+  }
+
+  async activateAndFocusTarget(profileId, targetId) {
+    const bc = this.browserConnections.get(profileId);
+    if (!bc) {
+      logger.warn({ profileId, targetId }, 'CDP: activateAndFocusTarget — no browser connection');
+      return;
+    }
+
+    try {
+      await this._sendAndWait(bc.ws, 'Target.activateTarget', { targetId });
+      logger.info({ profileId, targetId }, 'CDP: activateTarget done');
+
+      const session = bc.targetSessions.get(targetId);
+      if (session) {
+        await this._sendAndWait(bc.ws, 'Page.bringToFront', {}, session.sessionId);
+        logger.info({ profileId, targetId }, 'CDP: Page.bringToFront done');
+
+        await this._sendAndWait(bc.ws, 'DOM.enable', {}, session.sessionId);
+        await this._sendAndWait(bc.ws, 'DOM.focus', { nodeId: 1 }, session.sessionId);
+        logger.info({ profileId, targetId }, 'CDP: DOM.focus done');
+
+        await this._sendAndWait(bc.ws, 'Runtime.evaluate', {
+          expression: 'document.body && document.body.focus()',
+        }, session.sessionId);
+      }
+    } catch (err) {
+      logger.error({ profileId, targetId, error: err.message }, 'CDP: activateAndFocusTarget failed');
+    }
+  }
+
   dispatchMouseEvent(profileId, type, params) {
     const session = this.sessions.get(profileId);
     if (!session) {
