@@ -200,9 +200,12 @@ router.post('/start', async (req, res) => {
     cdpManager.onEvent = (profileId, event, sessionId) => {
       if (profileId === masterId && controller.active) {
         if (event.type === 'tabActivated') {
+          const targetId = cdpManager.targetBySid.get(sessionId);
+          if (targetId) {
+            controller.setActiveMasterTab(targetId);
+          }
           return;
         }
-
         const targetId = cdpManager.targetBySid.get(sessionId);
         if (targetId && !['mouseUp', 'mouseMove', 'scroll', 'keyUp', 'charInput'].includes(event.type)) {
           controller.setActiveMasterTab(targetId);

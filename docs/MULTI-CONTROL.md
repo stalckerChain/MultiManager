@@ -7,12 +7,20 @@
 ```
 CDP SYNC_EVENT_SCRIPT (инжектится в master page)
   ↓ Runtime.addBinding('__MM_SYNC_BIND__')
-  ↓ DOM events → window.__MM_SYNC_BIND__(JSON)
+  ↓ DOM events + visibilitychange → window.__MM_SYNC_BIND__(JSON)
   ↓ cdpManager.onEvent(profileId, event, sessionId)
-  ↓ controller.setActiveMasterTab(targetId) → _syncActiveTabToSlaves (activateTarget)
-  ↓ inputCapture.injectFromCdp()
+  ├── event.type === 'tabActivated' → targetId = targetBySid.get(sessionId)
+  │                                   → controller.setActiveMasterTab(targetId)
+  │                                   → _syncActiveTabToSlaves → activateAndFocusTarget
+  ├── other events → controller.setActiveMasterTab(targetId)
+  │                 → inputCapture.injectFromCdp()
   ↓ MultiController → broadcast → _getSlaveSession(slaveId)
   ↓ CDP Input.dispatch* → slave windows
+
+CDP Target.targetInfoChanged (master browser)
+  ↓ cdpManager.onTabActivated(profileId, targetId)
+  ↓ controller.setActiveMasterTab(targetId)
+  ↓ _syncActiveTabToSlaves → activateAndFocusTarget
 ```
 
 ## Режимы работы
@@ -73,12 +81,14 @@ tabIndex   = Array<masterTargetId>  // упорядоченная матрица
 
 Система получает события из двух независимых источников:
 
-### CDP SYNC_EVENT_SCRIPT (DOM-события)
+### CDP SYNC_EVENT_SCRIPT (DOM-события + tabActivated)
 - Инжектится в master page через `Page.addScriptToEvaluateOnNewDocument`
-- Ловит только DOM-события: mousemove, mousedown, mouseup, wheel, keydown, keyup, click
+- Ловит DOM-события: mousemove, mousedown, mouseup, wheel, keydown, keyup, click
+- Ловит `visibilitychange` → при `document.hidden === false` эмитит `tabActivated`
+- `tabActivated` → `Runtime.bindingCalled` → `onEvent` → `targetId = targetBySid.get(sessionId)` → `setActiveMasterTab(targetId)` → `_syncActiveTabToSlaves` → `activateAndFocusTarget`
 - **Не ловит** события в browser chrome: адресная строка, tab bar, меню
-- Идёт через `Runtime.bindingCalled` → `onEvent` → `injectFromCdp()` → `controller.onKeyDown/onMousePressed/etc.`
-- При каждом событии вызывает `setActiveMasterTab(targetId)`, обновляя `activeMasterTab`
+- `tabActivated` не вызывает `injectFromCdp()` (фокус синхронизируется через CDP, не через OS input)
+- Остальные события идут через `injectFromCdp()` → `controller.onKeyDown/onMousePressed/etc.`
 
 ### Native hooks (WH_KEYBOARD_LL)
 - C++ addon перехватывает ВСЕ клавиши на уровне ОС
@@ -270,6 +280,36 @@ bc.ws.send({
 2. `attachToExistingTarget(masterId, Tab B)` + `createTab` + `attachToExistingTarget` в слейвах
 3. `mapTab` + `setActiveMasterTab(Tab B)`
 
+### activateAndFocusTarget (v0.11.0)
+
+Принудительная активация вкладки и установка DOM-фокуса в Slave через цепочку CDP-команд:
+
+```javascript
+async activateAndFocusTarget(profileId, targetId) {
+  // 1. Переключение вкладки
+  Target.activateTarget({ targetId })
+  // 2. Вывод страницы на передний план
+  Page.bringToFront({})
+  // 3. Программный фокус ввода
+  DOM.enable({})
+  DOM.focus({ nodeId: 1 })
+  // 4. Fallback: document.body.focus()
+  Runtime.evaluate({ expression: 'document.body.focus()' })
+}
+```
+
+Используется в `_syncActiveTabToSlaves` вместо старого `activateTarget`. Без этой цепочки `Input.dispatchKeyEvent`/`Input.dispatchMouseEvent` игнорируются движком страницы, так как сессия автоматизации не получает системный фокус ввода.
+
+### Динамический поиск Slave-табов по URL/индексу (v0.11.0)
+
+При отсутствии предустановленного маппинга в `tabMapping` (например, при переключении на таб, созданный до начала multi-control сессии):
+
+1. `getPageTargets(masterId)` → URL активного master-таба
+2. `getPageTargets(slaveId)` → список всех табов slave
+3. Поиск по URL (исключая `about:blank`)
+4. Fallback: сопоставление по порядковому индексу в `tabIndex`
+5. `mapTab(masterTargetId, slaveId, slaveTargetId)` + `activateAndFocusTarget`
+
 ### await discoverActiveTab() перед Enter
 
 В `/os-keyboard` добавлен вызов `await discoverActiveTab()` перед `keyDown` с `key === 'Enter'`. Это гарантирует, что Enter уходит в актуальный таб:
@@ -320,12 +360,31 @@ if (event.type === 'keyDown' && event.key === 'Enter') {
 9. **HTTP /json polling** — единственный надёжный способ обнаружить нативно-открытые табы в антидетект-браузере; WS-based методы (`targetCreated`, `getTargets`) не работают
 10. **Поиск нативных slave-табов через tabMapping** (не targetSessions) — исключает race condition с CDP auto-attach. Нативный таб может быть уже в `targetSessions`, но не в `tabMapping` — значит, это наш кандидат
 11. **Фокус на предыдущий таб при destroy** — `_maybeSwitchToPrevTab` использует `tabIndex` для переключения на предыдущий таб в порядке создания
+12. **Трёхшаговая активация фокуса в Slave** — `Target.activateTarget` (переключение вкладки) → `Page.bringToFront` (вывод на передний план) → `DOM.focus` (программный фокус ввода). Без `DOM.focus` движок Chromium игнорирует эмулируемые события `Input.dispatchKeyEvent`/`dispatchMouseEvent`
+13. **`visibilitychange` как единственный надёжный детектор переключения вкладок** — `Target.targetInfoChanged` не содержит признака активации вкладки. `visibilitychange` ловит все сценарии: Ctrl+Tab, Ctrl+Shift+Tab, Ctrl+1..9, клики по tab bar. Событие передаётся через `Runtime.bindingCalled` → разрешение `targetId` из `sessionId`
 
 ## Версия
 
-Текущая: v0.10.0 (tabIndex matrix + native slave tab discovery + focus return)
+Текущая: v0.11.0 (focus sync via activateAndFocusTarget + visibilitychange → tabActivated)
 
 ## История версий
+
+### v0.11.0 (2026-07-03) — Focus sync via activateAndFocusTarget + visibilitychange wiring
+
+**Проблема:** Переключение вкладок в Master (Ctrl+Tab, клик по панели вкладок) корректно отрабатывало в Master-окне, но Slave-окна не получали DOM-фокус ввода. Последующая трансляция нажатий клавиш игнорировалась, пока пользователь не кликал в область страницы каждого Slave.
+
+**Корень:** `_syncActiveTabToSlaves` использовал `Target.activateTarget`, который переключает видимость вкладки, но не устанавливает DOM-фокус. Кроме того, `tabActivated` из `visibilitychange` игнорировался.
+
+**Исправления:**
+
+| Файл | Изменение |
+|------|-----------|
+| `src/multi-control/cdp-manager.js` | Добавлен `_sendAndWait` — утилита для отправки CDP-команды с ожиданием ответа. Добавлен `activateAndFocusTarget(profileId, targetId)` — цепочка `Target.activateTarget` → `Page.bringToFront` → `DOM.focus` → `body.focus()`. `visibilitychange` возвращён в `SYNC_EVENT_SCRIPT` |
+| `src/multi-control/index.js` | `_syncActiveTabToSlaves` переведён на `async`. Использует `activateAndFocusTarget` вместо `activateTarget`. Добавлен динамический поиск slave-табов по URL/индексу при отсутствии маппинга |
+| `src/api/multi-control.js` | `tabActivated` в `onEvent` больше не игнорируется: resolves `targetId` через `targetBySid.get(sessionId)` → `setActiveMasterTab`. Добавлен `await` перед `_syncActiveTabToSlaves` в `syncNewMasterTab` |
+| `tests/unit/cdp-manager.test.js` | 3 новых теста: `activateAndFocusTarget` (без connection, цепочка команд, fallback body.focus, без session) |
+| `tests/unit/multi-control.test.js` | 4 новых теста: URL-матчинг slave, index fallback, missing master target. Обновлены все тесты на `activateAndFocusTarget` |
+| `tests/unit/multi-control-api.test.js` | Тест `tabActivated` теперь проверяет вызов `setActiveMasterTab` (вместо игнора). Добавлен тест `ignores tabActivated with unknown sessionId` |
 
 ### v0.10.0 (2026-07-03) — Dynamic tab sync: tabIndex matrix, native slave tab fix, focus return
 

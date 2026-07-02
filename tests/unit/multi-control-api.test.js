@@ -376,7 +376,13 @@ describe('onEvent callback (matches api/multi-control)', () => {
   // onEvent callback из api/multi-control.js строки 180-192
   function onEvent(profileId, event, sessionId, targetBySid) {
     if (profileId === ctrl.masterId && ctrl.active) {
-      if (event.type === 'tabActivated') return;
+      if (event.type === 'tabActivated') {
+        const targetId = targetBySid.get(sessionId);
+        if (targetId) {
+          ctrl.markTabDirty(targetId);
+        }
+        return;
+      }
       const targetId = targetBySid.get(sessionId);
       if (targetId && !['mouseUp', 'mouseMove', 'scroll', 'keyUp', 'charInput'].includes(event.type)) {
         ctrl.markTabDirty(targetId);
@@ -431,9 +437,14 @@ describe('onEvent callback (matches api/multi-control)', () => {
     expect(ctrl.markTabDirty).not.toHaveBeenCalled();
   });
 
-  it('ignores tabActivated events', () => {
+  it('marks tab dirty on tabActivated event', () => {
     mockTargetBySid.set('session-1', 'tab-1');
     onEvent('master-1', { type: 'tabActivated' }, 'session-1', mockTargetBySid);
+    expect(ctrl.markTabDirty).toHaveBeenCalledWith('tab-1');
+  });
+
+  it('ignores tabActivated with unknown sessionId', () => {
+    onEvent('master-1', { type: 'tabActivated' }, 'unknown-session', mockTargetBySid);
     expect(ctrl.markTabDirty).not.toHaveBeenCalled();
   });
 
