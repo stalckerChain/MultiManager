@@ -377,7 +377,7 @@ Authorization: Bearer <token>
 - **Передача**: DOM events → `window.__MM_SYNC_BIND__(JSON)` → `cdpManager.onEvent` → `inputCapture.injectFromCdp()`
 - **Dispatch**: CDP `Input.dispatchMouseEvent` / `Input.dispatchKeyEvent` / `Input.insertText` → slave окна
 - **Scroll sync**: CDP `Runtime.evaluate` (page-level)
-- **Multi-tab**: `Target.setAutoAttach` + `Page.addScriptToEvaluateOnNewDocument` для новых вкладок
+- **Multi-tab**: HTTP `/json` polling (DevTools endpoint) для обнаружения нативно-открытых вкладок (_blank, Ctrl+T, адресная строка). `Page.addScriptToEvaluateOnNewDocument` для инжекции sync-script в новые вкладки
 
 **Возможности:**
 - Синхронизация мыши (клик, движение, скролл) между окнами

@@ -96,14 +96,15 @@ tabMapping = Map<masterTargetId, Map<slaveId, slaveTargetId>>
 
 ## Создание новых вкладок (Tab Creation)
 
-### Ctrl+T (работает)
+### Ctrl+T (работает, v0.9.5+)
 1. Native hook перехватывает Ctrl+T через WH_KEYBOARD_LL
 2. HTTP POST → `/api/multi-control/os-keyboard`
-3. Backend создаёт вкладки через CDP `Target.createTarget` (request-response):
-   - Сначала в master → получает `masterTargetId`
-   - Затем в каждом slave → получает `slaveTargetId`
-   - Немедленный маппинг: `controller.mapTab(masterTargetId, slaveId, slaveTargetId)`
-4. Маппинг есть → дальнейшие события (`onNavigate`, dispatchKeyEvent) попадают в правильные табы слейвов
+3. **Браузер мастера открывает вкладку нативно** — бэкенд НЕ вызывает `Target.createTarget` через CDP (антидетект-браузер игнорирует `e.preventDefault()`, поэтому CDP-создание приводило к дублированию табов)
+4. HTTP `/json` polling (`discoverActiveTab()`) обнаруживает новую вкладку в течение ≤300 мс
+5. `syncNewMasterTab()`:
+   - Attach'ит таб мастера (ручной `Target.attachToTarget`, т.к. антидетект не шлёт `attachedToTarget`)
+   - Для каждого слейва: проверяет наличие нативного таба через HTTP `/json` → если найден — attach+map, иначе `createTab`+attach+map
+   - Устанавливает `activeMasterTab` и синхронизирует активацию в слейвы
 
 ### `_blank` ссылки и `window.open` (РАБОТАЕТ через HTTP /json polling, v0.9.0)
 
@@ -192,10 +193,11 @@ bc.ws.send({
 
 После успешного ответа: `_enableInput(session)` (binding + sync script).
 
-### Обработка Ctrl+T
+### Обработка Ctrl+T (v0.9.5+)
 
-1. Native hook → `/os-keyboard` → `cdpManager.createTab(masterId)` → `await syncNewMasterTab(masterTargetId, 'about:blank')`
-2. syncNewMasterTab сам создаёт slave табы + attach + маппинг
+1. Native hook → `/os-keyboard` → handler возвращает `{ ok: true, action: 'skip' }` — **браузер открывает таб нативно**
+2. `discoverActiveTab()` (HTTP polling `/json` каждые 300 мс) обнаруживает новую вкладку мастера
+3. `syncNewMasterTab(masterTargetId, url)`: attach мастера → проверка/создание табов слейвов → attach → map → activate
 
 ### Обработка `_blank`
 

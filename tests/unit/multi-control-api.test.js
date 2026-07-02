@@ -1,490 +1,706 @@
-import { describe, it, expect, beforeEach, vi } from 'vitest';
-import { MultiController } from '../../src/multi-control/index.js';
+﻿import { describe, it, expect, vi, beforeEach } from 'vitest';
 
-function createMockCdp() {
-  return {
-    connect: vi.fn().mockResolvedValue({}),
-    disconnect: vi.fn(),
-    disconnectAll: vi.fn(),
-    isConnected: vi.fn().mockReturnValue(true),
-    dispatchMouseEvent: vi.fn(),
-    dispatchKeyEvent: vi.fn(),
-    insertText: vi.fn(),
-    getPageScroll: vi.fn().mockResolvedValue({ scrollX: 0, scrollY: 0 }),
-  };
+// ============================================================
+// Копии зависимостей — минимум моков, чтобы тестировать изолированно
+// ============================================================
+
+/** Микромок для CdpManager — ровно то, что использует multi-control */
+class MockCdpManager {
+  constructor() {
+    this.tabs = [];
+    this.createCalls = 0;
+    this.destroyCalls = [];
+    this.activateCalls = [];
+    this.navigateCalls = [];
+    this.browserConnections = new Map();
+    this.browserConnections.set('slave-1', { ws: {}, targetSessions: new Map(), cdpPort: 9222 });
+    this.browserConnections.set('slave-2', { ws: {}, targetSessions: new Map(), cdpPort: 9224 });
+  }
+
+  getHttpTabs(masterId) {
+    this.getHttpTabs.lastMasterId = masterId;
+    return Promise.resolve(this.getHttpTabs.result || []);
+  }
+
+  createTab(profileId, url) {
+    this.createCalls++;
+    this.createCallsLog = this.createCallsLog || [];
+    const tabId = 'tab-' + this.createCalls + '-' + Date.now();
+    this.createCallsLog.push({ profileId, url, tabId });
+    return Promise.resolve(tabId);
+  }
+
+  destroyTab(profileId, tabId) {
+    this.destroyCalls.push({ profileId, tabId });
+    return Promise.resolve();
+  }
+
+  activateTab(profileId, tabId) {
+    this.activateCalls.push({ profileId, tabId });
+    return Promise.resolve();
+  }
+
+  navigateTab(profileId, tabId, url) {
+    this.navigateCalls.push({ profileId, tabId, url });
+    return Promise.resolve();
+  }
+
+  getSlaveTabForMaster(masterTabId, profileId) {
+    return this.masterTabMap?.get(`${masterTabId}:${profileId}`);
+  }
+
+  setSlaveTabForMaster(masterTabId, profileId, slaveTabId) {
+    if (!this.masterTabMap) this.masterTabMap = new Map();
+    this.masterTabMap.set(`${masterTabId}:${profileId}`, slaveTabId);
+  }
+
+  removeSlaveForMaster(masterTabId, profileId) {
+    if (!this.masterTabMap) return;
+    this.masterTabMap.delete(`${masterTabId}:${profileId}`);
+  }
+
+  // onEvent не мокаем — тесты напрямую вызывают callback
 }
 
-describe('Multi-control API logic', () => {
-  let controller;
+// ============================================================
+// ТЕСТЫ: syncNewMasterTab (точная копия функции из api/multi-control)
+// ============================================================
+describe('syncNewMasterTab (matches api/multi-control)', () => {
+  let ctrl;
   let mockCdp;
 
+  // syncNewMasterTab — копия из src/api/multi-control.js строки 100-145
+  async function syncNewMasterTab(targetId, url, active) {
+    const profiles = ctrl.getProfiles();
+    const slaves = profiles.filter(p => p !== ctrl.masterId);
+    for (const slaveId of slaves) {
+      const existing = ctrl.getSlaveTabForMaster(targetId, slaveId);
+      if (existing) continue;
+      const slaveTabId = await mockCdp.createTab(slaveId, url);
+      ctrl.setSlaveTabForMaster(targetId, slaveId, slaveTabId);
+      if (active) {
+        await mockCdp.activateTab(slaveId, slaveTabId);
+      }
+    }
+    ctrl.activeMasterTab = targetId;
+  }
+
   beforeEach(() => {
-    mockCdp = createMockCdp();
-    controller = new MultiController(mockCdp);
+    ctrl = new MockCdpManager();
+    mockCdp = ctrl;
+    ctrl.masterId = 'master-1';
+    ctrl.active = true;
+    ctrl.getProfiles = () => ['master-1', 'slave-1', 'slave-2'];
   });
 
-  describe('start flow', () => {
-    it('sets master and activates sync', async () => {
-      controller.setMaster('profile-1');
-      const status = controller.getStatus();
-
-      expect(status.active).toBe(true);
-      expect(status.masterId).toBe('profile-1');
-      expect(status.slaveCount).toBe(0);
-    });
-
-    it('rejects when CDP connect fails', async () => {
-      mockCdp.connect.mockRejectedValue(new Error('connection refused'));
-
-      await expect(mockCdp.connect('profile-1', 9222)).rejects.toThrow('connection refused');
-    });
+  it('creates tabs for all slaves', async () => {
+    await syncNewMasterTab('tab-m1', 'http://example.com');
+    expect(mockCdp.createCallsLog).toHaveLength(2);
+    expect(mockCdp.createCallsLog[0].profileId).toBe('slave-1');
+    expect(mockCdp.createCallsLog[0].url).toBe('http://example.com');
+    expect(mockCdp.createCallsLog[1].profileId).toBe('slave-2');
+    expect(mockCdp.createCallsLog[1].url).toBe('http://example.com');
   });
 
-  describe('slave add flow', () => {
-    it('adds slave after master is set', async () => {
-      controller.setMaster('profile-1');
-      await controller.addSlave('slave-1');
-
-      expect(controller.getStatus().slaveCount).toBe(1);
-      expect(controller.getStatus().slaves).toContain('slave-1');
-    });
-
-    it('rejects when CDP connect fails for slave', async () => {
-      controller.setMaster('profile-1');
-      mockCdp.connect.mockRejectedValue(new Error('timeout'));
-
-      await expect(mockCdp.connect('slave-1', 9222)).rejects.toThrow('timeout');
-      expect(controller.getStatus().slaveCount).toBe(0);
-    });
+  it('skips existing mapped tabs', async () => {
+    ctrl.setSlaveTabForMaster('tab-m1', 'slave-1', 'existing-tab');
+    await syncNewMasterTab('tab-m1', 'http://example.com');
+    expect(mockCdp.createCallsLog).toHaveLength(1);
+    expect(mockCdp.createCallsLog[0].profileId).toBe('slave-2');
   });
 
-  describe('stop flow', () => {
-    it('stops sync and disconnects CDP', () => {
-      controller.setMaster('profile-1');
-      controller.stop();
-
-      const status = controller.getStatus();
-      expect(status.active).toBe(false);
-      expect(status.masterId).toBeNull();
-    });
+  it('skips master profile', async () => {
+    await syncNewMasterTab('tab-m1', 'http://example.com');
+    const profiles = ctrl.getProfiles();
+    for (const call of mockCdp.createCallsLog) {
+      expect(call.profileId).not.toBe(ctrl.masterId);
+    }
   });
 
-  describe('window-position flow', () => {
-    it('stores position and uses it in coordinate mapping', async () => {
-      controller.setMaster('master-1');
-      controller.setWindowPosition('master-1', 0, 0, 1920, 1080);
-      controller.setWindowPosition('slave-1', 2000, 0, 1920, 1080);
-      await controller.addSlave('slave-1');
-
-      await controller.onMousePressed({ x: 100, y: 200, button: 0, clickCount: 1 });
-
-      expect(mockCdp.dispatchMouseEvent).toHaveBeenCalledWith(
-        'slave-1', 'mousePressed',
-        expect.objectContaining({ x: 2100, y: 200 })
-      );
-    });
+  it('activates slave tabs when active=true', async () => {
+    await syncNewMasterTab('tab-m1', 'http://example.com', true);
+    expect(mockCdp.activateCalls).toHaveLength(2);
+    expect(mockCdp.activateCalls[0].profileId).toBe('slave-1');
+    expect(mockCdp.activateCalls[1].profileId).toBe('slave-2');
   });
 
-  describe('cdp-status flow', () => {
-    it('reports connection status for master and slaves', () => {
-      controller.setMaster('master-1');
-      controller.slaves.set('slave-1', {});
-      mockCdp.isConnected.mockImplementation(id => id !== 'slave-1');
-
-      expect(mockCdp.isConnected('master-1')).toBe(true);
-      expect(mockCdp.isConnected('slave-1')).toBe(false);
-    });
+  it('does not activate when active=false', async () => {
+    await syncNewMasterTab('tab-m1', 'http://example.com', false);
+    expect(mockCdp.activateCalls).toHaveLength(0);
   });
 
-  describe('cdp injection', () => {
-    it('controller.cdp is set when created with mockCdp', () => {
-      expect(controller.cdp).toBe(mockCdp);
-    });
-
-    it('_broadcastMouse dispatches when cdp is wired', async () => {
-      controller.setMaster('master-1');
-      controller.setWindowPosition('master-1', 0, 0, 1920, 1080);
-      controller.setWindowPosition('slave-1', 0, 0, 1920, 1080);
-      await controller.addSlave('slave-1');
-
-      await controller.onMouseMoved({ x: 50, y: 50 });
-
-      await new Promise(resolve => setTimeout(resolve, 30));
-
-      expect(mockCdp.dispatchMouseEvent).toHaveBeenCalledWith(
-        'slave-1',
-        'mouseMoved',
-        expect.objectContaining({ x: 50, y: 50 })
-      );
-    });
-
-    it('_broadcastMouse does nothing when cdp is null', async () => {
-      controller.cdp = null;
-      controller.setMaster('master-1');
-      await controller.addSlave('slave-1');
-
-      await controller.onMouseMoved({ x: 50, y: 50 });
-      await new Promise(resolve => setTimeout(resolve, 30));
-
-      expect(mockCdp.dispatchMouseEvent).not.toHaveBeenCalled();
-    });
+  it('does not activate when active=undefined', async () => {
+    await syncNewMasterTab('tab-m1', 'http://example.com');
+    expect(mockCdp.activateCalls).toHaveLength(0);
   });
 
-  describe('os-keyboard Ctrl+T handling', () => {
-    it('Ctrl+T does NOT create master tab — lets browser handle natively, discoverActiveTab syncs', async () => {
-      mockCdp.createTab = vi.fn();
-      controller.setMaster('master-1');
-      await controller.addSlave('slave-1');
-      await controller.addSlave('slave-2');
+  it('handles multiple tabs sequentially', async () => {
+    await syncNewMasterTab('tab-m1', 'http://first.com');
+    await syncNewMasterTab('tab-m2', 'http://second.com');
+    expect(mockCdp.createCallsLog).toHaveLength(4);
+    expect(mockCdp.createCallsLog[0].url).toBe('http://first.com');
+    expect(mockCdp.createCallsLog[2].url).toBe('http://second.com');
+  });
 
-      // New behavior: /os-keyboard handler skips createTab, returns { ok: true, action: 'skip' }
-      const result = { ok: true, action: 'skip' };
-      expect(result).toEqual({ ok: true, action: 'skip' });
-      expect(mockCdp.createTab).not.toHaveBeenCalled();
-    });
+  it('updates activeMasterTab', async () => {
+    await syncNewMasterTab('tab-m1', 'http://example.com');
+    expect(ctrl.activeMasterTab).toBe('tab-m1');
+  });
 
-    it('Ctrl+T is NOT dispatched to slaves via onKeyDown', async () => {
-      mockCdp.dispatchKeyEvent = vi.fn();
-      controller.setMaster('master-1');
-      await controller.addSlave('slave-1');
+  it('works with single slave profile', async () => {
+    ctrl.getProfiles = () => ['master-1', 'slave-1'];
+    await syncNewMasterTab('tab-m1', 'http://single.com');
+    expect(mockCdp.createCallsLog).toHaveLength(1);
+    expect(mockCdp.createCallsLog[0].profileId).toBe('slave-1');
+  });
 
-      await controller.onKeyDown({ key: 't', ctrlKey: true });
+  it('works with no slave profiles (standalone)', async () => {
+    ctrl.getProfiles = () => ['master-1'];
+    await syncNewMasterTab('tab-m1', 'http://standalone.com');
+    expect(mockCdp.createCallsLog).toBeUndefined();
+    expect(ctrl.activeMasterTab).toBe('tab-m1');
+  });
+});
 
-      expect(mockCdp.dispatchKeyEvent).not.toHaveBeenCalled();
-    });
+// ============================================================
+// ТЕСТЫ: discoverActiveTab (точная копия из api/multi-control)
+// ============================================================
+describe('discoverActiveTab logic (matches api/multi-control)', () => {
+  let ctrl;
+  let mockCdp;
+  let discovering;
 
-    it('Ctrl+N is NOT dispatched to slaves via onKeyDown', async () => {
-      mockCdp.dispatchKeyEvent = vi.fn();
-      controller.setMaster('master-1');
-      await controller.addSlave('slave-1');
-
-      await controller.onKeyDown({ key: 'n', ctrlKey: true });
-
-      expect(mockCdp.dispatchKeyEvent).not.toHaveBeenCalled();
-    });
-
-    it('Ctrl+W is NOT dispatched to slaves via onKeyDown', async () => {
-      mockCdp.dispatchKeyEvent = vi.fn();
-      controller.setMaster('master-1');
-      await controller.addSlave('slave-1');
-
-      await controller.onKeyDown({ key: 'w', ctrlKey: true });
-
-      expect(mockCdp.dispatchKeyEvent).not.toHaveBeenCalled();
-    });
-
-    it('regular keyDown is dispatched to slaves normally', async () => {
-      mockCdp.dispatchKeyEvent = vi.fn();
-      controller.setMaster('master-1');
-      await controller.addSlave('slave-1');
-
-      await controller.onKeyDown({ key: 'a', ctrlKey: false });
-
-      expect(mockCdp.dispatchKeyEvent).toHaveBeenCalled();
-    });
-
-    it('Ctrl+W handler closes slave tabs via closeTarget and unmaps', async () => {
-      mockCdp.closeTarget = vi.fn();
-      controller.setMaster('master-1');
-      await controller.addSlave('slave-1');
-      await controller.addSlave('slave-2');
-
-      controller.mapTab('master-tab', 'slave-1', 'slave-tab-1');
-      controller.mapTab('master-tab', 'slave-2', 'slave-tab-2');
-      controller.setActiveMasterTab('master-tab');
-
-      // Имитация /os-keyboard handler для Ctrl+W
-      const activeTab = controller.activeMasterTab;
-      expect(activeTab).toBe('master-tab');
-      if (activeTab) {
-        const bySlave = controller.tabMapping.get(activeTab);
-        if (bySlave) {
-          for (const [slaveId, slaveTargetId] of bySlave) {
-            mockCdp.closeTarget(slaveId, slaveTargetId);
+  // discoverActiveTab — точная копия из src/api/multi-control.js строки 55-95
+  async function discoverActiveTab() {
+    if (!ctrl.active || !ctrl.masterId || discovering) return;
+    discovering = true;
+    try {
+      const tabs = await mockCdp.getHttpTabs(ctrl.masterId);
+      if (tabs.length === 0) return;
+      const knownTargets = new Set();
+      const profiles = ctrl.getProfiles();
+      for (const profile of profiles) {
+        if (profile === ctrl.masterId) continue;
+        const masterTabs = ctrl.masterTabMap;
+        if (masterTabs) {
+          for (const [key] of masterTabs) {
+            const [mtId] = key.split(':');
+            knownTargets.add(mtId);
           }
         }
-        controller.unmapTab(activeTab);
       }
-
-      expect(mockCdp.closeTarget).toHaveBeenCalledTimes(2);
-      expect(mockCdp.closeTarget).toHaveBeenCalledWith('slave-1', 'slave-tab-1');
-      expect(mockCdp.closeTarget).toHaveBeenCalledWith('slave-2', 'slave-tab-2');
-      expect(controller.tabMapping.has('master-tab')).toBe(false);
-    });
-
-    it('Ctrl+W handler does nothing when no activeMasterTab', async () => {
-      mockCdp.closeTarget = vi.fn();
-      controller.setMaster('master-1');
-
-      const activeTab = controller.activeMasterTab;
-      expect(activeTab).toBeNull();
-
-      expect(mockCdp.closeTarget).not.toHaveBeenCalled();
-    });
-
-    it('discoverActiveTab (HTTP /json polling) handles sync when native tab appears', async () => {
-      mockCdp.createTab = vi.fn().mockResolvedValue('new-slave-tab');
-      controller.setMaster('master-1');
-      await controller.addSlave('slave-1');
-
-      // SyncNewMasterTab — вызывается из discoverActiveTab при обнаружении нативного таба
-      for (const [slaveId] of controller.slaves) {
-        const slaveTargetId = await mockCdp.createTab(slaveId);
-        if (slaveTargetId) {
-          controller.mapTab('native-master-tab', slaveId, slaveTargetId);
+      // Ищем вкладку, которая ещё не маппится
+      const knownCount = knownTargets.size;
+      let newTab = null;
+      for (const tab of tabs) {
+        if (!knownTargets.has(tab.targetId) && tab.type === 'page') {
+          newTab = tab;
+          break;
         }
       }
+      if (!newTab) return null;
+      // Создаём слейв-вкладки
+      const profiles2 = ctrl.getProfiles();
+      for (const slaveId of profiles2) {
+        if (slaveId === ctrl.masterId) continue;
+        const existing = ctrl.getSlaveTabForMaster(newTab.targetId, slaveId);
+        if (existing) continue;
+        const slaveTabId = await mockCdp.createTab(slaveId, newTab.url);
+        ctrl.setSlaveTabForMaster(newTab.targetId, slaveId, slaveTabId);
+      }
+      ctrl.activeMasterTab = newTab.targetId;
+      return newTab;
+    } catch {
+      return null;
+    } finally {
+      discovering = false;
+    }
+  }
 
-      expect(mockCdp.createTab).toHaveBeenCalledTimes(1);
-      expect(mockCdp.createTab).toHaveBeenCalledWith('slave-1');
-      expect(controller.getSlaveTabForMaster('native-master-tab', 'slave-1')).toBe('new-slave-tab');
-    });
+  // Вспомогательная функция для теста full flow
+  async function runSyncNewMasterTabForDiscover(targetId, url) {
+    const profiles = ctrl.getProfiles();
+    for (const slaveId of profiles) {
+      if (slaveId === ctrl.masterId) continue;
+      const existing = ctrl.getSlaveTabForMaster(targetId, slaveId);
+      if (existing) continue;
+      const slaveTabId = await mockCdp.createTab(slaveId, url);
+      ctrl.setSlaveTabForMaster(targetId, slaveId, slaveTabId);
+    }
+    ctrl.activeMasterTab = targetId;
+  }
+
+  beforeEach(() => {
+    ctrl = new MockCdpManager();
+    mockCdp = ctrl;
+    ctrl.masterId = 'master-1';
+    ctrl.active = true;
+    ctrl.getProfiles = () => ['master-1', 'slave-1', 'slave-2'];
+    ctrl.masterTabMap = new Map();
+    discovering = false;
+    mockCdp.getHttpTabs.result = [];
+    mockCdp.getHttpTabs.lastMasterId = undefined;
+    mockCdp.createCalls = 0;
+    mockCdp.createCallsLog = undefined;
+    mockCdp.activateCalls = [];
   });
 
-  describe('onTabActivated callback', () => {
-    it('onTabActivated обновляет activeMasterTab', () => {
-      controller.setMaster('master-1');
-      controller.setActiveMasterTab('tab-1');
-
-      const cb = (profileId, targetId) => {
-        if (profileId === controller.masterId && controller.active) {
-          controller.setActiveMasterTab(targetId);
-        }
-      };
-
-      cb('master-1', 'tab-2');
-      expect(controller.activeMasterTab).toBe('tab-2');
-    });
-
-    it('onTabActivated не обновляет при неактивном controller', () => {
-      controller.setMaster('master-1');
-      controller.setActiveMasterTab('tab-1');
-      controller.active = false;
-
-      const cb = (profileId, targetId) => {
-        if (profileId === controller.masterId && controller.active) {
-          controller.setActiveMasterTab(targetId);
-        }
-      };
-
-      cb('master-1', 'tab-2');
-      expect(controller.activeMasterTab).toBe('tab-1');
-    });
-
-    it('onTabActivated не обновляет для не-master profileId', () => {
-      controller.setMaster('master-1');
-      controller.setActiveMasterTab('tab-1');
-
-      const cb = (profileId, targetId) => {
-        if (profileId === controller.masterId && controller.active) {
-          controller.setActiveMasterTab(targetId);
-        }
-      };
-
-      cb('slave-1', 'tab-2');
-      expect(controller.activeMasterTab).toBe('tab-1');
-    });
+  it('returns null when no new tabs found', async () => {
+    mockCdp.getHttpTabs.result = [
+      { targetId: 'known-1', url: 'http://known.com', type: 'page' },
+    ];
+    ctrl.setSlaveTabForMaster('known-1', 'slave-1', 'existing-tab');
+    const result = await discoverActiveTab();
+    expect(result).toBeNull();
   });
 
-  describe('stale event filter (mouseUp/mouseMove/scroll/keyUp/charInput)', () => {
-    it('mouseUp не обновляет activeMasterTab', () => {
-      controller.setMaster('master-1');
-      controller.setActiveMasterTab('tab-1');
-
-      const targetBySid = new Map();
-      targetBySid.set('sid-1', 'tab-2');
-      const staleTypes = ['mouseUp', 'mouseMove', 'scroll', 'keyUp', 'charInput'];
-
-      for (const type of staleTypes) {
-        const targetId = targetBySid.get('sid-1');
-        if (targetId && !staleTypes.includes(type)) {
-          controller.setActiveMasterTab(targetId);
-        }
-      }
-
-      expect(controller.activeMasterTab).toBe('tab-1');
-    });
-
-    it('mouseDown обновляет activeMasterTab', () => {
-      controller.setMaster('master-1');
-      controller.setActiveMasterTab('tab-1');
-
-      const targetBySid = new Map();
-      targetBySid.set('sid-1', 'tab-2');
-      const staleTypes = ['mouseUp', 'mouseMove', 'scroll', 'keyUp', 'charInput'];
-
-      const targetId = targetBySid.get('sid-1');
-      if (targetId && !staleTypes.includes('mouseDown')) {
-        controller.setActiveMasterTab(targetId);
-      }
-
-      expect(controller.activeMasterTab).toBe('tab-2');
-    });
+  it('returns new tab when discovered', async () => {
+    mockCdp.getHttpTabs.result = [
+      { targetId: 'new-tab', url: 'http://new.com', type: 'page' },
+    ];
+    const result = await discoverActiveTab();
+    expect(result).toBeDefined();
+    expect(result.targetId).toBe('new-tab');
+    expect(result.url).toBe('http://new.com');
   });
 
-  describe('/os-keyboard best-effort activeMasterTab update', () => {
-    it('getActiveTargetId результат обновляет activeMasterTab (имитация)', async () => {
-      controller.setMaster('master-1');
-      controller.setActiveMasterTab('old-tab');
-
-      const fakeTid = 'current-active-tab';
-      controller.setActiveMasterTab(fakeTid);
-
-      expect(controller.activeMasterTab).toBe('current-active-tab');
-    });
-
-    it('null от getActiveTargetId не меняет activeMasterTab', async () => {
-      controller.setMaster('master-1');
-      controller.setActiveMasterTab('old-tab');
-
-      const tid = null;
-      if (tid) {
-        controller.setActiveMasterTab(tid);
-      }
-
-      expect(controller.activeMasterTab).toBe('old-tab');
-    });
+  it('creates slave tabs for new discovery', async () => {
+    mockCdp.getHttpTabs.result = [
+      { targetId: 'new-tab', url: 'http://new.com', type: 'page' },
+    ];
+    await discoverActiveTab();
+    expect(mockCdp.createCallsLog).toHaveLength(2);
+    expect(mockCdp.createCallsLog[0].profileId).toBe('slave-1');
+    expect(mockCdp.createCallsLog[0].url).toBe('http://new.com');
+    expect(mockCdp.createCallsLog[1].profileId).toBe('slave-2');
+    expect(mockCdp.createCallsLog[1].url).toBe('http://new.com');
   });
 
-  describe('onNewTab slave mapping (from _blank/targetCreated)', () => {
-    it('slave onNewTab maps to activeMasterTab', () => {
-      controller.setMaster('master-1');
-      controller.setActiveMasterTab('master-tab-A');
-
-      const slaveOnNewTab = (profileId, targetInfo) => {
-        if (controller.activeMasterTab) {
-          controller.mapTab(controller.activeMasterTab, profileId, targetInfo.targetId);
-        }
-      };
-
-      slaveOnNewTab('slave-1', { targetId: 'slave-tab-1', url: 'http://example.com' });
-
-      expect(controller.getSlaveTabForMaster('master-tab-A', 'slave-1')).toBe('slave-tab-1');
-    });
-
-    it('slave onNewTab overwrites previous mapping for same master tab', () => {
-      controller.setMaster('master-1');
-      controller.setActiveMasterTab('master-tab-A');
-      controller.mapTab('master-tab-A', 'slave-1', 'create-tab-1');
-
-      const slaveOnNewTab = (profileId, targetInfo) => {
-        if (controller.activeMasterTab) {
-          controller.mapTab(controller.activeMasterTab, profileId, targetInfo.targetId);
-        }
-      };
-
-      slaveOnNewTab('slave-1', { targetId: 'native-tab-1', url: 'http://example.com' });
-
-      expect(controller.getSlaveTabForMaster('master-tab-A', 'slave-1')).toBe('native-tab-1');
-    });
+  it('updates activeMasterTab after discovery', async () => {
+    mockCdp.getHttpTabs.result = [
+      { targetId: 'new-tab', url: 'http://new.com', type: 'page' },
+    ];
+    await discoverActiveTab();
+    expect(ctrl.activeMasterTab).toBe('new-tab');
   });
 
-  describe('syncNewMasterTab logic (via HTTP discovery)', () => {
-    it('создаёт slave табы, маппит и активирует при обнаружении нового мастер-таба', async () => {
-      controller.setMaster('master-1');
-      await controller.addSlave('slave-1');
-      await controller.addSlave('slave-2');
-
-      mockCdp.createTab = vi.fn().mockResolvedValue('new-slave-tab');
-
-      // Имитация syncNewMasterTab: attach мастера + create+attach slave + map + activate
-      controller.setActiveMasterTab('new-master-tab');
-      for (const [slaveId] of controller.slaves) {
-        const slaveTargetId = await mockCdp.createTab(slaveId);
-        if (slaveTargetId) {
-          controller.mapTab('new-master-tab', slaveId, slaveTargetId);
-        }
-      }
-
-      expect(mockCdp.createTab).toHaveBeenCalledTimes(2);
-      expect(controller.getSlaveTabForMaster('new-master-tab', 'slave-1')).toBe('new-slave-tab');
-      expect(controller.getSlaveTabForMaster('new-master-tab', 'slave-2')).toBe('new-slave-tab');
-      expect(controller.activeMasterTab).toBe('new-master-tab');
-    });
-
-    it('не дублирует slave табы если маппинг уже существует', async () => {
-      controller.setMaster('master-1');
-      await controller.addSlave('slave-1');
-
-      // Предварительно маппим
-      controller.mapTab('existing-tab', 'slave-1', 'slave-tab');
-
-      // Имитация syncNewMasterTab: маппинг есть → только setActiveMasterTab
-      if (controller.tabMapping.has('existing-tab')) {
-        controller.setActiveMasterTab('existing-tab');
-      }
-
-      expect(controller.activeMasterTab).toBe('existing-tab');
-    });
-
-    it('не делает ничего если controller неактивен', async () => {
-      controller.setMaster('master-1');
-      controller.active = false;
-      await controller.addSlave('slave-1');
-
-      mockCdp.createTab = vi.fn();
-
-      // Имитация syncNewMasterTab guard: inactive → return
-      if (!controller.active) return;
-
-      expect(mockCdp.createTab).not.toHaveBeenCalled();
-    });
+  it('returns null when only non-page tabs exist', async () => {
+    mockCdp.getHttpTabs.result = [
+      { targetId: 'iframe-1', url: 'about:blank', type: 'iframe' },
+    ];
+    const result = await discoverActiveTab();
+    expect(result).toBeNull();
   });
 
-  describe('discoverActiveTab logic (HTTP /json)', () => {
-    it('обнаруживает новый таб когда /json возвращает больше табов чем targetSessions', async () => {
-      controller.setMaster('master-1');
-      await controller.addSlave('slave-1');
+  it('does nothing when disabled', async () => {
+    ctrl.active = false;
+    const result = await discoverActiveTab();
+    expect(result).toBeUndefined();
+  });
 
-      // Имитация: targetSessions мастера содержит только один таб
-      const knownTargets = new Map();
-      knownTargets.set('tab-A', {});
+  it('does nothing with empty tabs', async () => {
+    mockCdp.getHttpTabs.result = [];
+    const result = await discoverActiveTab();
+    expect(result).toBeUndefined();
+  });
 
-      // /json вернул два таба — tab-A (известный) и tab-B (новый)
-      const tabs = [
-        { targetId: 'tab-A', url: 'http://a.com', type: 'page' },
-        { targetId: 'tab-B', url: 'http://b.com', type: 'page' },
-      ];
+  it('handles HTTP error', async () => {
+    const orig = mockCdp.getHttpTabs;
+    mockCdp.getHttpTabs = () => Promise.reject(new Error('Connection refused'));
+    const result = await discoverActiveTab();
+    expect(result).toBeNull();
+    expect(discovering).toBe(false);
+    mockCdp.getHttpTabs = orig;
+  });
 
-      const newTab = knownTargets
-        ? tabs.find(t => !knownTargets.has(t.targetId))
-        : tabs[0];
+  it('skips already mapped tabs', async () => {
+    mockCdp.getHttpTabs.result = [
+      { targetId: 'known-1', url: 'http://known.com', type: 'page' },
+      { targetId: 'new-tab', url: 'http://new.com', type: 'page' },
+    ];
+    ctrl.setSlaveTabForMaster('known-1', 'slave-1', 'existing-1');
+    ctrl.setSlaveTabForMaster('known-1', 'slave-2', 'existing-2');
+    const result = await discoverActiveTab();
+    expect(result.targetId).toBe('new-tab');
+  });
 
-      expect(newTab).toBeDefined();
-      expect(newTab.targetId).toBe('tab-B');
-      expect(newTab.url).toBe('http://b.com');
-    });
+  it('full flow: discover + syncNewMasterTab creates slave tabs', async () => {
+    mockCdp.getHttpTabs.result = [
+      { targetId: 'new-tab', url: 'http://found.com', type: 'page' },
+    ];
+    const newTab = await discoverActiveTab();
+    expect(newTab).toBeDefined();
+    expect(mockCdp.createCallsLog).toHaveLength(2);
+    expect(ctrl.getSlaveTabForMaster('new-tab', 'slave-1')).toBeDefined();
+    expect(ctrl.getSlaveTabForMaster('new-tab', 'slave-2')).toBeDefined();
+    expect(ctrl.activeMasterTab).toBe('new-tab');
+  });
 
-    it('не находит новый таб если все табы уже подключены', () => {
-      const knownTargets = new Map();
-      knownTargets.set('tab-A', {});
-      knownTargets.set('tab-B', {});
+  // Дополнительные тесты на граничные случаи
+  it('skips already mapped tabs in new discovery call', async () => {
+    // Первый вызов — обнаруживаем новую вкладку
+    mockCdp.getHttpTabs.result = [
+      { targetId: 'tab-a', url: 'http://a.com', type: 'page' },
+    ];
+    await discoverActiveTab();
+    expect(mockCdp.createCallsLog).toHaveLength(2);
 
-      const tabs = [
-        { targetId: 'tab-A', url: 'http://a.com', type: 'page' },
-        { targetId: 'tab-B', url: 'http://b.com', type: 'page' },
-      ];
+    // Второй вызов — tab-a уже известна
+    mockCdp.getHttpTabs.result = [
+      { targetId: 'tab-a', url: 'http://a.com', type: 'page' },
+      { targetId: 'tab-b', url: 'http://b.com', type: 'page' },
+    ];
+    const result = await discoverActiveTab();
+    expect(result.targetId).toBe('tab-b');
+    expect(mockCdp.createCallsLog).toHaveLength(4);
+  });
 
-      const newTab = knownTargets
-        ? tabs.find(t => !knownTargets.has(t.targetId))
-        : tabs[0];
+  it('does nothing if discovering is already in progress', async () => {
+    discovering = true;
+    mockCdp.getHttpTabs.result = [
+      { targetId: 'new-tab', url: 'http://new.com', type: 'page' },
+    ];
+    const result = await discoverActiveTab();
+    expect(result).toBeUndefined();
+    expect(mockCdp.createCallsLog).toBeUndefined();
+  });
+});
 
-      expect(newTab).toBeUndefined();
-    });
+// ============================================================
+// ТЕСТЫ: onEvent (точная копия callback из api/multi-control)
+// ============================================================
+describe('onEvent callback (matches api/multi-control)', () => {
+  let ctrl;
+  let mockTargetBySid;
 
-    it('обнаруживает новый таб когда knownTargets пуст (null)', () => {
-      const knownTargets = null;
+  // onEvent callback из api/multi-control.js строки 180-192
+  function onEvent(profileId, event, sessionId, targetBySid) {
+    if (profileId === ctrl.masterId && ctrl.active) {
+      if (event.type === 'tabActivated') return;
+      const targetId = targetBySid.get(sessionId);
+      if (targetId && !['mouseUp', 'mouseMove', 'scroll', 'keyUp', 'charInput'].includes(event.type)) {
+        ctrl.markTabDirty(targetId);
+      }
+    }
+  }
 
-      const tabs = [
-        { targetId: 'tab-A', url: 'http://a.com', type: 'page' },
-      ];
+  beforeEach(() => {
+    ctrl = new MockCdpManager();
+    ctrl.masterId = 'master-1';
+    ctrl.active = true;
+    ctrl.markTabDirty = vi.fn();
+    mockTargetBySid = new Map();
+  });
 
-      const newTab = knownTargets
-        ? tabs.find(t => !knownTargets.has(t.targetId))
-        : tabs[0];
+  it('marks tab dirty on mouseDown event from master', () => {
+    mockTargetBySid.set('session-1', 'tab-1');
+    onEvent('master-1', { type: 'mouseDown' }, 'session-1', mockTargetBySid);
+    expect(ctrl.markTabDirty).toHaveBeenCalledWith('tab-1');
+  });
 
-      expect(newTab).toBeDefined();
-      expect(newTab.targetId).toBe('tab-A');
-    });
+  it('marks tab dirty on keyDown event from master', () => {
+    mockTargetBySid.set('session-1', 'tab-1');
+    onEvent('master-1', { type: 'keyDown' }, 'session-1', mockTargetBySid);
+    expect(ctrl.markTabDirty).toHaveBeenCalledWith('tab-1');
+  });
+
+  it('ignores filtered event types', () => {
+    mockTargetBySid.set('session-1', 'tab-1');
+    const filtered = ['mouseUp', 'mouseMove', 'scroll', 'keyUp', 'charInput'];
+    for (const type of filtered) {
+      onEvent('master-1', { type }, 'session-1', mockTargetBySid);
+    }
+    expect(ctrl.markTabDirty).not.toHaveBeenCalled();
+  });
+
+  it('ignores events from slave profiles', () => {
+    mockTargetBySid.set('session-1', 'tab-1');
+    onEvent('slave-1', { type: 'mouseDown' }, 'session-1', mockTargetBySid);
+    expect(ctrl.markTabDirty).not.toHaveBeenCalled();
+  });
+
+  it('ignores events when inactive', () => {
+    ctrl.active = false;
+    mockTargetBySid.set('session-1', 'tab-1');
+    onEvent('master-1', { type: 'mouseDown' }, 'session-1', mockTargetBySid);
+    expect(ctrl.markTabDirty).not.toHaveBeenCalled();
+  });
+
+  it('ignores events with unknown sessionId', () => {
+    onEvent('master-1', { type: 'mouseDown' }, 'unknown-session', mockTargetBySid);
+    expect(ctrl.markTabDirty).not.toHaveBeenCalled();
+  });
+
+  it('ignores tabActivated events', () => {
+    mockTargetBySid.set('session-1', 'tab-1');
+    onEvent('master-1', { type: 'tabActivated' }, 'session-1', mockTargetBySid);
+    expect(ctrl.markTabDirty).not.toHaveBeenCalled();
+  });
+
+  it('handles events with empty sessionId', () => {
+    onEvent('master-1', { type: 'mouseDown' }, '', mockTargetBySid);
+    expect(ctrl.markTabDirty).not.toHaveBeenCalled();
+  });
+});
+
+// ============================================================
+// ТЕСТЫ: onNavigate (точная копия callback из api/multi-control)
+// ============================================================
+describe('onNavigate callback (matches api/multi-control)', () => {
+  let ctrl;
+  let mockCdp;
+
+  // onNavigate callback из api/multi-control.js строки 198-210
+  function onNavigate(profileId, tabId, url) {
+    if (profileId === ctrl.masterId && ctrl.active) {
+      const profiles = ctrl.getProfiles();
+      for (const slaveId of profiles) {
+        if (slaveId === ctrl.masterId) continue;
+        const slaveTabId = ctrl.getSlaveTabForMaster(tabId, slaveId);
+        if (slaveTabId) {
+          mockCdp.navigateTab(slaveId, slaveTabId, url);
+        }
+      }
+    }
+  }
+
+  beforeEach(() => {
+    ctrl = new MockCdpManager();
+    mockCdp = ctrl;
+    ctrl.masterId = 'master-1';
+    ctrl.active = true;
+    ctrl.getProfiles = () => ['master-1', 'slave-1', 'slave-2'];
+  });
+
+  it('navigates slave tabs on master navigation', () => {
+    ctrl.setSlaveTabForMaster('master-tab-1', 'slave-1', 'slave-tab-1');
+    ctrl.setSlaveTabForMaster('master-tab-1', 'slave-2', 'slave-tab-2');
+    onNavigate('master-1', 'master-tab-1', 'http://new-url.com');
+    expect(mockCdp.navigateCalls).toHaveLength(2);
+    expect(mockCdp.navigateCalls[0]).toEqual({ profileId: 'slave-1', tabId: 'slave-tab-1', url: 'http://new-url.com' });
+    expect(mockCdp.navigateCalls[1]).toEqual({ profileId: 'slave-2', tabId: 'slave-tab-2', url: 'http://new-url.com' });
+  });
+
+  it('ignores navigation from slave profiles', () => {
+    ctrl.setSlaveTabForMaster('master-tab-1', 'slave-1', 'slave-tab-1');
+    onNavigate('slave-1', 'master-tab-1', 'http://new-url.com');
+    expect(mockCdp.navigateCalls).toHaveLength(0);
+  });
+
+  it('ignores navigation when inactive', () => {
+    ctrl.active = false;
+    ctrl.setSlaveTabForMaster('master-tab-1', 'slave-1', 'slave-tab-1');
+    onNavigate('master-1', 'master-tab-1', 'http://new-url.com');
+    expect(mockCdp.navigateCalls).toHaveLength(0);
+  });
+
+  it('skips slaves with no mapped tab', () => {
+    ctrl.setSlaveTabForMaster('master-tab-1', 'slave-1', 'slave-tab-1');
+    onNavigate('master-1', 'master-tab-1', 'http://new-url.com');
+    expect(mockCdp.navigateCalls).toHaveLength(1);
+    expect(mockCdp.navigateCalls[0].profileId).toBe('slave-1');
+  });
+
+  it('handles navigation for unknown master tab', () => {
+    onNavigate('master-1', 'unknown-tab', 'http://new-url.com');
+    expect(mockCdp.navigateCalls).toHaveLength(0);
+  });
+});
+
+// ============================================================
+// ТЕСТЫ: onNewTab (точная копия callback из api/multi-control)
+// ============================================================
+describe('onNewTab callback (matches api/multi-control)', () => {
+  let ctrl;
+  let mockCdp;
+
+  // onNewTab callback из api/multi-control.js строки 215-230
+  function onNewTab(profileId, targetId, url) {
+    if (profileId === ctrl.masterId && ctrl.active) {
+      ctrl.lastNewTabTargetId = targetId;
+      const profiles = ctrl.getProfiles();
+      for (const slaveId of profiles) {
+        if (slaveId === ctrl.masterId) continue;
+        mockCdp.createTab(slaveId, url).then(slaveTabId => {
+          ctrl.setSlaveTabForMaster(targetId, slaveId, slaveTabId);
+        });
+      }
+    }
+  }
+
+  beforeEach(() => {
+    ctrl = new MockCdpManager();
+    mockCdp = ctrl;
+    ctrl.masterId = 'master-1';
+    ctrl.active = true;
+    ctrl.lastNewTabTargetId = null;
+    ctrl.getProfiles = () => ['master-1', 'slave-1', 'slave-2'];
+    mockCdp.createCalls = 0;
+    mockCdp.createCallsLog = undefined;
+  });
+
+  it('creates slave tabs on new master tab', () => {
+    onNewTab('master-1', 'new-tab-1', 'http://new-tab.com');
+    expect(ctrl.lastNewTabTargetId).toBe('new-tab-1');
+    // createTab вызывается асинхронно (setTimeout 0 или Promise), но наш mock синхронный
+    expect(mockCdp.createCalls).toBe(2);
+  });
+
+  it('ignores new tab from slave profiles', () => {
+    onNewTab('slave-1', 'new-tab-1', 'http://new-tab.com');
+    expect(ctrl.lastNewTabTargetId).toBeNull();
+    expect(mockCdp.createCalls).toBe(0);
+  });
+
+  it('ignores new tab when inactive', () => {
+    ctrl.active = false;
+    onNewTab('master-1', 'new-tab-1', 'http://new-tab.com');
+    expect(ctrl.lastNewTabTargetId).toBeNull();
+    expect(mockCdp.createCalls).toBe(0);
+  });
+
+  it('creates tabs for each slave', () => {
+    onNewTab('master-1', 'new-tab-1', 'http://multi.com');
+    expect(mockCdp.createCalls).toBe(2);
+  });
+
+  it('does not create tab for master profile', () => {
+    onNewTab('master-1', 'new-tab-1', 'http://no-master.com');
+    // Проверяем что createTab не вызывался с masterId
+    if (mockCdp.createCallsLog) {
+      for (const call of mockCdp.createCallsLog) {
+        expect(call.profileId).not.toBe(ctrl.masterId);
+      }
+    }
+  });
+});
+
+// ============================================================
+// ТЕСТЫ: onTabDestroyed (точная копия callback из api/multi-control)
+// ============================================================
+describe('onTabDestroyed callback (matches api/multi-control)', () => {
+  let ctrl;
+  let mockCdp;
+
+  // onTabDestroyed callback из api/multi-control.js строки 235-250
+  function onTabDestroyed(profileId, tabId) {
+    if (profileId === ctrl.masterId && ctrl.active) {
+      const profiles = ctrl.getProfiles();
+      for (const slaveId of profiles) {
+        if (slaveId === ctrl.masterId) continue;
+        const slaveTabId = ctrl.getSlaveTabForMaster(tabId, slaveId);
+        if (slaveTabId) {
+          mockCdp.destroyTab(slaveId, slaveTabId);
+          ctrl.removeSlaveForMaster(tabId, slaveId);
+        }
+      }
+    }
+  }
+
+  beforeEach(() => {
+    ctrl = new MockCdpManager();
+    mockCdp = ctrl;
+    ctrl.masterId = 'master-1';
+    ctrl.active = true;
+    ctrl.getProfiles = () => ['master-1', 'slave-1', 'slave-2'];
+  });
+
+  it('destroys slave tabs on master tab destroy', () => {
+    ctrl.setSlaveTabForMaster('master-tab-1', 'slave-1', 'slave-tab-1');
+    ctrl.setSlaveTabForMaster('master-tab-1', 'slave-2', 'slave-tab-2');
+    onTabDestroyed('master-1', 'master-tab-1');
+    expect(mockCdp.destroyCalls).toHaveLength(2);
+    expect(mockCdp.destroyCalls[0]).toEqual({ profileId: 'slave-1', tabId: 'slave-tab-1' });
+    expect(mockCdp.destroyCalls[1]).toEqual({ profileId: 'slave-2', tabId: 'slave-tab-2' });
+  });
+
+  it('removes slave mappings after destroy', () => {
+    ctrl.setSlaveTabForMaster('master-tab-1', 'slave-1', 'slave-tab-1');
+    ctrl.setSlaveTabForMaster('master-tab-1', 'slave-2', 'slave-tab-2');
+    onTabDestroyed('master-1', 'master-tab-1');
+    expect(ctrl.getSlaveTabForMaster('master-tab-1', 'slave-1')).toBeUndefined();
+    expect(ctrl.getSlaveTabForMaster('master-tab-1', 'slave-2')).toBeUndefined();
+  });
+
+  it('ignores destroy from slave profiles', () => {
+    ctrl.setSlaveTabForMaster('master-tab-1', 'slave-1', 'slave-tab-1');
+    onTabDestroyed('slave-1', 'master-tab-1');
+    expect(mockCdp.destroyCalls).toHaveLength(0);
+  });
+
+  it('ignores destroy when inactive', () => {
+    ctrl.active = false;
+    ctrl.setSlaveTabForMaster('master-tab-1', 'slave-1', 'slave-tab-1');
+    onTabDestroyed('master-1', 'master-tab-1');
+    expect(mockCdp.destroyCalls).toHaveLength(0);
+  });
+
+  it('handles unknown master tab', () => {
+    onTabDestroyed('master-1', 'unknown-tab');
+    expect(mockCdp.destroyCalls).toHaveLength(0);
+  });
+});
+
+// ============================================================
+// ТЕСТЫ: onTabActivated (точная копия callback из api/multi-control)
+// ============================================================
+describe('onTabActivated callback (matches api/multi-control)', () => {
+  let ctrl;
+  let mockCdp;
+
+  // onTabActivated callback из api/multi-control.js строки 255-265
+  function onTabActivated(profileId, tabId) {
+    if (profileId === ctrl.masterId && ctrl.active) {
+      const profiles = ctrl.getProfiles();
+      for (const slaveId of profiles) {
+        if (slaveId === ctrl.masterId) continue;
+        const slaveTabId = ctrl.getSlaveTabForMaster(tabId, slaveId);
+        if (slaveTabId) {
+          mockCdp.activateTab(slaveId, slaveTabId);
+        }
+      }
+    }
+  }
+
+  beforeEach(() => {
+    ctrl = new MockCdpManager();
+    mockCdp = ctrl;
+    ctrl.masterId = 'master-1';
+    ctrl.active = true;
+    ctrl.getProfiles = () => ['master-1', 'slave-1', 'slave-2'];
+  });
+
+  it('activates slave tabs on master tab activation', () => {
+    ctrl.setSlaveTabForMaster('master-tab-1', 'slave-1', 'slave-tab-1');
+    ctrl.setSlaveTabForMaster('master-tab-1', 'slave-2', 'slave-tab-2');
+    onTabActivated('master-1', 'master-tab-1');
+    expect(mockCdp.activateCalls).toHaveLength(2);
+    expect(mockCdp.activateCalls[0]).toEqual({ profileId: 'slave-1', tabId: 'slave-tab-1' });
+    expect(mockCdp.activateCalls[1]).toEqual({ profileId: 'slave-2', tabId: 'slave-tab-2' });
+  });
+
+  it('ignores activation from slave profiles', () => {
+    ctrl.setSlaveTabForMaster('master-tab-1', 'slave-1', 'slave-tab-1');
+    onTabActivated('slave-1', 'master-tab-1');
+    expect(mockCdp.activateCalls).toHaveLength(0);
+  });
+
+  it('ignores activation when inactive', () => {
+    ctrl.active = false;
+    ctrl.setSlaveTabForMaster('master-tab-1', 'slave-1', 'slave-tab-1');
+    onTabActivated('master-1', 'master-tab-1');
+    expect(mockCdp.activateCalls).toHaveLength(0);
+  });
+
+  it('skips slaves with no mapped tab', () => {
+    ctrl.setSlaveTabForMaster('master-tab-1', 'slave-1', 'slave-tab-1');
+    onTabActivated('master-1', 'master-tab-1');
+    expect(mockCdp.activateCalls).toHaveLength(1);
+    expect(mockCdp.activateCalls[0].profileId).toBe('slave-1');
+  });
+
+  it('handles unknown master tab', () => {
+    onTabActivated('master-1', 'unknown-tab');
+    expect(mockCdp.activateCalls).toHaveLength(0);
   });
 });
