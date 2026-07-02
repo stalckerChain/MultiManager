@@ -66,9 +66,10 @@ class MockCdpManager {
   _enforceSlaveFocusOnActiveTab(slaveId) {
     if (!this.activeMasterTab) return;
     const slaveTargetId = this.getSlaveTabForMaster(this.activeMasterTab, slaveId);
-    if (slaveTargetId) {
-      this.activateTarget(slaveId, slaveTargetId);
-    }
+    if (!slaveTargetId) return;
+    const bc = this.browserConnections.get(slaveId);
+    if (!bc || !bc.targetSessions.has(slaveTargetId)) return;
+    this.activateTarget(slaveId, slaveTargetId);
   }
 
   // onEvent не мокаем — тесты напрямую вызывают callback
@@ -137,6 +138,10 @@ describe('syncNewMasterTab (matches api/multi-control)', () => {
     ctrl.setSlaveTabForMaster('current-tab', 'slave-1', 'slave-current-tab');
     ctrl.setSlaveTabForMaster('current-tab', 'slave-2', 'slave-current-tab-2');
     ctrl.activeMasterTab = 'current-tab';
+    const bc1 = ctrl.browserConnections.get('slave-1');
+    if (bc1) bc1.targetSessions.set('slave-current-tab', { sessionId: 's1' });
+    const bc2 = ctrl.browserConnections.get('slave-2');
+    if (bc2) bc2.targetSessions.set('slave-current-tab-2', { sessionId: 's2' });
     await syncNewMasterTab('background-tab', 'http://bg.com');
     // Должен реактивировать current-tab в обоих слейвах
     expect(mockCdp.activateCalls).toHaveLength(2);
@@ -546,7 +551,7 @@ describe('onNewTab callback (matches api/multi-control)', () => {
   let tabIndex;
   let browserConnections;
 
-  // onNewTab callback — обновлённая версия с tabIndex + force-reactivation
+  // onNewTab callback — версия без force-reactivation (перенесена в onTabAttached)
   function onNewTab(profileId, targetInfo) {
     if (!ctrl.active) return;
     if (profileId === ctrl.masterId) {
@@ -559,9 +564,6 @@ describe('onNewTab callback (matches api/multi-control)', () => {
       const masterTargetId = tabIndex[slaveIdx];
       if (masterTargetId) {
         ctrl.mapTab(masterTargetId, profileId, targetInfo.targetId);
-        if (masterTargetId !== ctrl.activeMasterTab) {
-          ctrl._enforceSlaveFocusOnActiveTab(profileId);
-        }
       }
     }
   }
@@ -621,44 +623,89 @@ describe('onNewTab callback (matches api/multi-control)', () => {
     // targetSessions.size = 2, slaveIdx = 1, tabIndex[1] = 'master-tab-2'
     expect(ctrl.mapTab).toHaveBeenCalledWith('master-tab-2', 'slave-1', 't2');
   });
+});
+
+// ============================================================
+// ТЕСТЫ: onTabAttached (focus enforcement только из attachedToTarget)
+// ============================================================
+describe('onTabAttached callback (matches api/multi-control)', () => {
+  let ctrl;
+  let mockCdp;
+  let tabIndex;
+  let browserConnections;
+
+  function onTabAttached(profileId, targetInfo) {
+    if (!ctrl.active) return;
+    if (profileId === ctrl.masterId) return;
+    const bc = browserConnections.get(profileId);
+    if (bc) {
+      const slaveIdx = bc.targetSessions.size - 1;
+      const masterTargetId = tabIndex[slaveIdx];
+      if (masterTargetId && masterTargetId !== ctrl.activeMasterTab) {
+        ctrl._enforceSlaveFocusOnActiveTab(profileId);
+      }
+    }
+  }
+
+  beforeEach(() => {
+    ctrl = new MockCdpManager();
+    mockCdp = ctrl;
+    ctrl.masterId = 'master-1';
+    ctrl.active = true;
+    ctrl.mapTab = vi.fn();
+    ctrl.activateCalls = [];
+    tabIndex = ['master-tab-1', 'master-tab-2'];
+    browserConnections = new Map();
+    const ts1 = new Map();
+    ts1.set('initial-tab', { sessionId: 's1' });
+    browserConnections.set('slave-1', { targetSessions: ts1 });
+  });
 
   it('calls _enforceSlaveFocusOnActiveTab when new slave tab is not active master tab', () => {
     ctrl.activeMasterTab = 'master-tab-1';
-    const ts1 = new Map();
-    ts1.set('initial-tab', { sessionId: 's1' });
-    ts1.set('new-slave-tab', { sessionId: 's2' });
-    browserConnections.set('slave-1', { targetSessions: ts1 });
-    ctrl._enforceSlaveFocusOnActiveTab = vi.fn();
+    // Populate both local browserConnections (for slaveIdx calc) and ctrl.browserConnections (for session check)
+    const bcLocal = browserConnections.get('slave-1');
+    bcLocal.targetSessions.set('new-slave-tab', { sessionId: 's2' });
+    const bcCtrl = ctrl.browserConnections.get('slave-1');
+    bcCtrl.targetSessions.set('initial-tab', { sessionId: 's1' });
+    bcCtrl.targetSessions.set('new-slave-tab', { sessionId: 's2' });
+    ctrl.setSlaveTabForMaster('master-tab-1', 'slave-1', 'initial-tab');
+    ctrl.setSlaveTabForMaster('master-tab-2', 'slave-1', 'new-slave-tab');
 
-    onNewTab('slave-1', { targetId: 'new-slave-tab', url: 'http://example.com' });
+    onTabAttached('slave-1', { targetId: 'new-slave-tab', url: 'http://example.com' });
 
-    expect(ctrl._enforceSlaveFocusOnActiveTab).toHaveBeenCalledWith('slave-1');
+    // slaveIdx = 1, tabIndex[1] = 'master-tab-2', activeMasterTab = 'master-tab-1' → enforce
+    expect(mockCdp.activateCalls.length).toBeGreaterThan(0);
+    expect(mockCdp.activateCalls[0]).toEqual({ profileId: 'slave-1', tabId: 'initial-tab' });
   });
 
-  it('does not call enforceSlaveFocus when new slave tab IS the active master tab', () => {
+  it('does not call activateTarget when new slave tab IS the active master tab', () => {
     ctrl.activeMasterTab = 'master-tab-2';
-    const ts1 = new Map();
-    ts1.set('initial-tab', { sessionId: 's1' });
-    ts1.set('new-slave-tab', { sessionId: 's2' });
-    browserConnections.set('slave-1', { targetSessions: ts1 });
-    ctrl._enforceSlaveFocusOnActiveTab = vi.fn();
+    const bcLocal = browserConnections.get('slave-1');
+    bcLocal.targetSessions.set('new-slave-tab', { sessionId: 's2' });
+    const bcCtrl = ctrl.browserConnections.get('slave-1');
+    bcCtrl.targetSessions.set('initial-tab', { sessionId: 's1' });
+    bcCtrl.targetSessions.set('new-slave-tab', { sessionId: 's2' });
 
-    onNewTab('slave-1', { targetId: 'new-slave-tab', url: 'http://example.com' });
+    onTabAttached('slave-1', { targetId: 'new-slave-tab', url: 'http://example.com' });
 
-    // tabIndex[1] = 'master-tab-2' = activeMasterTab → no enforce
-    expect(ctrl._enforceSlaveFocusOnActiveTab).not.toHaveBeenCalled();
+    // slaveIdx = 1, tabIndex[1] = 'master-tab-2' = activeMasterTab → no enforce
+    expect(mockCdp.activateCalls).toHaveLength(0);
   });
 
-  it('does not call enforceSlaveFocus when activeMasterTab is not set', () => {
-    const ts1 = new Map();
-    ts1.set('initial-tab', { sessionId: 's1' });
-    ts1.set('new-slave-tab', { sessionId: 's2' });
-    browserConnections.set('slave-1', { targetSessions: ts1 });
-    ctrl.activateCalls = [];
+  it('does not call activateTarget when activeMasterTab is not set', () => {
+    const bcLocal = browserConnections.get('slave-1');
+    bcLocal.targetSessions.set('new-slave-tab', { sessionId: 's2' });
 
-    onNewTab('slave-1', { targetId: 'new-slave-tab', url: 'http://example.com' });
+    onTabAttached('slave-1', { targetId: 'new-slave-tab', url: 'http://example.com' });
 
-    expect(ctrl.activateCalls).toHaveLength(0);
+    expect(mockCdp.activateCalls).toHaveLength(0);
+  });
+
+  it('ignores master profile', () => {
+    ctrl.activeMasterTab = 'master-tab-1';
+    onTabAttached('master-1', { targetId: 'new-tab', url: 'http://example.com' });
+    expect(mockCdp.activateCalls).toHaveLength(0);
   });
 });
 

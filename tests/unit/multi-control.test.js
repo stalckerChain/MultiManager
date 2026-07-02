@@ -9,6 +9,7 @@ function createMockCdp() {
     getPageScroll: vi.fn().mockResolvedValue({ scrollX: 0, scrollY: 0 }),
     activateAndFocusTarget: vi.fn().mockResolvedValue(undefined),
     getPageTargets: vi.fn().mockResolvedValue([]),
+    browserConnections: new Map(),
   };
 }
 
@@ -483,6 +484,9 @@ describe('MultiController', () => {
   describe('_enforceSlaveFocusOnActiveTab', () => {
     it('вызывает activateTarget для правильного slave таба', () => {
       mockCdp.activateTarget = vi.fn();
+      const bc = { targetSessions: new Map() };
+      bc.targetSessions.set('active-slave-tab', { sessionId: 's1' });
+      mockCdp.browserConnections.set('slave-1', bc);
       controller.setMaster('master-1');
       controller.mapTab('active-tab', 'slave-1', 'active-slave-tab');
       controller.setActiveMasterTab('active-tab');
@@ -519,6 +523,20 @@ describe('MultiController', () => {
       controller.setActiveMasterTab('active-tab');
 
       expect(() => controller._enforceSlaveFocusOnActiveTab('slave-1')).not.toThrow();
+    });
+
+    it('не вызывает activateTarget если targetId нет в targetSessions слейва', () => {
+      mockCdp.activateTarget = vi.fn();
+      const bc = { targetSessions: new Map() };
+      bc.targetSessions.set('other-tab', { sessionId: 's1' });
+      mockCdp.browserConnections.set('slave-1', bc);
+      controller.setMaster('master-1');
+      controller.mapTab('active-tab', 'slave-1', 'active-slave-tab');
+      controller.setActiveMasterTab('active-tab');
+
+      controller._enforceSlaveFocusOnActiveTab('slave-1');
+
+      expect(mockCdp.activateTarget).not.toHaveBeenCalled();
     });
   });
 });

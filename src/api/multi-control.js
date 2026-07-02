@@ -225,12 +225,24 @@ router.post('/start', async (req, res) => {
         const masterTargetId = controller.tabIndex[slaveIdx];
         if (masterTargetId) {
           controller.mapTab(masterTargetId, profileId, targetInfo.targetId);
-          if (masterTargetId !== controller.activeMasterTab) {
-            controller._enforceSlaveFocusOnActiveTab(profileId);
-          }
           logger.info({ slaveId: profileId, masterTargetId, slaveTargetId: targetInfo.targetId, tabIndex: slaveIdx }, 'MULTI-CONTROL: mapped slave tab by tabIndex order');
         } else {
           logger.info({ profileId, targetId: targetInfo.targetId, url: targetInfo.url, slaveIdx }, 'MULTI-CONTROL: slave opened new tab (no matching master tab in tabIndex)');
+        }
+      }
+    };
+
+    cdpManager.onTabAttached = (profileId, targetInfo, newSession) => {
+      if (!controller.active) return;
+      if (profileId === masterId) return;
+
+      const bc = cdpManager.browserConnections.get(profileId);
+      if (bc) {
+        const slaveIdx = bc.targetSessions.size - 1;
+        const masterTargetId = controller.tabIndex[slaveIdx];
+        if (masterTargetId && masterTargetId !== controller.activeMasterTab) {
+          controller._enforceSlaveFocusOnActiveTab(profileId);
+          logger.info({ slaveId: profileId, masterTargetId, slaveTargetId: targetInfo.targetId }, 'MULTI-CONTROL: enforced focus on active tab after attach');
         }
       }
     };
@@ -330,6 +342,7 @@ router.post('/stop', async (req, res) => {
   cdpManager.onEvent = null;
   cdpManager.onNavigate = null;
   cdpManager.onNewTab = null;
+  cdpManager.onTabAttached = null;
   cdpManager.onTabDestroyed = null;
   cdpManager.onTabActivated = null;
   cdpManager.disconnectAll();

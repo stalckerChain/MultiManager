@@ -57,6 +57,7 @@ class CdpManager {
     this.onNewTab = null;
     this.onTabDestroyed = null;
     this.onTabActivated = null;
+    this.onTabAttached = null;
 
     this.browserConnections = new Map();
     this.sessionBySid = new Map();
@@ -211,6 +212,9 @@ class CdpManager {
 
           if (this.onNewTab) {
             this.onNewTab(profileId, targetInfo, newSession);
+          }
+          if (this.onTabAttached) {
+            this.onTabAttached(profileId, targetInfo, newSession);
           }
         }
 
