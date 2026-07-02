@@ -69,8 +69,8 @@ describe('syncNewMasterTab (matches api/multi-control)', () => {
   let ctrl;
   let mockCdp;
 
-  // syncNewMasterTab — копия из src/api/multi-control.js строки 100-145
-  async function syncNewMasterTab(targetId, url, active) {
+  // syncNewMasterTab — копия из src/api/multi-control.js (без форсированной активации)
+  async function syncNewMasterTab(targetId, url) {
     const profiles = ctrl.getProfiles();
     const slaves = profiles.filter(p => p !== ctrl.masterId);
     for (const slaveId of slaves) {
@@ -78,11 +78,7 @@ describe('syncNewMasterTab (matches api/multi-control)', () => {
       if (existing) continue;
       const slaveTabId = await mockCdp.createTab(slaveId, url);
       ctrl.setSlaveTabForMaster(targetId, slaveId, slaveTabId);
-      if (active) {
-        await mockCdp.activateTab(slaveId, slaveTabId);
-      }
     }
-    ctrl.activeMasterTab = targetId;
   }
 
   beforeEach(() => {
@@ -117,19 +113,7 @@ describe('syncNewMasterTab (matches api/multi-control)', () => {
     }
   });
 
-  it('activates slave tabs when active=true', async () => {
-    await syncNewMasterTab('tab-m1', 'http://example.com', true);
-    expect(mockCdp.activateCalls).toHaveLength(2);
-    expect(mockCdp.activateCalls[0].profileId).toBe('slave-1');
-    expect(mockCdp.activateCalls[1].profileId).toBe('slave-2');
-  });
-
-  it('does not activate when active=false', async () => {
-    await syncNewMasterTab('tab-m1', 'http://example.com', false);
-    expect(mockCdp.activateCalls).toHaveLength(0);
-  });
-
-  it('does not activate when active=undefined', async () => {
+  it('never activates slave tabs (activation deferred to tabActivated)', async () => {
     await syncNewMasterTab('tab-m1', 'http://example.com');
     expect(mockCdp.activateCalls).toHaveLength(0);
   });
@@ -142,9 +126,10 @@ describe('syncNewMasterTab (matches api/multi-control)', () => {
     expect(mockCdp.createCallsLog[2].url).toBe('http://second.com');
   });
 
-  it('updates activeMasterTab', async () => {
+  it('does not update activeMasterTab (deferred to tabActivated)', async () => {
+    ctrl.activeMasterTab = 'previous-tab';
     await syncNewMasterTab('tab-m1', 'http://example.com');
-    expect(ctrl.activeMasterTab).toBe('tab-m1');
+    expect(ctrl.activeMasterTab).toBe('previous-tab');
   });
 
   it('works with single slave profile', async () => {
@@ -158,7 +143,6 @@ describe('syncNewMasterTab (matches api/multi-control)', () => {
     ctrl.getProfiles = () => ['master-1'];
     await syncNewMasterTab('tab-m1', 'http://standalone.com');
     expect(mockCdp.createCallsLog).toBeUndefined();
-    expect(ctrl.activeMasterTab).toBe('tab-m1');
   });
 });
 
@@ -208,7 +192,6 @@ describe('discoverActiveTab logic (matches api/multi-control)', () => {
         const slaveTabId = await mockCdp.createTab(slaveId, newTab.url);
         ctrl.setSlaveTabForMaster(newTab.targetId, slaveId, slaveTabId);
       }
-      ctrl.activeMasterTab = newTab.targetId;
       return newTab;
     } catch {
       return null;
@@ -217,7 +200,7 @@ describe('discoverActiveTab logic (matches api/multi-control)', () => {
     }
   }
 
-  // Вспомогательная функция для теста full flow
+  // Вспомогательная функция для теста full flow (без активации)
   async function runSyncNewMasterTabForDiscover(targetId, url) {
     const profiles = ctrl.getProfiles();
     for (const slaveId of profiles) {
@@ -227,7 +210,6 @@ describe('discoverActiveTab logic (matches api/multi-control)', () => {
       const slaveTabId = await mockCdp.createTab(slaveId, url);
       ctrl.setSlaveTabForMaster(targetId, slaveId, slaveTabId);
     }
-    ctrl.activeMasterTab = targetId;
   }
 
   beforeEach(() => {
@@ -276,12 +258,13 @@ describe('discoverActiveTab logic (matches api/multi-control)', () => {
     expect(mockCdp.createCallsLog[1].url).toBe('http://new.com');
   });
 
-  it('updates activeMasterTab after discovery', async () => {
+  it('does not update activeMasterTab after discovery (activation waits for tabActivated)', async () => {
+    ctrl.activeMasterTab = 'current-tab';
     mockCdp.getHttpTabs.result = [
       { targetId: 'new-tab', url: 'http://new.com', type: 'page' },
     ];
     await discoverActiveTab();
-    expect(ctrl.activeMasterTab).toBe('new-tab');
+    expect(ctrl.activeMasterTab).toBe('current-tab');
   });
 
   it('returns null when only non-page tabs exist', async () => {
@@ -324,7 +307,8 @@ describe('discoverActiveTab logic (matches api/multi-control)', () => {
     expect(result.targetId).toBe('new-tab');
   });
 
-  it('full flow: discover + syncNewMasterTab creates slave tabs', async () => {
+  it('full flow: discover + syncNewMasterTab creates slave tabs without activating', async () => {
+    ctrl.activeMasterTab = 'current-tab';
     mockCdp.getHttpTabs.result = [
       { targetId: 'new-tab', url: 'http://found.com', type: 'page' },
     ];
@@ -333,7 +317,7 @@ describe('discoverActiveTab logic (matches api/multi-control)', () => {
     expect(mockCdp.createCallsLog).toHaveLength(2);
     expect(ctrl.getSlaveTabForMaster('new-tab', 'slave-1')).toBeDefined();
     expect(ctrl.getSlaveTabForMaster('new-tab', 'slave-2')).toBeDefined();
-    expect(ctrl.activeMasterTab).toBe('new-tab');
+    expect(ctrl.activeMasterTab).toBe('current-tab');
   });
 
   // Дополнительные тесты на граничные случаи
@@ -527,12 +511,11 @@ describe('onNewTab callback (matches api/multi-control)', () => {
   let tabIndex;
   let browserConnections;
 
-  // onNewTab callback — обновлённая версия с tabIndex
+  // onNewTab callback — обновлённая версия с tabIndex (без форсированной активации)
   function onNewTab(profileId, targetInfo) {
     if (!ctrl.active) return;
     if (profileId === ctrl.masterId) {
       ctrl.lastNewTabTargetId = targetInfo.targetId;
-      ctrl.setActiveMasterTab(targetInfo.targetId);
       return;
     }
     const bc = browserConnections.get(profileId);
@@ -560,10 +543,10 @@ describe('onNewTab callback (matches api/multi-control)', () => {
     browserConnections.set('slave-1', { targetSessions: ts1 });
   });
 
-  it('tracks new master tab and sets active', () => {
+  it('tracks new master tab without activating (activation waits for tabActivated)', () => {
     onNewTab('master-1', { targetId: 'new-tab-1', url: 'http://new-tab.com' });
     expect(ctrl.lastNewTabTargetId).toBe('new-tab-1');
-    expect(ctrl.setActiveMasterTab).toHaveBeenCalledWith('new-tab-1');
+    expect(ctrl.setActiveMasterTab).not.toHaveBeenCalled();
   });
 
   it('ignores new tab from slave profiles when no tabIndex match', () => {

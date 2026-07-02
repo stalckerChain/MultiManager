@@ -38,14 +38,6 @@ async function syncNewMasterTab(masterTargetId, masterTabUrl) {
       attachedMasterTabs.add(masterTargetId);
     }
 
-    // Если маппинг уже есть (таб синхронизирован ранее) — только обновляем активный
-    if (controller.tabMapping.has(masterTargetId)) {
-      if (masterTargetId !== controller.activeMasterTab) {
-        controller.setActiveMasterTab(masterTargetId);
-      }
-      return;
-    }
-
     logger.info({ masterTargetId, url: masterTabUrl }, 'SYNC: discovered new master tab, syncing slaves');
     for (const [slaveId] of controller.slaves) {
       try {
@@ -66,8 +58,6 @@ async function syncNewMasterTab(masterTargetId, masterTabUrl) {
         logger.error({ slaveId, error: err.message }, 'SYNC: failed to sync slave tab');
       }
     }
-    controller.setActiveMasterTab(masterTargetId);
-    await controller._syncActiveTabToSlaves(masterTargetId);
   } finally {
     pendingSync.delete(masterTargetId);
   }
@@ -219,8 +209,7 @@ router.post('/start', async (req, res) => {
 
       if (profileId === masterId) {
         attachedMasterTabs.add(targetInfo.targetId);
-        controller.setActiveMasterTab(targetInfo.targetId);
-        logger.info({ masterTargetId: targetInfo.targetId, url: targetInfo.url }, 'MULTI-CONTROL: master new tab tracked, slave sync deferred to syncNewMasterTab');
+        logger.info({ masterTargetId: targetInfo.targetId, url: targetInfo.url }, 'MULTI-CONTROL: master new tab tracked, waiting for activation');
         return;
       }
 

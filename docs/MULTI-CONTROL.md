@@ -86,6 +86,7 @@ tabIndex   = Array<masterTargetId>  // упорядоченная матрица
 - Ловит DOM-события: mousemove, mousedown, mouseup, wheel, keydown, keyup, click
 - Ловит `visibilitychange` → при `document.hidden === false` эмитит `tabActivated`
 - `tabActivated` → `Runtime.bindingCalled` → `onEvent` → `targetId = targetBySid.get(sessionId)` → `setActiveMasterTab(targetId)` → `_syncActiveTabToSlaves` → `activateAndFocusTarget`
+- Активация Slaves происходит **только** через `tabActivated` (Master реально переключился на вкладку). Фоновое создание вкладок (middle-click, контекстное меню) не триггерит синхронизацию
 - **Не ловит** события в browser chrome: адресная строка, tab bar, меню
 - `tabActivated` не вызывает `injectFromCdp()` (фокус синхронизируется через CDP, не через OS input)
 - Остальные события идут через `injectFromCdp()` → `controller.onKeyDown/onMousePressed/etc.`
@@ -121,7 +122,7 @@ tabIndex   = Array<masterTargetId>  // упорядоченная матрица
 5. `syncNewMasterTab()`:
    - Attach'ит таб мастера (ручной `Target.attachToTarget`, т.к. антидетект не шлёт `attachedToTarget`)
    - Для каждого слейва: проверяет наличие нативного таба через HTTP `/json` → если найден — attach+map, иначе `createTab`+attach+map
-   - Устанавливает `activeMasterTab` и синхронизирует активацию в слейвы
+   - **Не активирует таб в слейвах** — активация произойдёт только когда Master реально переключится на новый таб (событие `tabActivated` через `visibilitychange`)
 
 ### `_blank` ссылки и `window.open` (РАБОТАЕТ через HTTP /json polling + tabIndex, v0.10.0)
 
@@ -143,13 +144,15 @@ tabIndex   = Array<masterTargetId>  // упорядоченная матрица
      - Сравнивает с `tabMapping` (НЕ с `targetSessions`) — таб есть в `/json`, но его ещё нет в `tabMapping` для этого slave → нативный таб
    - Если найден — `attachToExistingTarget` + `mapTab(B, slaveId, B')`
    - Если нет (тайминг) — `createTab` + `attachToExistingTarget` + `mapTab(B, slaveId, B'')`
-4. `setActiveMasterTab(B)` + `_syncActiveTabToSlaves(B)`
+4. Активация в Slaves произойдёт только когда Master реально переключится на Tab B (событие `tabActivated`)
 
 **Клики по `_blank` больше не перехватываются в sync-script** — мёртвый код удалён (0 срабатываний в логах).
 
-### onNewTab для slave (v0.10.0)
+### onNewTab для master/slave (v0.11.1)
 
-Раньше при `Target.targetCreated`/`attachedToTarget` для slave-таба, `onNewTab` маппил его на `controller.activeMasterTab`. Это было **некорректно**: активным мог быть старый таб, а новый таб маппился на него вместо правильного нового master-таба.
+**Master:** `onNewTab` больше не вызывает `setActiveMasterTab`. Новый таб только регистрируется в `attachedMasterTabs`. Активация в Slaves произойдёт только когда Master реально переключится на таб (`tabActivated` через `visibilitychange`). Это исключает ложную активацию при фоновом открытии вкладок (middle-click, контекстное меню "открыть в новом табе").
+
+**Slave (v0.10.0+):** Раньше при `Target.targetCreated`/`attachedToTarget` для slave-таба, `onNewTab` маппил его на `controller.activeMasterTab`. Это было **некорректно**: активным мог быть старый таб, а новый таб маппился на него вместо правильного нового master-таба.
 
 **Исправление (v0.10.0):** маппинг по порядку создания через `tabIndex`:
 
@@ -219,7 +222,7 @@ _getSlaveSession(slaveId) {
 2. Запрос `GET http://127.0.0.1:{cdpPort}/json` — **другой кодовой путь Chromium**, не зависящий от WS-подписок
 3. Сравнение списка табов из `/json` с известными табами мастера
 4. Вновь появившийся page-таб = новый активный (эвристика: браузер автофокусирует новый таб)
-5. `syncNewMasterTab(targetId, url)`: attach мастера → поиск нативных slave-табов через `/json` + tabMapping → createTab (если не найдены) → mapTab (добавляет в tabIndex) → setActiveMasterTab
+5. `syncNewMasterTab(targetId, url)`: attach мастера → поиск нативных slave-табов через `/json` + tabMapping → createTab (если не найдены) → mapTab (добавляет в tabIndex). **Не активирует** — активация отложена до `tabActivated`
 
 **Поиск нативных slave-табов** (отличие от v0.9.2):
 - Старая логика (v0.9.2): сравнивала `/json` с `targetSessions` слейва — проигрывала race condition с CDP auto-attach (нативный таб уже был в `targetSessions`, но не в `tabMapping`)
@@ -365,9 +368,22 @@ if (event.type === 'keyDown' && event.key === 'Enter') {
 
 ## Версия
 
-Текущая: v0.11.0 (focus sync via activateAndFocusTarget + visibilitychange → tabActivated)
+Текущая: v0.11.1 (no forced activation on background tabs + visibilitychange → tabActivated)
 
 ## История версий
+
+### v0.11.1 (2026-07-03) — Fix: no forced activation on background tabs (middle-click, context menu)
+
+**Проблема:** Middle-click по ссылке или "открыть в новом табе" через контекстное меню в Master открывает вкладку в фоне (фокус остаётся на исходной). `onNewTab` и `syncNewMasterTab` форсированно вызывали `setActiveMasterTab`, что переключало фокус в Slaves на новый таб — поведение отличалось от Master.
+
+**Исправления:**
+
+| Файл | Изменение |
+|------|-----------|
+| `src/api/multi-control.js` | `syncNewMasterTab`: удалены `setActiveMasterTab` и `_syncActiveTabToSlaves`. `onNewTab` для master: удалён `setActiveMasterTab`. Новые табы только регистрируются, активация отложена до `tabActivated` |
+| `tests/unit/multi-control-api.test.js` | Удалены тесты на активацию в `syncNewMasterTab`. `discoverActiveTab` и `onNewTab` больше не ожидают изменения `activeMasterTab`. Добавлен тест `never activates slave tabs` |
+
+**Поведение:** Middle-click / контекстное меню → таб создаётся в Slaves, но фокус остаётся на текущем табе. Когда Master реально переключается (Ctrl+Tab, клик по tab bar, Ctrl+1..9), `visibilitychange` → `tabActivated` → `setActiveMasterTab` → синхронизация.
 
 ### v0.11.0 (2026-07-03) — Focus sync via activateAndFocusTarget + visibilitychange wiring
 
