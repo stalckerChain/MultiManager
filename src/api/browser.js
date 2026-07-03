@@ -8,6 +8,7 @@ const { checkProxy, rotateProxy } = require('../proxy');
 const { injectCookies, getProfileDir } = require('../cookie/inject');
 const { createProfileLogger } = require('../logger');
 const { broadcastStatus } = require('../core/websocket');
+const { getExtensionsDir } = require('./extensions');
 
 const router = express.Router();
 
@@ -63,6 +64,10 @@ const runningProfiles = new Map();
 const profileWindows = new Map();
 const cdpPorts = new Map();
 const SHUTDOWN_TIMEOUT_MS = 8000;
+
+function tryParseJson(json) {
+  try { return JSON.parse(json); } catch { return []; }
+}
 
 function getCdpPort(profileId) {
   return cdpPorts.get(profileId) || null;
@@ -177,6 +182,18 @@ router.post('/:id/start', async (req, res) => {
         : `${proxy.type}://${proxy.host}:${proxy.port}`;
       args.push(`--proxy-server=${proxyUrl}`);
       profileLogger.info({ profileId: req.params.id, proxyUrl }, 'Прокси применён');
+    }
+  }
+
+  const extIds = tryParseJson(profile.extensions);
+  if (extIds.length > 0) {
+    const extDir = getExtensionsDir();
+    const enabledPaths = extIds
+      .map(id => path.join(extDir, id))
+      .filter(extPath => fs.existsSync(extPath) && fs.existsSync(path.join(extPath, '.enabled')));
+    if (enabledPaths.length > 0) {
+      args.push(`--load-extension=${enabledPaths.join(',')}`);
+      logQueries.add(req.params.id, 'info', `Загружено расширений: ${enabledPaths.length}`);
     }
   }
 

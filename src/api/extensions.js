@@ -1,6 +1,8 @@
 const express = require('express');
 const fs = require('fs');
 const path = require('path');
+const axios = require('axios');
+const AdmZip = require('adm-zip');
 const { getDatabase } = require('../db');
 
 const router = express.Router();
@@ -36,8 +38,8 @@ function getManifest(extDir) {
   }
 }
 
-function listExtensions() {
-  const extDir = getExtensionsDir();
+function listExtensions(dir) {
+  const extDir = dir || getExtensionsDir();
   ensureDir(extDir);
 
   const extensions = [];
@@ -49,13 +51,14 @@ function listExtensions() {
     const manifest = getManifest(path.join(extDir, entry.name));
     if (!manifest) continue;
 
+    const extPath = path.join(extDir, entry.name);
     extensions.push({
       id: entry.name,
       name: manifest.name || entry.name,
       version: manifest.version || '1.0.0',
       description: manifest.description || '',
-      enabled: true,
-      path: path.join(extDir, entry.name),
+      enabled: fs.existsSync(path.join(extPath, '.enabled')),
+      path: extPath,
     });
   }
 
@@ -94,6 +97,7 @@ router.post('/', (req, res) => {
     }
 
     fs.cpSync(extPath, targetPath, { recursive: true });
+    fs.writeFileSync(path.join(targetPath, '.enabled'), 'true');
 
     const manifest = getManifest(targetPath);
     res.status(201).json({
@@ -108,6 +112,158 @@ router.post('/', (req, res) => {
     res.status(500).json({ error: err.message });
   }
 });
+
+router.post('/from-store', async (req, res) => {
+  try {
+    const { url } = req.body;
+    if (!url) {
+      return res.status(400).json({ error: 'Chrome Web Store URL is required' });
+    }
+
+    const extId = extractExtensionId(url);
+    if (!extId || !/^[a-z]{32}$/.test(extId)) {
+      return res.status(400).json({ error: 'Invalid Chrome Web Store URL or extension ID' });
+    }
+
+    const extDir = getExtensionsDir();
+    ensureDir(extDir);
+    const targetPath = path.join(extDir, extId);
+
+    const crxUrl = `https://clients2.google.com/service/update2/crx?response=redirect&prodversion=130.0&acceptformat=crx2,crx3&x=id%3D${extId}%26installsource%3Dondemand%26uc`;
+    const response = await axios.get(crxUrl, { responseType: 'arraybuffer', maxRedirects: 5 });
+    const buffer = Buffer.from(response.data);
+
+    const zipBuffer = extractZipFromCrx(buffer);
+    const zip = new AdmZip(zipBuffer);
+
+    if (fs.existsSync(targetPath)) {
+      fs.rmSync(targetPath, { recursive: true, force: true });
+    }
+    zip.extractAllTo(targetPath, true);
+    fs.writeFileSync(path.join(targetPath, '.enabled'), 'true');
+
+    const manifest = getManifest(targetPath);
+    res.status(201).json({
+      id: extId,
+      name: manifest?.name || extId,
+      version: manifest?.version || '1.0.0',
+      description: manifest?.description || '',
+      enabled: true,
+      path: targetPath,
+    });
+  } catch (err) {
+    res.status(500).json({ error: `Failed to install from Chrome Web Store: ${err.message}` });
+  }
+});
+
+router.post('/from-zip', async (req, res) => {
+  try {
+    const { name, zipPath } = req.body;
+    if (!zipPath || !fs.existsSync(zipPath)) {
+      return res.status(400).json({ error: 'Valid zip file path is required' });
+    }
+
+    const extDir = getExtensionsDir();
+    ensureDir(extDir);
+
+    const zip = new AdmZip(zipPath);
+    const entries = zip.getEntries();
+
+    const topLevelDirs = new Set();
+    for (const entry of entries) {
+      const parts = entry.entryName.split('/');
+      if (parts.length > 1) topLevelDirs.add(parts[0]);
+    }
+
+    if (topLevelDirs.size === 1) {
+      const dirName = [...topLevelDirs][0];
+      const targetName = name || dirName;
+      const targetPath = path.join(extDir, targetName);
+
+      if (fs.existsSync(targetPath)) {
+        fs.rmSync(targetPath, { recursive: true, force: true });
+      }
+
+      for (const entry of entries) {
+        const relativePath = entry.entryName.substring(dirName.length + 1);
+        if (!relativePath) continue;
+        const fullPath = path.join(targetPath, relativePath);
+        if (entry.isDirectory) {
+          fs.mkdirSync(fullPath, { recursive: true });
+        } else {
+          fs.mkdirSync(path.dirname(fullPath), { recursive: true });
+          fs.writeFileSync(fullPath, entry.getData());
+        }
+      }
+      fs.writeFileSync(path.join(targetPath, '.enabled'), 'true');
+
+      const manifest = getManifest(targetPath);
+      return res.status(201).json({
+        id: targetName,
+        name: manifest?.name || targetName,
+        version: manifest?.version || '1.0.0',
+        description: manifest?.description || '',
+        enabled: true,
+        path: targetPath,
+      });
+    }
+
+    const targetName = name || path.basename(zipPath, '.zip');
+    const targetPath = path.join(extDir, targetName);
+
+    if (fs.existsSync(targetPath)) {
+      fs.rmSync(targetPath, { recursive: true, force: true });
+    }
+    zip.extractAllTo(targetPath, true);
+    fs.writeFileSync(path.join(targetPath, '.enabled'), 'true');
+
+    const manifest = getManifest(targetPath);
+    res.status(201).json({
+      id: targetName,
+      name: manifest?.name || targetName,
+      version: manifest?.version || '1.0.0',
+      description: manifest?.description || '',
+      enabled: true,
+      path: targetPath,
+    });
+  } catch (err) {
+    res.status(500).json({ error: `Failed to install from zip: ${err.message}` });
+  }
+});
+
+function extractExtensionId(urlOrId) {
+  const trimmed = urlOrId.trim();
+
+  if (/^[a-z]{32}$/.test(trimmed)) return trimmed;
+
+  const match = trimmed.match(/[a-z]{32}/);
+  if (match) return match[0];
+
+  return null;
+}
+
+function extractZipFromCrx(buffer) {
+  if (buffer.slice(0, 4).toString() !== 'Cr24') {
+    return buffer;
+  }
+
+  const version = buffer.readUInt32LE(4);
+
+  if (version === 2) {
+    const pubKeyLength = buffer.readUInt32LE(8);
+    const sigLength = buffer.readUInt32LE(12);
+    const headerSize = 16 + pubKeyLength + sigLength;
+    return buffer.subarray(headerSize);
+  }
+
+  if (version === 3) {
+    const headerLength = buffer.readUInt32LE(8);
+    const headerSize = 16 + headerLength;
+    return buffer.subarray(headerSize);
+  }
+
+  return buffer;
+}
 
 router.delete('/:id', (req, res) => {
   try {
@@ -149,3 +305,8 @@ router.post('/:id/toggle', (req, res) => {
 });
 
 module.exports = router;
+module.exports.getExtensionsDir = getExtensionsDir;
+module.exports.getManifest = getManifest;
+module.exports.listExtensions = listExtensions;
+module.exports.extractExtensionId = extractExtensionId;
+module.exports.extractZipFromCrx = extractZipFromCrx;

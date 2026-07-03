@@ -66,6 +66,11 @@
   "extensions": {
     "title": "Менеджер расширений",
     "add": "Добавить расширение",
+    "fromFolder": "Из папки",
+    "fromZip": "Из ZIP / CRX",
+    "fromStore": "Из Chrome Web Store",
+    "storeModalTitle": "Установка из Chrome Web Store",
+    "storePlaceholder": "Вставьте ссылку из Chrome Web Store или ID расширения",
     "empty": "Расширения не установлены"
   },
   "settings": {

@@ -46,6 +46,22 @@
 
       <a-tab-pane key="advanced" :tab="t('profiles.modal.advanced')">
         <a-form layout="vertical">
+          <a-form-item :label="t('profiles.modal.extensions')">
+            <div v-if="extensionsLoading" class="text-sm text-slate-400">Loading...</div>
+            <div v-else-if="allExtensions.length === 0" class="text-sm text-slate-400">No extensions available. Add them in Extensions manager.</div>
+            <a-checkbox-group v-else v-model:value="form.extensions">
+              <div class="flex flex-col gap-2">
+                <div v-for="ext in allExtensions" :key="ext.id" class="flex items-center gap-2">
+                  <a-checkbox :value="ext.id" :disabled="!ext.enabled" />
+                  <span class="text-sm" :class="{ 'text-slate-500': !ext.enabled }">
+                    {{ ext.name }}
+                    <span class="text-xs text-slate-500">v{{ ext.version }}</span>
+                    <span v-if="!ext.enabled" class="text-xs text-yellow-500">(disabled)</span>
+                  </span>
+                </div>
+              </div>
+            </a-checkbox-group>
+          </a-form-item>
           <a-form-item :label="t('profiles.modal.notes')">
             <a-textarea v-model:value="form.notes" :rows="4" />
           </a-form-item>
@@ -72,14 +88,33 @@ const props = defineProps({
 const emit = defineEmits(['update:open', 'save']);
 
 const activeTab = ref('basic');
+const allExtensions = ref([]);
+const extensionsLoading = ref(false);
 const form = reactive({
   name: '',
   tags: [],
   platform: 'windows',
   proxy_id: null,
+  extensions: [],
   notes: '',
   user_agent: '',
   screen_resolution: '',
+});
+
+async function fetchExtensions() {
+  extensionsLoading.value = true;
+  try {
+    const { data } = await client.get('/api/extensions');
+    allExtensions.value = data;
+  } catch {
+    allExtensions.value = [];
+  } finally {
+    extensionsLoading.value = false;
+  }
+}
+
+watch(() => props.open, (isOpen) => {
+  if (isOpen) fetchExtensions();
 });
 
 watch(() => props.profile, (p) => {
@@ -89,6 +124,7 @@ watch(() => props.profile, (p) => {
       tags: tryParse(p.tags),
       platform: p.platform,
       proxy_id: p.proxy_id,
+      extensions: tryParse(p.extensions),
       notes: p.notes || '',
       user_agent: p.user_agent,
       screen_resolution: p.screen_resolution,
@@ -96,7 +132,7 @@ watch(() => props.profile, (p) => {
   } else {
     Object.assign(form, {
       name: '', tags: [], platform: 'windows', proxy_id: null,
-      notes: '', user_agent: '', screen_resolution: '',
+      extensions: [], notes: '', user_agent: '', screen_resolution: '',
     });
   }
 }, { immediate: true });

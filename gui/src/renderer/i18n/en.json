@@ -66,6 +66,11 @@
   "extensions": {
     "title": "Extensions Manager",
     "add": "Add Extension",
+    "fromFolder": "From Folder",
+    "fromZip": "From ZIP / CRX",
+    "fromStore": "From Chrome Web Store",
+    "storeModalTitle": "Install from Chrome Web Store",
+    "storePlaceholder": "Paste Chrome Web Store URL or Extension ID",
     "empty": "No extensions installed"
   },
   "settings": {

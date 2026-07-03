@@ -599,6 +599,42 @@ Authorization: Bearer <token>
 
 ---
 
+### POST /api/extensions/from-store
+
+Установить расширение из Chrome Web Store по ссылке или ID.
+
+**Тело запроса:**
+```json
+{
+  "url": "https://chrome.google.com/webstore/detail/extension-name/abcdefghijklmnopqrstuvwxyzabcdef"
+}
+```
+
+**ID расширения** — 32 символа `[a-z]`, извлекается автоматически из URL.
+
+**Ответ (201):** Установленное расширение
+
+---
+
+### POST /api/extensions/from-zip
+
+Установить расширение из ZIP или CRX архива.
+
+**Тело запроса:**
+```json
+{
+  "name": "my-extension",
+  "zipPath": "/path/to/extension.zip"
+}
+```
+
+Если архив содержит один корневой каталог — он автоматически срезается.
+Поддерживаются форматы CRX v2 и CRX v3.
+
+**Ответ (201):** Установленное расширение
+
+---
+
 ## Логи
 
 ### GET /api/logs

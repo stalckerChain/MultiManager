@@ -3,12 +3,31 @@
     <div class="flex items-center justify-between mb-4">
       <h1 class="text-xl font-bold">{{ t('extensions.title') }}</h1>
       <div class="flex items-center gap-2">
-        <a-button type="primary" @click="addFromFolder">
-          <FolderOpenOutlined /> Add from Folder
-        </a-button>
-        <input ref="folderInput" type="file" webkitdirectory style="display: none" @change="handleFolderSelect" />
+        <a-dropdown>
+          <a-button type="primary">
+            <PlusOutlined /> {{ t('extensions.add') }}
+            <DownOutlined />
+          </a-button>
+          <template #overlay>
+            <a-menu>
+              <a-menu-item @click="addFromFolder">
+                <FolderOpenOutlined /> {{ t('extensions.fromFolder') }}
+              </a-menu-item>
+              <a-menu-item @click="addFromZip">
+                <FileZipOutlined /> {{ t('extensions.fromZip') }}
+              </a-menu-item>
+              <a-menu-item @click="showStoreModal = true">
+                <GlobalOutlined /> {{ t('extensions.fromStore') }}
+              </a-menu-item>
+            </a-menu>
+          </template>
+        </a-dropdown>
       </div>
     </div>
+
+    <a-modal v-model:open="showStoreModal" :title="t('extensions.storeModalTitle')" @ok="installFromStore" :confirm-loading="storeInstalling">
+      <a-input v-model:value="storeUrl" :placeholder="t('extensions.storePlaceholder')" />
+    </a-modal>
 
     <div v-if="loading" class="text-center py-20">
       <a-spin />
@@ -17,7 +36,7 @@
     <div v-else-if="extensions.length === 0" class="text-center text-slate-500 py-20">
       <ToolOutlined class="text-4xl mb-3" />
       <div>{{ t('extensions.empty') }}</div>
-      <div class="text-sm mt-2">Add Chrome extensions by selecting a folder</div>
+      <div class="text-sm mt-2">Add Chrome extensions from folder, ZIP, or Chrome Web Store</div>
     </div>
 
     <div v-else class="grid grid-cols-4 gap-4">
@@ -39,9 +58,11 @@
 
         <div class="flex items-center justify-between">
           <a-switch v-model:checked="ext.enabled" @change="toggleExtension(ext)" />
-          <a-button size="small" type="text" danger @click="removeExtension(ext)">
-            <DeleteOutlined />
-          </a-button>
+          <a-popconfirm title="Remove this extension?" @confirm="removeExtension(ext)">
+            <a-button size="small" type="text" danger>
+              <DeleteOutlined />
+            </a-button>
+          </a-popconfirm>
         </div>
       </div>
     </div>
@@ -51,8 +72,8 @@
 <script setup>
 import { ref, watch } from 'vue';
 import { useTranslation } from 'i18next-vue';
-import { FolderOpenOutlined, ToolOutlined, DeleteOutlined } from '@ant-design/icons-vue';
-import { message, Modal } from 'ant-design-vue';
+import { PlusOutlined, DownOutlined, FolderOpenOutlined, FileZipOutlined, GlobalOutlined, ToolOutlined, DeleteOutlined } from '@ant-design/icons-vue';
+import { message } from 'ant-design-vue';
 import client from '../api/client.js';
 import { useAppStore } from '../stores/app.js';
 
@@ -61,7 +82,9 @@ const appStore = useAppStore();
 
 const extensions = ref([]);
 const loading = ref(false);
-const folderInput = ref(null);
+const showStoreModal = ref(false);
+const storeUrl = ref('');
+const storeInstalling = ref(false);
 
 async function fetchExtensions() {
   loading.value = true;
@@ -73,37 +96,68 @@ async function fetchExtensions() {
   }
 }
 
-function addFromFolder() {
-  folderInput.value?.click();
-}
-
-async function handleFolderSelect(e) {
-  const files = Array.from(e.target.files);
-  if (files.length === 0) return;
-
-  const manifestFile = files.find(f => f.name === 'manifest.json');
-  if (!manifestFile) {
-    message.error('Selected folder does not contain manifest.json');
+async function addFromFolder() {
+  let folderPath;
+  if (window.electronAPI) {
+    folderPath = await window.electronAPI.invoke('dialog:select-folder');
+  } else {
+    message.error('Folder selection is only available in Electron');
     return;
   }
+  if (!folderPath) return;
 
   try {
-    const text = await manifestFile.text();
-    const manifest = JSON.parse(text);
-    const folderPath = files[0].webkitRelativePath.split('/')[0];
-
     await client.post('/api/extensions', {
-      name: manifest.name || folderPath,
-      path: `/tmp/ext_${Date.now()}`,
+      name: folderPath.split(/[\\/]/).pop(),
+      path: folderPath,
     });
-
-    message.success(`Extension "${manifest.name}" added`);
+    message.success('Extension added');
     await fetchExtensions();
   } catch (err) {
     message.error(err.message || 'Failed to add extension');
   }
+}
 
-  e.target.value = '';
+async function addFromZip() {
+  let zipPath;
+  if (window.electronAPI) {
+    zipPath = await window.electronAPI.invoke('dialog:select-zip');
+  } else {
+    message.error('File selection is only available in Electron');
+    return;
+  }
+  if (!zipPath) return;
+
+  try {
+    await client.post('/api/extensions/from-zip', {
+      name: zipPath.split(/[\\/]/).pop().replace(/\.(zip|crx)$/i, ''),
+      zipPath,
+    });
+    message.success('Extension installed from archive');
+    await fetchExtensions();
+  } catch (err) {
+    message.error(err.message || 'Failed to install extension');
+  }
+}
+
+async function installFromStore() {
+  if (!storeUrl.value.trim()) {
+    message.error('Please enter a Chrome Web Store URL or Extension ID');
+    return;
+  }
+
+  storeInstalling.value = true;
+  try {
+    await client.post('/api/extensions/from-store', { url: storeUrl.value.trim() });
+    message.success('Extension installed from Chrome Web Store');
+    showStoreModal.value = false;
+    storeUrl.value = '';
+    await fetchExtensions();
+  } catch (err) {
+    message.error(err.message || 'Failed to install extension');
+  } finally {
+    storeInstalling.value = false;
+  }
 }
 
 async function toggleExtension(ext) {
@@ -114,21 +168,14 @@ async function toggleExtension(ext) {
   }
 }
 
-function removeExtension(ext) {
-  Modal.confirm({
-    title: 'Remove Extension',
-    content: `Remove "${ext.name}"?`,
-    okType: 'danger',
-    onOk: async () => {
-      try {
-        await client.delete(`/api/extensions/${ext.id}`);
-        extensions.value = extensions.value.filter(e => e.id !== ext.id);
-        message.success('Extension removed');
-      } catch (err) {
-        message.error(err.message);
-      }
-    },
-  });
+async function removeExtension(ext) {
+  try {
+    await client.delete(`/api/extensions/${ext.id}`);
+    extensions.value = extensions.value.filter(e => e.id !== ext.id);
+    message.success('Extension removed');
+  } catch (err) {
+    message.error(err.message);
+  }
 }
 
 watch(() => appStore.initialized, (ready) => {

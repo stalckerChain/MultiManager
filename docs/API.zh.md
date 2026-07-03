@@ -551,6 +551,41 @@ Authorization: Bearer <token>
 
 ---
 
+### POST /api/extensions/from-store
+
+通过 Chrome Web Store 链接或 ID 安装扩展。
+
+**请求体：**
+```json
+{
+  "url": "https://chrome.google.com/webstore/detail/extension-name/abcdefghijklmnopqrstuvwxyzabcdef"
+}
+```
+
+扩展 ID 为 32 个 `[a-z]` 字符，自动从 URL 中提取。
+
+**响应 (201)：** 已安装的扩展
+
+---
+
+### POST /api/extensions/from-zip
+
+从 ZIP 或 CRX 存档安装扩展。
+
+**请求体：**
+```json
+{
+  "name": "my-extension",
+  "zipPath": "/path/to/extension.zip"
+}
+```
+
+如果存档包含单个根目录，则会自动剥离。支持 CRX v2 和 CRX v3 格式。
+
+**响应 (201)：** 已安装的扩展
+
+---
+
 ## 日志
 
 ### GET /api/logs

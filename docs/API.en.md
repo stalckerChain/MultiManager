@@ -551,6 +551,42 @@ Toggle extension enabled state.
 
 ---
 
+### POST /api/extensions/from-store
+
+Install an extension from Chrome Web Store by URL or ID.
+
+**Request Body:**
+```json
+{
+  "url": "https://chrome.google.com/webstore/detail/extension-name/abcdefghijklmnopqrstuvwxyzabcdef"
+}
+```
+
+Extension ID is 32 `[a-z]` characters, auto-extracted from the URL.
+
+**Response (201):** Installed extension
+
+---
+
+### POST /api/extensions/from-zip
+
+Install an extension from a ZIP or CRX archive.
+
+**Request Body:**
+```json
+{
+  "name": "my-extension",
+  "zipPath": "/path/to/extension.zip"
+}
+```
+
+If the archive has a single root directory, it is stripped automatically.
+Supports CRX v2 and CRX v3 formats.
+
+**Response (201):** Installed extension
+
+---
+
 ## Logs
 
 ### GET /api/logs

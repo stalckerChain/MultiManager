@@ -1,4 +1,4 @@
-const { app, BrowserWindow, ipcMain, Tray, Menu, nativeTheme } = require('electron');
+const { app, BrowserWindow, ipcMain, Tray, Menu, nativeTheme, dialog } = require('electron');
 const path = require('path');
 const fs = require('fs');
 const http = require('http');
@@ -178,6 +178,23 @@ async function createWindow() {
     } catch (err) {
       log('ERROR', 'hooks:stop failed:', err.message);
     }
+  });
+
+  ipcMain.handle('dialog:select-folder', async () => {
+    const result = await dialog.showOpenDialog(mainWindow, {
+      properties: ['openDirectory'],
+      title: 'Select Extension Folder',
+    });
+    return result.canceled ? null : result.filePaths[0];
+  });
+
+  ipcMain.handle('dialog:select-zip', async () => {
+    const result = await dialog.showOpenDialog(mainWindow, {
+      properties: ['openFile'],
+      filters: [{ name: 'ZIP files', extensions: ['zip', 'crx'] }],
+      title: 'Select Extension Archive',
+    });
+    return result.canceled ? null : result.filePaths[0];
   });
 
   tray = createTray(mainWindow, async () => {

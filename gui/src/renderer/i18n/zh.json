@@ -66,6 +66,11 @@
   "extensions": {
     "title": "扩展管理器",
     "add": "添加扩展",
+    "fromFolder": "从文件夹",
+    "fromZip": "从 ZIP / CRX",
+    "fromStore": "从 Chrome Web Store",
+    "storeModalTitle": "从 Chrome Web Store 安装",
+    "storePlaceholder": "粘贴 Chrome Web Store 链接或扩展 ID",
     "empty": "未安装扩展"
   },
   "settings": {
