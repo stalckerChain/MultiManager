@@ -60,44 +60,19 @@ npm install
 
 ---
 
-## 2. Сборка native-модулей (C++ addon)
+## 2. Native-модули
 
-Проект содержит C++ addon для перехвата клавиатуры (`WH_KEYBOARD_LL`) — `src/os-input/native-hooks/`. Этот addon компилируется через `node-gyp` из `binding.gyp`.
+Проект содержит скомпилированные native-модули, которые уже включены в репозиторий:
 
-```bash
-# Из корня проекта
-cd MultiManager/src/os-input/native-hooks
-node-gyp rebuild
-```
+| Модуль | Расположение | Назначение |
+|--------|-------------|------------|
+| `hooks.node` | `src/os-input/native-hooks/build/Release/` | C++ addon `WH_KEYBOARD_LL` (перехват клавиатуры на уровне ОС) |
+| `better_sqlite3.node` | `node_modules/better-sqlite3/build/Release/` | SQLite (через npm) |
+| `koffi.node` | `node_modules/@koromix/koffi-win32-x64/` | FFI для WinAPI (через npm) |
 
-Результат: `src/os-input/native-hooks/build/Release/hooks.node`
+В production-сборке `*.node` файлы автоматически выносятся из `app.asar` через `asarUnpack` в конфиге electron-builder. `hooks.node` также копируется в `resources/backend/src/os-input/native-hooks/build/Release/` через `extraResources`.
 
-### Проверка
-
-```bash
-node -e "const a = require('./build/Release/hooks.node'); console.log(typeof a.start, typeof a.stop);"
-# Должно вывести: function function
-```
-
-> **Важно:** В production-сборке `hooks.node` копируется в `resources/backend/src/os-input/native-hooks/build/Release/` через `extraResources` конфиг electron-builder. Файл уже находится вне `app.asar` благодаря `asarUnpack` в `package.json` gui.
-
-### Пересборка native-модулей под Electron
-
-Native-модули (`better-sqlite3`, `koffi`) должны быть скомпилированы под версию Electron, а не под системный Node.js. Для этого используется `electron-rebuild`:
-
-```bash
-cd MultiManager/gui
-npx electron-rebuild
-```
-
-Или пересобрать конкретный модуль:
-
-```bash
-npx electron-rebuild -f -w better-sqlite3
-npx electron-rebuild -f -w koffi
-```
-
-> **Примечание:** Если версия Electron и Node.js ABI-совместимы, пересборка может не потребоваться. Если при запуске в production возникают ошибки вида `Error: The module was compiled against a different Node.js version`, выполните `electron-rebuild`.
+> **Примечание:** Если при запуске в production возникают ошибки вида `Error: The module was compiled against a different Node.js version`, выполните пересборку native-модулей под Electron: `cd gui && npx electron-rebuild -f`
 
 ---
 
@@ -341,13 +316,12 @@ autoUpdater.setFeedURL(feedUrl);
 
 **Симптом:** лог `hooks.log` → `FATAL: hooks.node addon not found`
 
-**Причина:** `hooks.node` не попал в `extraResources`.
+**Причина:** `hooks.node` не попал в `extraResources` при сборке.
 
 **Решение:**
-1. Проверьте, что `src/os-input/native-hooks/build/Release/hooks.node` существует
+1. Проверьте, что `src/os-input/native-hooks/build/Release/hooks.node` существует (файл должен быть в репозитории)
 2. Проверьте `gui/package.json` → `extraResources` → `filter: ["**/*"]`
-3. Пересоберите addon: `cd src/os-input/native-hooks && node-gyp rebuild`
-4. Пересоберите установщик: `cd gui && npm run build`
+3. Пересоберите установщик с чистой директорией `release`: `rm -rf gui/release && cd gui && npm run build`
 
 ### `Error: The module was compiled against a different Node.js version`
 
@@ -394,16 +368,10 @@ rm -rf gui/dist gui/release gui/node_modules node_modules
 npm install
 cd gui && npm install && cd ..
 
-# 3. Собрать C++ addon
-cd src/os-input/native-hooks && node-gyp rebuild && cd ../../../
-
-# 4. Пересобрать native-модули под Electron
-cd gui && npx electron-rebuild -f && cd ..
-
-# 5. Запустить тесты
+# 3. Запустить тесты
 npm test
 
-# 6. Собрать установщик
+# 4. Собрать установщик
 cd gui && npm run build
 ```
 
