@@ -46,7 +46,7 @@ async function syncNewMasterTab(masterTargetId, masterTabUrl) {
           await cdpManager.attachToExistingTarget(slaveId, nativeTab.targetId);
           controller.mapTab(masterTargetId, slaveId, nativeTab.targetId);
           if (masterTargetId !== controller.activeMasterTab) {
-            controller._enforceSlaveFocusOnActiveTab(slaveId);
+            await controller._enforceSlaveFocusOnActiveTab(slaveId);
           }
           logger.info({ slaveId, slaveTargetId: nativeTab.targetId }, 'SYNC: mapped existing native slave tab');
         } else {
@@ -55,7 +55,7 @@ async function syncNewMasterTab(masterTargetId, masterTabUrl) {
             await cdpManager.attachToExistingTarget(slaveId, slaveTargetId);
             controller.mapTab(masterTargetId, slaveId, slaveTargetId);
             if (masterTargetId !== controller.activeMasterTab) {
-              controller._enforceSlaveFocusOnActiveTab(slaveId);
+              await controller._enforceSlaveFocusOnActiveTab(slaveId);
             }
             logger.info({ slaveId, slaveTargetId }, 'SYNC: created and mapped slave tab');
           }
@@ -241,7 +241,9 @@ router.post('/start', async (req, res) => {
         const slaveIdx = bc.targetSessions.size - 1;
         const masterTargetId = controller.tabIndex[slaveIdx];
         if (masterTargetId && masterTargetId !== controller.activeMasterTab) {
-          controller._enforceSlaveFocusOnActiveTab(profileId);
+          controller._enforceSlaveFocusOnActiveTab(profileId).catch(err => {
+            logger.error({ slaveId: profileId, error: err.message }, 'MULTI-CONTROL: _enforceSlaveFocusOnActiveTab failed after attach');
+          });
           logger.info({ slaveId: profileId, masterTargetId, slaveTargetId: targetInfo.targetId }, 'MULTI-CONTROL: enforced focus on active tab after attach');
         }
       }

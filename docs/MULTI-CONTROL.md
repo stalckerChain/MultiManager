@@ -365,13 +365,30 @@ if (event.type === 'keyDown' && event.key === 'Enter') {
 11. **Фокус на предыдущий таб при destroy** — `_maybeSwitchToPrevTab` использует `tabIndex` для переключения на предыдущий таб в порядке создания
 12. **Трёхшаговая активация фокуса в Slave** — `Target.activateTarget` (переключение вкладки) → `Page.bringToFront` (вывод на передний план) → `DOM.focus` (программный фокус ввода). Без `DOM.focus` движок Chromium игнорирует эмулируемые события `Input.dispatchKeyEvent`/`dispatchMouseEvent`
 13. **`visibilitychange` как единственный надёжный детектор переключения вкладок** — `Target.targetInfoChanged` не содержит признака активации вкладки. `visibilitychange` ловит все сценарии: Ctrl+Tab, Ctrl+Shift+Tab, Ctrl+1..9, клики по tab bar. Событие передаётся через `Runtime.bindingCalled` → разрешение `targetId` из `sessionId`
-14. **Принудительная реактивация фона в Slave при background-табах** — `_enforceSlaveFocusOnActiveTab` отправляет `Target.activateTarget` (fire-and-forget) сразу после `mapTab`, если новый таб не является `activeMasterTab`. Chromium в Slave автоактивирует табы, созданные через `Input.dispatchMouseEvent` — без этой команды фокус остаётся на неверном табе
+14. **Принудительная реактивация фона в Slave при background-табах** — `_enforceSlaveFocusOnActiveTab` отправляет полную цепочку фокуса (`activateAndFocusTarget`: `Target.activateTarget` → `Page.bringToFront` → `DOM.focus` → `body.focus()`) сразу после `mapTab`, если новый таб не является `activeMasterTab`. Chromium в Slave автоактивирует табы, созданные через `Input.dispatchMouseEvent` — одного `Target.activateTarget` недостаточно для закрепления DOM-фокуса, поэтому используется та же цепочка, что и в `_syncActiveTabToSlaves`
 
 ## Версия
 
-Текущая: v0.12.0 (enforceSlaveFocusOnActiveTab — принудительная реактивация фона при background-табах)
+Текущая: v0.12.1 (enforceSlaveFocusOnActiveTab → activateAndFocusTarget — полная цепочка фокуса для background-табов)
 
 ## История версий
+
+### v0.12.1 (2026-07-04) — Fix: enforceSlaveFocusOnActiveTab использует activateAndFocusTarget
+
+**Проблема:** Middle-click по ссылке или "открыть в новом табе" через контекстное меню в Master открывает вкладку в фоне (фокус остаётся на исходной). При диспатче события мыши в Slave, Chromium в Slave-окне активирует новую вкладку — фокус уходит на неё, ломая синхронизацию. v0.12.0 пытался вернуть фокус через `Target.activateTarget`, но одного этого вызова **недостаточно** — Chromium не закрепляет DOM-фокус ввода без `Page.bringToFront` + `DOM.focus` (тот же вывод, что и в v0.11.0 для `_syncActiveTabToSlaves`).
+
+**Корень:** `_enforceSlaveFocusOnActiveTab` использовал fire-and-forget `Target.activateTarget` вместо полной цепочки активации, уже реализованной в `cdpManager.activateAndFocusTarget` и применяемой в `_syncActiveTabToSlaves`.
+
+**Исправления:**
+
+| Файл | Изменение |
+|------|-----------|
+| `src/multi-control/index.js` | `_enforceSlaveFocusOnActiveTab`: метод стал `async`, заменён вызов `this.cdp.activateTarget(...)` → `await this.cdp.activateAndFocusTarget(...)`. Добавлен `try/catch` с логированием ошибок |
+| `src/api/multi-control.js` | `syncNewMasterTab`: добавлен `await` перед `_enforceSlaveFocusOnActiveTab` в обеих ветках (native-tab и create-tab). `onTabAttached`: fire-and-forget с `.catch(err => logger.error(...))` — синхронный callback не должен блокировать WS message handler |
+| `tests/unit/multi-control.test.js` | Все 5 тестов `_enforceSlaveFocusOnActiveTab` стали `async` + проверки переведены с `activateTarget` на `activateAndFocusTarget`. Добавлен тест на логирование ошибки при rejected promise |
+| `tests/unit/multi-control-api.test.js` | `MockCdpManager`: добавлен `activateAndFocusTarget` (пушит в `activateCalls`), `_enforceSlaveFocusOnActiveTab` стал `async`. Тестовая копия `syncNewMasterTab` использует `await`. Тесты `onTabAttached` стали `async` с flush через `setTimeout(0)` |
+
+**Поведение:** Middle-click / контекстное меню → таб создаётся в Slaves → `_enforceSlaveFocusOnActiveTab` прогоняет полную цепочку `Target.activateTarget` → `Page.bringToFront` → `DOM.focus` → `body.focus()`, закрепляя DOM-фокус на исходном табе. Когда Master реально переключается (Ctrl+Tab, клик по tab bar, `visibilitychange` → `tabActivated`) — фокус в Slaves переключается через штатный `_syncActiveTabToSlaves`.
 
 ### v0.12.0 (2026-07-03) — Fix: enforce focus on active tab in slaves after background tab creation
 

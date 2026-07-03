@@ -482,61 +482,74 @@ describe('MultiController', () => {
   });
 
   describe('_enforceSlaveFocusOnActiveTab', () => {
-    it('вызывает activateTarget для правильного slave таба', () => {
-      mockCdp.activateTarget = vi.fn();
+    it('вызывает activateAndFocusTarget для правильного slave таба', async () => {
       const bc = { targetSessions: new Map() };
       bc.targetSessions.set('active-slave-tab', { sessionId: 's1' });
       mockCdp.browserConnections.set('slave-1', bc);
       controller.setMaster('master-1');
       controller.mapTab('active-tab', 'slave-1', 'active-slave-tab');
       controller.setActiveMasterTab('active-tab');
+      mockCdp.activateAndFocusTarget.mockClear();
 
-      controller._enforceSlaveFocusOnActiveTab('slave-1');
+      await controller._enforceSlaveFocusOnActiveTab('slave-1');
 
-      expect(mockCdp.activateTarget).toHaveBeenCalledWith('slave-1', 'active-slave-tab');
+      expect(mockCdp.activateAndFocusTarget).toHaveBeenCalledWith('slave-1', 'active-slave-tab');
     });
 
-    it('не вызывает activateTarget если нет activeMasterTab', () => {
-      mockCdp.activateTarget = vi.fn();
+    it('не вызывает activateAndFocusTarget если нет activeMasterTab', async () => {
       controller.setMaster('master-1');
       controller.mapTab('some-tab', 'slave-1', 'some-slave-tab');
 
-      controller._enforceSlaveFocusOnActiveTab('slave-1');
+      await controller._enforceSlaveFocusOnActiveTab('slave-1');
 
-      expect(mockCdp.activateTarget).not.toHaveBeenCalled();
+      expect(mockCdp.activateAndFocusTarget).not.toHaveBeenCalled();
     });
 
-    it('не вызывает activateTarget если нет маппинга для activeMasterTab', () => {
-      mockCdp.activateTarget = vi.fn();
+    it('не вызывает activateAndFocusTarget если нет маппинга для activeMasterTab', async () => {
       controller.setMaster('master-1');
       controller.setActiveMasterTab('unknown-tab');
 
-      controller._enforceSlaveFocusOnActiveTab('slave-1');
+      await controller._enforceSlaveFocusOnActiveTab('slave-1');
 
-      expect(mockCdp.activateTarget).not.toHaveBeenCalled();
+      expect(mockCdp.activateAndFocusTarget).not.toHaveBeenCalled();
     });
 
-    it('не падает если нет cdp', () => {
+    it('не падает если нет cdp', async () => {
       controller.cdp = null;
       controller.setMaster('master-1');
       controller.mapTab('active-tab', 'slave-1', 'active-slave-tab');
       controller.setActiveMasterTab('active-tab');
 
-      expect(() => controller._enforceSlaveFocusOnActiveTab('slave-1')).not.toThrow();
+      await expect(controller._enforceSlaveFocusOnActiveTab('slave-1')).resolves.toBeUndefined();
     });
 
-    it('не вызывает activateTarget если targetId нет в targetSessions слейва', () => {
-      mockCdp.activateTarget = vi.fn();
+    it('не вызывает activateAndFocusTarget если targetId нет в targetSessions слейва', async () => {
       const bc = { targetSessions: new Map() };
       bc.targetSessions.set('other-tab', { sessionId: 's1' });
       mockCdp.browserConnections.set('slave-1', bc);
       controller.setMaster('master-1');
       controller.mapTab('active-tab', 'slave-1', 'active-slave-tab');
       controller.setActiveMasterTab('active-tab');
+      // setActiveMasterTab → _syncActiveTabToSlaves вызывает activateAndFocusTarget — сбрасываем spy,
+      // чтобы проверить именно поведение _enforceSlaveFocusOnActiveTab
+      mockCdp.activateAndFocusTarget.mockClear();
 
-      controller._enforceSlaveFocusOnActiveTab('slave-1');
+      await controller._enforceSlaveFocusOnActiveTab('slave-1');
 
-      expect(mockCdp.activateTarget).not.toHaveBeenCalled();
+      expect(mockCdp.activateAndFocusTarget).not.toHaveBeenCalled();
+    });
+
+    it('логирует ошибку если activateAndFocusTarget падает', async () => {
+      const bc = { targetSessions: new Map() };
+      bc.targetSessions.set('active-slave-tab', { sessionId: 's1' });
+      mockCdp.browserConnections.set('slave-1', bc);
+      mockCdp.activateAndFocusTarget = vi.fn().mockRejectedValue(new Error('CDP down'));
+      controller.setMaster('master-1');
+      controller.mapTab('active-tab', 'slave-1', 'active-slave-tab');
+      controller.setActiveMasterTab('active-tab');
+
+      await expect(controller._enforceSlaveFocusOnActiveTab('slave-1')).resolves.toBeUndefined();
+      expect(mockCdp.activateAndFocusTarget).toHaveBeenCalledWith('slave-1', 'active-slave-tab');
     });
   });
 });

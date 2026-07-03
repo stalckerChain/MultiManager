@@ -44,6 +44,11 @@ class MockCdpManager {
     this.activateCalls.push({ profileId, tabId: targetId });
   }
 
+  activateAndFocusTarget(profileId, targetId) {
+    this.activateCalls.push({ profileId, tabId: targetId });
+    return Promise.resolve();
+  }
+
   navigateTab(profileId, tabId, url) {
     this.navigateCalls.push({ profileId, tabId, url });
     return Promise.resolve();
@@ -63,13 +68,13 @@ class MockCdpManager {
     this.masterTabMap.delete(`${masterTabId}:${profileId}`);
   }
 
-  _enforceSlaveFocusOnActiveTab(slaveId) {
+  async _enforceSlaveFocusOnActiveTab(slaveId) {
     if (!this.activeMasterTab) return;
     const slaveTargetId = this.getSlaveTabForMaster(this.activeMasterTab, slaveId);
     if (!slaveTargetId) return;
     const bc = this.browserConnections.get(slaveId);
     if (!bc || !bc.targetSessions.has(slaveTargetId)) return;
-    this.activateTarget(slaveId, slaveTargetId);
+    await this.activateAndFocusTarget(slaveId, slaveTargetId);
   }
 
   // onEvent не мокаем — тесты напрямую вызывают callback
@@ -92,7 +97,7 @@ describe('syncNewMasterTab (matches api/multi-control)', () => {
       const slaveTabId = await mockCdp.createTab(slaveId, url);
       ctrl.setSlaveTabForMaster(targetId, slaveId, slaveTabId);
       if (targetId !== ctrl.activeMasterTab) {
-        ctrl._enforceSlaveFocusOnActiveTab(slaveId);
+        await ctrl._enforceSlaveFocusOnActiveTab(slaveId);
       }
     }
   }
@@ -642,7 +647,7 @@ describe('onTabAttached callback (matches api/multi-control)', () => {
       const slaveIdx = bc.targetSessions.size - 1;
       const masterTargetId = tabIndex[slaveIdx];
       if (masterTargetId && masterTargetId !== ctrl.activeMasterTab) {
-        ctrl._enforceSlaveFocusOnActiveTab(profileId);
+        ctrl._enforceSlaveFocusOnActiveTab(profileId).catch(() => {});
       }
     }
   }
@@ -661,7 +666,7 @@ describe('onTabAttached callback (matches api/multi-control)', () => {
     browserConnections.set('slave-1', { targetSessions: ts1 });
   });
 
-  it('calls _enforceSlaveFocusOnActiveTab when new slave tab is not active master tab', () => {
+  it('calls _enforceSlaveFocusOnActiveTab when new slave tab is not active master tab', async () => {
     ctrl.activeMasterTab = 'master-tab-1';
     // Populate both local browserConnections (for slaveIdx calc) and ctrl.browserConnections (for session check)
     const bcLocal = browserConnections.get('slave-1');
@@ -673,13 +678,14 @@ describe('onTabAttached callback (matches api/multi-control)', () => {
     ctrl.setSlaveTabForMaster('master-tab-2', 'slave-1', 'new-slave-tab');
 
     onTabAttached('slave-1', { targetId: 'new-slave-tab', url: 'http://example.com' });
+    await new Promise(r => setTimeout(r, 0));
 
     // slaveIdx = 1, tabIndex[1] = 'master-tab-2', activeMasterTab = 'master-tab-1' → enforce
     expect(mockCdp.activateCalls.length).toBeGreaterThan(0);
     expect(mockCdp.activateCalls[0]).toEqual({ profileId: 'slave-1', tabId: 'initial-tab' });
   });
 
-  it('does not call activateTarget when new slave tab IS the active master tab', () => {
+  it('does not call activateAndFocusTarget when new slave tab IS the active master tab', async () => {
     ctrl.activeMasterTab = 'master-tab-2';
     const bcLocal = browserConnections.get('slave-1');
     bcLocal.targetSessions.set('new-slave-tab', { sessionId: 's2' });
@@ -688,23 +694,26 @@ describe('onTabAttached callback (matches api/multi-control)', () => {
     bcCtrl.targetSessions.set('new-slave-tab', { sessionId: 's2' });
 
     onTabAttached('slave-1', { targetId: 'new-slave-tab', url: 'http://example.com' });
+    await new Promise(r => setTimeout(r, 0));
 
     // slaveIdx = 1, tabIndex[1] = 'master-tab-2' = activeMasterTab → no enforce
     expect(mockCdp.activateCalls).toHaveLength(0);
   });
 
-  it('does not call activateTarget when activeMasterTab is not set', () => {
+  it('does not call activateAndFocusTarget when activeMasterTab is not set', async () => {
     const bcLocal = browserConnections.get('slave-1');
     bcLocal.targetSessions.set('new-slave-tab', { sessionId: 's2' });
 
     onTabAttached('slave-1', { targetId: 'new-slave-tab', url: 'http://example.com' });
+    await new Promise(r => setTimeout(r, 0));
 
     expect(mockCdp.activateCalls).toHaveLength(0);
   });
 
-  it('ignores master profile', () => {
+  it('ignores master profile', async () => {
     ctrl.activeMasterTab = 'master-tab-1';
     onTabAttached('master-1', { targetId: 'new-tab', url: 'http://example.com' });
+    await new Promise(r => setTimeout(r, 0));
     expect(mockCdp.activateCalls).toHaveLength(0);
   });
 });
