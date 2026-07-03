@@ -1,10 +1,17 @@
 const express = require('express');
+const { exec } = require('child_process');
+const { promisify } = require('util');
+const fs = require('fs');
+const path = require('path');
+const os = require('os');
 const { controller } = require('../multi-control');
 const { cdpManager } = require('../multi-control/cdp-manager');
 const { inputCapture, windowTracker } = require('../os-input');
 const { getCdpPort } = require('./browser');
 const { getDatabase, createProfileQueries } = require('../db');
 const { logger } = require('../logger');
+
+const execAsync = promisify(exec);
 
 const router = express.Router();
 
@@ -481,6 +488,98 @@ router.post('/os-keyboard', async (req, res) => {
   }
 
   res.json({ ok: true });
+});
+
+async function focusWindowByPid(pid) {
+  const platform = process.platform;
+  try {
+    if (platform === 'linux') {
+      const { stdout } = await execAsync(`xdotool search --pid ${pid} 2>/dev/null | head -1`);
+      const windowId = stdout.trim();
+      if (windowId) await execAsync(`xdotool windowactivate ${windowId}`);
+    } else if (platform === 'darwin') {
+      const { stdout } = await execAsync(`ps -p ${pid} -o comm= 2>/dev/null`);
+      const appName = stdout.trim().replace(/\.app\/.*$/, '.app');
+      if (appName) await execAsync(`osascript -e 'tell application "${appName}" to activate'`);
+    } else if (platform === 'win32') {
+      const ps = `Add-Type @"
+using System;
+using System.Runtime.InteropServices;
+public class WinFocus {
+    public delegate bool EnumWindowsProc(IntPtr hWnd, IntPtr lParam);
+    [DllImport("user32.dll")] static extern bool EnumWindows(EnumWindowsProc lpEnumFunc, IntPtr lParam);
+    [DllImport("user32.dll")] static extern bool IsWindowVisible(IntPtr hWnd);
+    [DllImport("user32.dll")] static extern int GetWindowTextLength(IntPtr hWnd);
+    [DllImport("user32.dll")] static extern uint GetWindowThreadProcessId(IntPtr hWnd, out uint lpdwProcessId);
+    [DllImport("user32.dll")] static extern bool SetForegroundWindow(IntPtr hWnd);
+
+    public static void Focus(uint targetPid) {
+        EnumWindows(delegate(IntPtr hWnd, IntPtr lParam) {
+            if (!IsWindowVisible(hWnd)) return true;
+            int len = GetWindowTextLength(hWnd);
+            if (len <= 0) return true;
+            uint pid = 0;
+            GetWindowThreadProcessId(hWnd, out pid);
+            if (pid == targetPid) {
+                SetForegroundWindow(hWnd);
+                return false;
+            }
+            return true;
+        }, IntPtr.Zero);
+    }
+}
+"@
+[WinFocus]::Focus(${pid})
+`;
+      const tmpFile = path.join(os.tmpdir(), `mm_focus_${Date.now()}_${Math.random().toString(36).slice(2)}.ps1`);
+      fs.writeFileSync(tmpFile, ps, 'utf-8');
+      try {
+        await execAsync(`powershell -ExecutionPolicy Bypass -File "${tmpFile}"`);
+      } finally {
+        try { fs.unlinkSync(tmpFile); } catch {}
+      }
+    }
+  } catch (err) {
+    logger.error({ err: err.message, pid }, 'Error focusing window by PID');
+  }
+}
+
+router.post('/focus-windows', async (req, res) => {
+  try {
+    const db = getDatabase();
+    const pq = createProfileQueries(db);
+    const masterId = controller.masterId;
+    const slaveIds = Array.from(controller.slaves.keys());
+    const allIds = [...slaveIds, masterId].filter(Boolean);
+    const pidMap = new Map();
+
+    for (const id of allIds) {
+      const profile = pq.getById(id);
+      if (profile?.pid) pidMap.set(id, profile.pid);
+    }
+
+    for (const id of slaveIds) {
+      const pid = pidMap.get(id);
+      if (pid) {
+        await focusWindowByPid(pid);
+        await new Promise(r => setTimeout(r, 100));
+      }
+    }
+
+    if (masterId) {
+      const pid = pidMap.get(masterId);
+      if (pid) {
+        await new Promise(r => setTimeout(r, 150));
+        await focusWindowByPid(pid);
+      }
+    }
+
+    logger.info({ slavePids: slaveIds.filter(id => pidMap.has(id)).length, masterPid: pidMap.has(masterId) }, 'MULTI-CONTROL: focused sync windows by PID');
+    res.json({ focused: true });
+  } catch (err) {
+    logger.error({ err: err.message }, 'MULTI-CONTROL: focus-windows failed');
+    res.status(500).json({ error: err.message });
+  }
 });
 
 module.exports = router;

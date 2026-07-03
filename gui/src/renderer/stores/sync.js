@@ -44,6 +44,12 @@ export const useSyncStore = defineStore('sync', () => {
         } catch {}
       }
       await fetchStatus();
+
+      try {
+        await client.post('/api/multi-control/focus-windows');
+      } catch (e) {
+        console.warn('Focus windows failed:', e);
+      }
     } catch (err) {
       active.value = false;
       masterId.value = null;

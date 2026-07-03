@@ -791,8 +791,16 @@ describe('onTabDestroyed callback (matches api/multi-control)', () => {
 });
 
 // ============================================================
-// ТЕСТЫ: onTabActivated (точная копия callback из api/multi-control)
+// ТЕСТЫ: focus-windows (POST /focus-windows)
 // ============================================================
+describe('focus-windows route (POST /focus-windows)', () => {
+  it('router содержит POST /focus-windows', () => {
+    const mod = require('../../src/api/multi-control.js');
+    const route = mod.stack.find(r => r.route?.path === '/focus-windows');
+    expect(route).toBeDefined();
+    expect(route.route.methods).toHaveProperty('post');
+  });
+});
 describe('onTabActivated callback (matches api/multi-control)', () => {
   let ctrl;
   let mockCdp;

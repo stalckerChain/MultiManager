@@ -316,6 +316,7 @@ POST http://127.0.0.1:{PORT}/api/multi-control/keyboard/type
 | `POST` | `/api/multi-control/slave/remove` | Удалить slave `{ "profileId": "uuid" }` |
 | `POST` | `/api/multi-control/window-position` | Установить позицию окна `{ "profileId", "x", "y", "width", "height" }` |
 | `GET` | `/api/multi-control/cdp-status` | Статус CDP-подключений |
+| `POST` | `/api/multi-control/focus-windows` | Вывести окна синхронизации на передний план (сначала слейвы, потом мастер) |
 
 **Пример использования (Python):**
 
@@ -413,7 +414,7 @@ requests.post(f"{BASE}/api/browser/{profile['id']}/stop", headers=HEADERS)
 
 ## Тестирование
 
-Проект включает 22 тестовых файла (262 тестов) на базе **Vitest**:
+Проект включает 23 тестовых файла (411+ тестов) на базе **Vitest**:
 
 | Тест | Тип | Описание |
 |------|-----|----------|
