@@ -54,13 +54,13 @@ describe('extractZipFromCrx', () => {
 
   it('извлекает ZIP из CRX v3', () => {
     const zipContent = Buffer.from('PK\x03\x04this is the zip part');
-    const headerLength = 12;
-    const headerBuf = Buffer.alloc(16);
+    const signedDataLength = 12;
+    const headerBuf = Buffer.alloc(12);
     headerBuf.write('Cr24');
     headerBuf.writeUInt32LE(3, 4);
-    headerBuf.writeUInt32LE(headerLength, 8);
+    headerBuf.writeUInt32LE(signedDataLength, 8);
 
-    const crx = Buffer.concat([headerBuf, Buffer.alloc(headerLength), zipContent]);
+    const crx = Buffer.concat([headerBuf, Buffer.alloc(signedDataLength), zipContent]);
     const result = extractZipFromCrx(crx);
     expect(result.toString()).toBe('PK\x03\x04this is the zip part');
   });

@@ -287,8 +287,8 @@ function extractZipFromCrx(buffer) {
   }
 
   if (version === 3) {
-    const headerLength = buffer.readUInt32LE(8);
-    const headerSize = 16 + headerLength;
+    const headerDataLength = buffer.readUInt32LE(8);
+    const headerSize = 12 + headerDataLength;
     return buffer.subarray(headerSize);
   }
 
