@@ -599,6 +599,23 @@ Authorization: Bearer <token>
 
 ---
 
+### POST /api/extensions/:id/assign-all
+
+Назначить расширение всем профилям. ID расширения добавляется в поле `extensions` каждого профиля в БД. Профили, у которых расширение уже назначено, пропускаются.
+
+**Ответ (200):**
+```json
+{
+  "assigned": 5
+}
+```
+
+`assigned` — количество профилей, которым было назначено расширение.
+
+**Ответ (404):** `{ "error": "Extension not found" }`
+
+---
+
 ### POST /api/extensions/from-store
 
 Установить расширение из Chrome Web Store по ссылке или ID.

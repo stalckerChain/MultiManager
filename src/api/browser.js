@@ -3,6 +3,7 @@ const { spawn } = require('child_process');
 const kill = require('tree-kill');
 const fs = require('fs');
 const path = require('path');
+const WebSocket = require('ws');
 const { getDatabase, createProfileQueries, createProxyQueries, createLogQueries } = require('../db');
 const { checkProxy, rotateProxy } = require('../proxy');
 const { injectCookies, getProfileDir } = require('../cookie/inject');
@@ -96,6 +97,82 @@ function getBrowserPath() {
   return null;
 }
 
+function cdpCall(ws, id, method, params, sessionId) {
+  return new Promise((resolve, reject) => {
+    const msg = { id, method, params };
+    if (sessionId) msg.sessionId = sessionId;
+    const timeout = setTimeout(() => reject(new Error(`CDP timeout: ${method}`)), 15000);
+    const handler = (data) => {
+      const resp = JSON.parse(data.toString());
+      if (resp.id === id) {
+        ws.removeListener('message', handler);
+        clearTimeout(timeout);
+        if (resp.error) reject(new Error(resp.error.message));
+        else resolve(resp.result);
+      }
+    };
+    ws.on('message', handler);
+    ws.send(JSON.stringify(msg));
+  });
+}
+
+function waitForCdpPort(profileId, timeout = 15000) {
+  return new Promise((resolve, reject) => {
+    const start = Date.now();
+    const check = () => {
+      const port = cdpPorts.get(profileId);
+      if (port) return resolve(port);
+      if (Date.now() - start > timeout) return reject(new Error('CDP port timeout'));
+      setTimeout(check, 100);
+    };
+    check();
+  });
+}
+
+async function loadExtensionsViaCDP(profileId, extPaths, logQueries, profileLogger) {
+  let ws;
+  try {
+    const port = await waitForCdpPort(profileId);
+    ws = new WebSocket(`ws://127.0.0.1:${port}/devtools/browser`);
+    await new Promise((resolve, reject) => {
+      ws.on('open', resolve);
+      ws.on('error', reject);
+      setTimeout(() => reject(new Error('WS connect timeout')), 5000);
+    });
+
+    let id = 1;
+    const { targetId } = await cdpCall(ws, id++, 'Target.createTarget', { url: 'about:blank' });
+    const { sessionId } = await cdpCall(ws, id++, 'Target.attachToTarget', { targetId, flatten: true });
+
+    const sc = (method, params) => cdpCall(ws, id++, method, params, sessionId);
+
+    await sc('Page.enable');
+    await sc('Page.navigate', { url: 'chrome://extensions' });
+    await new Promise(r => setTimeout(r, 1500));
+
+    for (const extPath of extPaths) {
+      try {
+        const result = await sc('Runtime.evaluate', {
+          expression: `(async()=>{try{await chrome.developerPrivate.updateProfileConfiguration({inDeveloperMode:true});await chrome.developerPrivate.loadUnpacked({path:${JSON.stringify(extPath)}});return{ok:true}}catch(e){return{ok:false,error:e.message}}})()`,
+          awaitPromise: true,
+        });
+        if (result?.result?.value?.ok) {
+          logQueries.add(profileId, 'info', `Extension loaded via CDP: ${path.basename(extPath)}`);
+          profileLogger.info({ profileId, extPath }, 'Extension loaded via CDP');
+        } else {
+          logQueries.add(profileId, 'warn', `CDP load failed: ${result?.result?.value?.error || 'unknown'}`);
+        }
+      } catch (err) {
+        logQueries.add(profileId, 'warn', `CDP load error: ${err.message}`);
+      }
+    }
+  } catch (err) {
+    profileLogger.warn({ profileId, error: err.message }, 'CDP extension loading unavailable');
+  } finally {
+    if (ws) ws.close();
+  }
+}
+
 router.post('/:id/start', async (req, res) => {
   const db = getDatabase();
   const profileQueries = createProfileQueries(db);
@@ -186,14 +263,15 @@ router.post('/:id/start', async (req, res) => {
   }
 
   const extIds = tryParseJson(profile.extensions);
+  let enabledExtPaths = [];
   if (extIds.length > 0) {
     const extDir = getExtensionsDir();
-    const enabledPaths = extIds
+    enabledExtPaths = extIds
       .map(id => path.join(extDir, id))
       .filter(extPath => fs.existsSync(extPath) && fs.existsSync(path.join(extPath, '.enabled')));
-    if (enabledPaths.length > 0) {
-      args.push(`--load-extension=${enabledPaths.join(',')}`);
-      logQueries.add(req.params.id, 'info', `Загружено расширений: ${enabledPaths.length}`);
+    if (enabledExtPaths.length > 0) {
+      args.push(`--load-extension=${enabledExtPaths.join(',')}`);
+      logQueries.add(req.params.id, 'info', `Загружено расширений: ${enabledExtPaths.length}`);
     }
   }
 
@@ -240,6 +318,10 @@ router.post('/:id/start', async (req, res) => {
         }
       }).catch(() => {});
     }, 2000);
+  }
+
+  if (enabledExtPaths.length > 0) {
+    loadExtensionsViaCDP(req.params.id, enabledExtPaths, logQueries, profileLogger);
   }
 
   child.on('error', (err) => {

@@ -334,6 +334,34 @@ router.post('/:id/toggle', (req, res) => {
   }
 });
 
+router.post('/:id/assign-all', (req, res) => {
+  try {
+    const extDir = getExtensionsDir();
+    const targetPath = path.join(extDir, req.params.id);
+    if (!fs.existsSync(targetPath)) {
+      return res.status(404).json({ error: 'Extension not found' });
+    }
+
+    const db = getDatabase();
+    const profiles = db.prepare('SELECT id, extensions FROM profiles').all();
+    let assigned = 0;
+
+    for (const profile of profiles) {
+      let exts = [];
+      try { exts = JSON.parse(profile.extensions || '[]'); } catch { exts = []; }
+      if (!exts.includes(req.params.id)) {
+        exts.push(req.params.id);
+        db.prepare('UPDATE profiles SET extensions = ? WHERE id = ?').run(JSON.stringify(exts), profile.id);
+        assigned++;
+      }
+    }
+
+    res.json({ assigned });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
 module.exports = router;
 module.exports.getExtensionsDir = getExtensionsDir;
 module.exports.getManifest = getManifest;

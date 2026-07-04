@@ -44,9 +44,12 @@
         </a-form>
       </a-tab-pane>
 
-      <a-tab-pane key="advanced" :tab="t('profiles.modal.advanced')">
+      <a-tab-pane key="advanced" :tab="`${t('profiles.modal.advanced')}${form.extensions.length ? ' (' + form.extensions.length + ')' : ''}`">
         <a-form layout="vertical">
           <a-form-item :label="t('profiles.modal.extensions')">
+            <template #extra>
+              <span class="text-xs text-slate-400">Check extensions to load in this profile's browser</span>
+            </template>
             <div v-if="extensionsLoading" class="text-sm text-slate-400">Loading...</div>
             <div v-else-if="allExtensions.length === 0" class="text-sm text-slate-400">No extensions available. Add them in Extensions manager.</div>
             <a-checkbox-group v-else v-model:value="form.extensions">

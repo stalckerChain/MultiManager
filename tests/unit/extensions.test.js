@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeEach, afterEach } from 'vitest';
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import fs from 'fs';
 import path from 'path';
 import os from 'os';
@@ -154,5 +154,84 @@ describe('listExtensions', () => {
 
     const result = listExtensions(testDir);
     expect(result).toHaveLength(0);
+  });
+});
+
+describe('assign-all endpoint', () => {
+  let server;
+  let port;
+  let tmpDir;
+  let originalAppData;
+
+  beforeEach(async () => {
+    originalAppData = process.env.APPDATA;
+    tmpDir = path.join(os.tmpdir(), 'ext-test-assign-' + Date.now());
+    process.env.APPDATA = tmpDir;
+
+    const extDir = path.join(tmpDir, 'CloakManager', 'extensions');
+    fs.mkdirSync(extDir, { recursive: true });
+    fs.mkdirSync(path.join(extDir, 'test-ext-1'), { recursive: true });
+    fs.writeFileSync(path.join(extDir, 'test-ext-1', 'manifest.json'), JSON.stringify({ name: 'Test Ext', version: '1.0.0' }));
+    fs.writeFileSync(path.join(extDir, 'test-ext-1', '.enabled'), 'true');
+
+    // Use require() — it shares the same Node.js module cache as require() in extensions.js
+    const db = require('../../src/db/index.js');
+    db.initDatabase();
+
+    const required = [1, 'seed-1', 'windows', 'Mozilla/5.0', '1920x1080', 4, 8];
+    db.getDatabase().exec('DELETE FROM profiles');
+    db.getDatabase().prepare(
+      'INSERT INTO profiles (id, name, extensions, number, fingerprint_seed, platform, user_agent, screen_resolution, hardware_cores, hardware_memory) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)'
+    ).run('prof-1', 'Profile 1', '[]', ...required);
+    db.getDatabase().prepare(
+      'INSERT INTO profiles (id, name, extensions, number, fingerprint_seed, platform, user_agent, screen_resolution, hardware_cores, hardware_memory) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)'
+    ).run('prof-2', 'Profile 2', JSON.stringify(['other-ext']), ...required);
+
+    const extModule = await import('../../src/api/extensions.js');
+    const expressMod = await import('express');
+    const app = expressMod.default();
+    app.use('/api/extensions', extModule.default);
+
+    const http = await import('http');
+    server = http.createServer(app);
+    await new Promise(r => server.listen(0, r));
+    port = server.address().port;
+  });
+
+  afterEach(() => {
+    if (server) server.close();
+    const db = require('../../src/db/index.js');
+    db.closeDatabase();
+    process.env.APPDATA = originalAppData;
+    if (tmpDir) {
+      // Retry removal in case DB file lock hasn't released
+      try { fs.rmSync(tmpDir, { recursive: true, force: true }); } catch {}
+    }
+  });
+
+  it('назначает расширение всем профилям', async () => {
+    const db = require('../../src/db/index.js');
+    const res = await fetch(`http://127.0.0.1:${port}/api/extensions/test-ext-1/assign-all`, { method: 'POST' });
+    const body = await res.json();
+    expect(body).toEqual({ assigned: 2 });
+
+    const p1 = db.getDatabase().prepare('SELECT extensions FROM profiles WHERE id = ?').get('prof-1');
+    expect(JSON.parse(p1.extensions)).toContain('test-ext-1');
+    const p2 = db.getDatabase().prepare('SELECT extensions FROM profiles WHERE id = ?').get('prof-2');
+    expect(JSON.parse(p2.extensions)).toContain('test-ext-1');
+  });
+
+  it('пропускает профили с уже назначенным расширением', async () => {
+    const db = require('../../src/db/index.js');
+    db.getDatabase().prepare('UPDATE profiles SET extensions = ? WHERE id = ?').run(JSON.stringify(['test-ext-1']), 'prof-1');
+
+    const res = await fetch(`http://127.0.0.1:${port}/api/extensions/test-ext-1/assign-all`, { method: 'POST' });
+    const body = await res.json();
+    expect(body).toEqual({ assigned: 1 });
+  });
+
+  it('возвращает 404 для несуществующего расширения', async () => {
+    const res = await fetch(`http://127.0.0.1:${port}/api/extensions/nonexistent/assign-all`, { method: 'POST' });
+    expect(res.status).toBe(404);
   });
 });

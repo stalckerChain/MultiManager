@@ -29,6 +29,11 @@
       <a-input v-model:value="storeUrl" :placeholder="t('extensions.storePlaceholder')" />
     </a-modal>
 
+    <a-modal v-model:open="assignDialogVisible" title="Assign Extension" @ok="confirmAssign" :confirm-loading="assignLoading" ok-text="Assign to all profiles" cancel-text="Manual only">
+      <p>Extension installed successfully.</p>
+      <p class="text-sm text-slate-400 mt-1">Assign it to all existing profiles, or manage manually per-profile later?</p>
+    </a-modal>
+
     <div v-if="loading" class="text-center py-20">
       <a-spin />
     </div>
@@ -85,6 +90,27 @@ const loading = ref(false);
 const showStoreModal = ref(false);
 const storeUrl = ref('');
 const storeInstalling = ref(false);
+const assignDialogVisible = ref(false);
+const assignLoading = ref(false);
+const lastInstalledId = ref('');
+
+function showAssignDialog(extId) {
+  lastInstalledId.value = extId;
+  assignDialogVisible.value = true;
+}
+
+async function confirmAssign() {
+  assignLoading.value = true;
+  try {
+    const { data } = await client.post(`/api/extensions/${lastInstalledId.value}/assign-all`);
+    message.success(`Assigned to ${data.assigned} profile(s)`);
+    assignDialogVisible.value = false;
+  } catch (err) {
+    message.error(err.message || 'Failed to assign');
+  } finally {
+    assignLoading.value = false;
+  }
+}
 
 async function fetchExtensions() {
   loading.value = true;
@@ -107,12 +133,13 @@ async function addFromFolder() {
   if (!folderPath) return;
 
   try {
-    await client.post('/api/extensions', {
+    const { data } = await client.post('/api/extensions', {
       name: folderPath.split(/[\\/]/).pop(),
       path: folderPath,
     });
     message.success('Extension added');
     await fetchExtensions();
+    showAssignDialog(data.id);
   } catch (err) {
     message.error(err.message || 'Failed to add extension');
   }
@@ -129,12 +156,13 @@ async function addFromZip() {
   if (!zipPath) return;
 
   try {
-    await client.post('/api/extensions/from-zip', {
+    const { data } = await client.post('/api/extensions/from-zip', {
       name: zipPath.split(/[\\/]/).pop().replace(/\.(zip|crx)$/i, ''),
       zipPath,
     });
     message.success('Extension installed from archive');
     await fetchExtensions();
+    showAssignDialog(data.id);
   } catch (err) {
     message.error(err.message || 'Failed to install extension');
   }
@@ -148,11 +176,12 @@ async function installFromStore() {
 
   storeInstalling.value = true;
   try {
-    await client.post('/api/extensions/from-store', { url: storeUrl.value.trim() });
+    const { data } = await client.post('/api/extensions/from-store', { url: storeUrl.value.trim() });
     message.success('Extension installed from Chrome Web Store');
     showStoreModal.value = false;
     storeUrl.value = '';
     await fetchExtensions();
+    showAssignDialog(data.id);
   } catch (err) {
     message.error(err.message || 'Failed to install extension');
   } finally {

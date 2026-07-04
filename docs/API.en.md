@@ -551,6 +551,23 @@ Toggle extension enabled state.
 
 ---
 
+### POST /api/extensions/:id/assign-all
+
+Assign the extension to all profiles. The extension ID is added to the `extensions` field of every profile in the database. Profiles that already have the extension assigned are skipped.
+
+**Response (200):**
+```json
+{
+  "assigned": 5
+}
+```
+
+`assigned` — number of profiles that were assigned the extension.
+
+**Response (404):** `{ "error": "Extension not found" }`
+
+---
+
 ### POST /api/extensions/from-store
 
 Install an extension from Chrome Web Store by URL or ID.
