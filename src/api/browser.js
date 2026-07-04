@@ -65,6 +65,54 @@ const runningProfiles = new Map();
 const profileWindows = new Map();
 const cdpPorts = new Map();
 const SHUTDOWN_TIMEOUT_MS = 8000;
+const HEALTH_CHECK_INTERVAL_MS = 5000;
+let healthCheckTimer = null;
+
+function isProcessAlive(pid) {
+  try {
+    process.kill(pid, 0);
+    return true;
+  } catch (e) {
+    return e.code === 'EPERM';
+  }
+}
+
+function cleanupProfile(profileId) {
+  const db = getDatabase();
+  const profileQueries = createProfileQueries(db);
+  const logQueries = createLogQueries(db);
+  const profileLogger = createProfileLogger(profileId);
+
+  profileQueries.updateStatus(profileId, 'stopped');
+  broadcastStatus(profileId, 'stopped');
+  profileQueries.updatePid(profileId, null);
+
+  profileLogger.warn({ profileId }, 'Browser process died unexpectedly, cleaned up');
+  logQueries.add(profileId, 'warn', 'Browser process died unexpectedly, cleaned up');
+
+  runningProfiles.delete(profileId);
+  profileWindows.delete(profileId);
+  cdpPorts.delete(profileId);
+}
+
+function startHealthCheck() {
+  if (healthCheckTimer) return;
+
+  healthCheckTimer = setInterval(() => {
+    for (const [profileId, child] of runningProfiles.entries()) {
+      if (child && child.pid && !isProcessAlive(child.pid)) {
+        cleanupProfile(profileId);
+      }
+    }
+
+    if (runningProfiles.size === 0) {
+      clearInterval(healthCheckTimer);
+      healthCheckTimer = null;
+    }
+  }, HEALTH_CHECK_INTERVAL_MS);
+
+  healthCheckTimer.unref();
+}
 
 function tryParseJson(json) {
   try { return JSON.parse(json); } catch { return []; }
@@ -303,6 +351,8 @@ router.post('/:id/start', async (req, res) => {
 
   runningProfiles.set(req.params.id, child);
 
+  startHealthCheck();
+
   profileQueries.updatePid(req.params.id, child.pid);
   profileQueries.updateStatus(req.params.id, 'running');
   broadcastStatus(req.params.id, 'running', child.pid);
@@ -456,7 +506,10 @@ async function gracefulCloseBrowser(child, profileId, profileLogger, logQueries)
 
     const timer = setTimeout(() => {
       logQueries.add(profileId, 'warn', 'Graceful shutdown timeout, force killing');
-      kill(child.pid, 'SIGKILL', done);
+      kill(child.pid, 'SIGKILL', (err) => {
+        if (err) logQueries.add(profileId, 'warn', `Force kill failed: ${err.message}`);
+        done();
+      });
     }, SHUTDOWN_TIMEOUT_MS);
 
     child.on('exit', () => {
@@ -467,7 +520,11 @@ async function gracefulCloseBrowser(child, profileId, profileLogger, logQueries)
     kill(child.pid, 'SIGTERM', (err) => {
       if (err) {
         clearTimeout(timer);
-        kill(child.pid, 'SIGKILL', done);
+        logQueries.add(profileId, 'warn', `SIGTERM failed (process may be dead): ${err.message}`);
+        kill(child.pid, 'SIGKILL', (err2) => {
+          if (err2) logQueries.add(profileId, 'warn', `SIGKILL failed (process may be dead): ${err2.message}`);
+          done();
+        });
       }
     });
   });

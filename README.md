@@ -414,7 +414,7 @@ requests.post(f"{BASE}/api/browser/{profile['id']}/stop", headers=HEADERS)
 
 ## Тестирование
 
-Проект включает 23 тестовых файла (411+ тестов) на базе **Vitest**:
+Проект включает 24 тестовых файла (452+ тестов) на базе **Vitest**:
 
 | Тест | Тип | Описание |
 |------|-----|----------|
@@ -434,7 +434,7 @@ requests.post(f"{BASE}/api/browser/{profile['id']}/stop", headers=HEADERS)
 | `app-store.test.js` | Unit | Состояние инициализации приложения (initialized flag) |
 | `api-client.test.js` | Unit | Authorization header, response interceptor |
 | `race-condition.test.js` | Unit | Предотвращение race condition при старте (initialized pattern) |
-| `browser-shutdown.test.js` | Unit | Graceful shutdown браузеров, SIGTERM/SIGKILL, timeout |
+| `browser-shutdown.test.js` | Unit | Graceful shutdown, health check процессов, SIGTERM/SIGKILL, timeout |
 | `window-filter.test.js` | Unit | Фильтрация crash-recovery окон, размер диалогов |
 | `database.test.js` | Integration | CRUD операции SQLite |
 | `wal-stress.test.js` | Integration | Стресс-тест WAL-режима |

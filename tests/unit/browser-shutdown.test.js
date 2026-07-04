@@ -1,4 +1,4 @@
-import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 
 const SHUTDOWN_TIMEOUT_MS = 8000;
 
@@ -21,6 +21,7 @@ function createMockProfileQueries() {
   return {
     updateStatus: vi.fn(),
     updatePid: vi.fn(),
+    getById: vi.fn(),
   };
 }
 
@@ -38,6 +39,15 @@ function createMockProfileLogger() {
   };
 }
 
+function isProcessAlive(pid) {
+  try {
+    process.kill(pid, 0);
+    return true;
+  } catch (e) {
+    return e.code === 'EPERM';
+  }
+}
+
 async function gracefulCloseBrowser(child, profileId, profileLogger, logQueries) {
   return new Promise((resolve) => {
     let resolved = false;
@@ -50,7 +60,10 @@ async function gracefulCloseBrowser(child, profileId, profileLogger, logQueries)
 
     const timer = setTimeout(() => {
       logQueries.add(profileId, 'warn', 'Graceful shutdown timeout, force killing');
-      child.kill('SIGKILL', done);
+      child.kill('SIGKILL', (err) => {
+        if (err) logQueries.add(profileId, 'warn', `Force kill failed: ${err.message}`);
+        done();
+      });
     }, SHUTDOWN_TIMEOUT_MS);
 
     child.on('exit', () => {
@@ -61,10 +74,44 @@ async function gracefulCloseBrowser(child, profileId, profileLogger, logQueries)
     child.kill('SIGTERM', (err) => {
       if (err) {
         clearTimeout(timer);
-        child.kill('SIGKILL', done);
+        logQueries.add(profileId, 'warn', `SIGTERM failed (process may be dead): ${err.message}`);
+        child.kill('SIGKILL', (err2) => {
+          if (err2) logQueries.add(profileId, 'warn', `SIGKILL failed (process may be dead): ${err2.message}`);
+          done();
+        });
       }
     });
   });
+}
+
+function cleanupProfile(profileId, profileQueries, logQueries, profileLogger, runningProfiles, profileWindows, cdpPorts, broadcastStatus) {
+  profileQueries.updateStatus(profileId, 'stopped');
+  broadcastStatus(profileId, 'stopped');
+  profileQueries.updatePid(profileId, null);
+
+  profileLogger.warn({ profileId }, 'Browser process died unexpectedly, cleaned up');
+  logQueries.add(profileId, 'warn', 'Browser process died unexpectedly, cleaned up');
+
+  runningProfiles.delete(profileId);
+  profileWindows.delete(profileId);
+  cdpPorts.delete(profileId);
+}
+
+function startHealthCheck(runningProfiles, isProcessAliveFn, cleanupFn, intervalMs = 5000) {
+  const timer = setInterval(() => {
+    for (const [profileId, child] of runningProfiles.entries()) {
+      if (child && child.pid && !isProcessAliveFn(child.pid)) {
+        cleanupFn(profileId);
+      }
+    }
+
+    if (runningProfiles.size === 0) {
+      clearInterval(timer);
+    }
+  }, intervalMs);
+
+  timer.unref();
+  return timer;
 }
 
 describe('Browser — graceful shutdown', () => {
@@ -98,6 +145,7 @@ describe('Browser — graceful shutdown', () => {
     await closePromise;
 
     expect(child.kill).toHaveBeenCalledWith('SIGKILL', expect.any(Function));
+    expect(logQueries.add).toHaveBeenCalledWith('p2', 'warn', expect.stringContaining('SIGTERM failed'));
   });
 
   it('gracefulCloseBrowser логирует timeout при превышении лимита', async () => {
@@ -116,6 +164,40 @@ describe('Browser — graceful shutdown', () => {
     vi.useRealTimers();
 
     expect(logQueries.add).toHaveBeenCalledWith('p3', 'warn', 'Graceful shutdown timeout, force killing');
+  });
+
+  it('gracefulCloseBrowser логирует ошибку SIGKILL в таймауте', async () => {
+    const child = createMockChild(333);
+    child.kill = vi.fn((signal, cb) => {
+      if (signal === 'SIGKILL') cb(new Error('process not found'));
+    });
+    const profileLogger = createMockProfileLogger();
+    const logQueries = createMockLogQueries();
+
+    vi.useFakeTimers();
+    const closePromise = gracefulCloseBrowser(child, 'p3', profileLogger, logQueries);
+
+    vi.advanceTimersByTime(SHUTDOWN_TIMEOUT_MS + 100);
+    await closePromise;
+    vi.useRealTimers();
+
+    expect(logQueries.add).toHaveBeenCalledWith('p3', 'warn', expect.stringContaining('Force kill failed'));
+  });
+
+  it('gracefulCloseBrowser логирует ошибку SIGKILL после неудачного SIGTERM', async () => {
+    const child = createMockChild(444);
+    child.kill = vi.fn((signal, cb) => {
+      if (signal === 'SIGTERM') cb(new Error('process not found'));
+      else if (signal === 'SIGKILL') cb(new Error('also dead'));
+    });
+    const profileLogger = createMockProfileLogger();
+    const logQueries = createMockLogQueries();
+
+    const closePromise = gracefulCloseBrowser(child, 'p4', profileLogger, logQueries);
+    await closePromise;
+
+    expect(logQueries.add).toHaveBeenCalledWith('p4', 'warn', expect.stringContaining('SIGTERM failed'));
+    expect(logQueries.add).toHaveBeenCalledWith('p4', 'warn', expect.stringContaining('SIGKILL failed'));
   });
 
   it('runningProfiles хранит запущенные процессы', () => {
@@ -200,5 +282,154 @@ describe('Browser — shutdown endpoint', () => {
     await Promise.all(running.map(([id, child]) => mockGraceful(child)));
 
     expect(calls).toEqual([100, 200]);
+  });
+});
+
+describe('Browser — process health check (isProcessAlive)', () => {
+  beforeEach(() => {
+    vi.spyOn(process, 'kill');
+  });
+
+  afterEach(() => {
+    vi.restoreAllMocks();
+  });
+
+  it('isProcessAlive возвращает true если процесс существует', () => {
+    process.kill.mockReturnValue(true);
+    expect(isProcessAlive(1234)).toBe(true);
+    expect(process.kill).toHaveBeenCalledWith(1234, 0);
+  });
+
+  it('isProcessAlive возвращает false если процесс не найден (ESRCH)', () => {
+    const err = new Error('process not found');
+    err.code = 'ESRCH';
+    process.kill.mockImplementation(() => { throw err; });
+    expect(isProcessAlive(9999)).toBe(false);
+  });
+
+  it('isProcessAlive возвращает true при EPERM (нет доступа, но процесс жив)', () => {
+    const err = new Error('permission denied');
+    err.code = 'EPERM';
+    process.kill.mockImplementation(() => { throw err; });
+    expect(isProcessAlive(7777)).toBe(true);
+  });
+});
+
+describe('Browser — cleanupProfile', () => {
+  it('cleanupProfile сбрасывает статус и чистит все Map', () => {
+    const profileQueries = createMockProfileQueries();
+    const logQueries = createMockLogQueries();
+    const profileLogger = createMockProfileLogger();
+    const runningProfiles = new Map([['p1', { pid: 555 }]]);
+    const profileWindows = new Map([['p1', { pid: 555, handle: '123' }]]);
+    const cdpPorts = new Map([['p1', 9222]]);
+    const broadcastStatus = vi.fn();
+
+    cleanupProfile('p1', profileQueries, logQueries, profileLogger, runningProfiles, profileWindows, cdpPorts, broadcastStatus);
+
+    expect(profileQueries.updateStatus).toHaveBeenCalledWith('p1', 'stopped');
+    expect(profileQueries.updatePid).toHaveBeenCalledWith('p1', null);
+    expect(broadcastStatus).toHaveBeenCalledWith('p1', 'stopped');
+    expect(profileLogger.warn).toHaveBeenCalledWith({ profileId: 'p1' }, expect.any(String));
+    expect(logQueries.add).toHaveBeenCalledWith('p1', 'warn', expect.any(String));
+    expect(runningProfiles.has('p1')).toBe(false);
+    expect(profileWindows.has('p1')).toBe(false);
+    expect(cdpPorts.has('p1')).toBe(false);
+  });
+
+  it('cleanupProfile не падает если профиля нет в Map', () => {
+    const profileQueries = createMockProfileQueries();
+    const logQueries = createMockLogQueries();
+    const profileLogger = createMockProfileLogger();
+    const runningProfiles = new Map();
+    const profileWindows = new Map();
+    const cdpPorts = new Map();
+    const broadcastStatus = vi.fn();
+
+    expect(() => {
+      cleanupProfile('nonexistent', profileQueries, logQueries, profileLogger, runningProfiles, profileWindows, cdpPorts, broadcastStatus);
+    }).not.toThrow();
+
+    expect(profileQueries.updateStatus).toHaveBeenCalledWith('nonexistent', 'stopped');
+  });
+});
+
+describe('Browser — startHealthCheck', () => {
+  beforeEach(() => {
+    vi.useFakeTimers();
+  });
+
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
+  it('startHealthCheck создаёт интервал и проверяет процессы', () => {
+    const isProcessAliveFn = vi.fn().mockReturnValue(true);
+    const cleanupFn = vi.fn();
+    const runningProfiles = new Map([['p1', { pid: 111 }]]);
+
+    const timer = startHealthCheck(runningProfiles, isProcessAliveFn, cleanupFn, 5000);
+
+    expect(timer).toBeDefined();
+    expect(isProcessAliveFn).not.toHaveBeenCalled();
+
+    vi.advanceTimersByTime(5000);
+
+    expect(isProcessAliveFn).toHaveBeenCalledWith(111);
+    expect(cleanupFn).not.toHaveBeenCalled();
+  });
+
+  it('startHealthCheck вызывает cleanup если процесс мёртв', () => {
+    const isProcessAliveFn = vi.fn().mockReturnValue(false);
+    const cleanupFn = vi.fn();
+    const runningProfiles = new Map([['p1', { pid: 999 }]]);
+
+    startHealthCheck(runningProfiles, isProcessAliveFn, cleanupFn, 5000);
+
+    vi.advanceTimersByTime(5000);
+
+    expect(cleanupFn).toHaveBeenCalledWith('p1');
+  });
+
+  it('startHealthCheck останавливает интервал когда нет процессов', () => {
+    const isProcessAliveFn = vi.fn();
+    const cleanupFn = vi.fn();
+    const runningProfiles = new Map();
+
+    startHealthCheck(runningProfiles, isProcessAliveFn, cleanupFn, 5000);
+
+    vi.advanceTimersByTime(5000);
+
+    expect(isProcessAliveFn).not.toHaveBeenCalled();
+  });
+
+  it('startHealthCheck пропускает записи без pid', () => {
+    const isProcessAliveFn = vi.fn();
+    const cleanupFn = vi.fn();
+    const runningProfiles = new Map([['p1', {}]]);
+
+    startHealthCheck(runningProfiles, isProcessAliveFn, cleanupFn, 5000);
+
+    vi.advanceTimersByTime(5000);
+
+    expect(isProcessAliveFn).not.toHaveBeenCalled();
+    expect(cleanupFn).not.toHaveBeenCalled();
+  });
+
+  it('startHealthCheck останавливается когда все процессы очищены', () => {
+    const isProcessAliveFn = vi.fn().mockReturnValue(false);
+    const cleanupFn = vi.fn((id) => {
+      runningProfiles.delete(id);
+    });
+    const runningProfiles = new Map([['p1', { pid: 999 }]]);
+
+    startHealthCheck(runningProfiles, isProcessAliveFn, cleanupFn, 5000);
+
+    vi.advanceTimersByTime(5000);
+    expect(cleanupFn).toHaveBeenCalledTimes(1);
+    expect(runningProfiles.size).toBe(0);
+
+    vi.advanceTimersByTime(5000);
+    expect(cleanupFn).toHaveBeenCalledTimes(1);
   });
 });

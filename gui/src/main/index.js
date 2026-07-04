@@ -148,10 +148,8 @@ async function createWindow() {
 
   if (isDev) {
     mainWindow.loadURL('http://localhost:5173');
-    mainWindow.webContents.openDevTools();
   } else {
     mainWindow.loadFile(distPath);
-    mainWindow.webContents.openDevTools();
   }
 
   ipcMain.handle('get-port', () => getCorePort());
