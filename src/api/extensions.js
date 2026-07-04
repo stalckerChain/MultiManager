@@ -1,7 +1,9 @@
 const express = require('express');
 const fs = require('fs');
 const path = require('path');
-const axios = require('axios');
+const https = require('https');
+const http = require('http');
+const { URL } = require('url');
 const AdmZip = require('adm-zip');
 const { getDatabase } = require('../db');
 
@@ -130,8 +132,7 @@ router.post('/from-store', async (req, res) => {
     const targetPath = path.join(extDir, extId);
 
     const crxUrl = `https://clients2.google.com/service/update2/crx?response=redirect&prodversion=130.0&acceptformat=crx2,crx3&x=id%3D${extId}%26installsource%3Dondemand%26uc`;
-    const response = await axios.get(crxUrl, { responseType: 'arraybuffer', maxRedirects: 5 });
-    const buffer = Buffer.from(response.data);
+    const buffer = await downloadWithRedirects(crxUrl, 5);
 
     const zipBuffer = extractZipFromCrx(buffer);
     const zip = new AdmZip(zipBuffer);
@@ -230,6 +231,35 @@ router.post('/from-zip', async (req, res) => {
     res.status(500).json({ error: `Failed to install from zip: ${err.message}` });
   }
 });
+
+function downloadWithRedirects(urlStr, maxRedirects) {
+  return new Promise((resolve, reject) => {
+    const doRequest = (currentUrl, remaining) => {
+      const mod = currentUrl.startsWith('https') ? https : http;
+      mod.get(currentUrl, { headers: { 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/130.0.0.0 Safari/537.36' } }, (res) => {
+        if ((res.statusCode === 301 || res.statusCode === 302) && res.headers.location) {
+          if (remaining <= 0) {
+            return reject(new Error('Too many redirects'));
+          }
+          const nextUrl = new URL(res.headers.location, currentUrl).href;
+          return doRequest(nextUrl, remaining - 1);
+        }
+
+        if (res.statusCode !== 200) {
+          return reject(new Error(`Server returned ${res.statusCode} ${res.statusMessage}`));
+        }
+
+        const chunks = [];
+        res.on('data', chunk => chunks.push(chunk));
+        res.on('end', () => {
+          resolve(Buffer.concat(chunks));
+        });
+      }).on('error', reject);
+    };
+
+    doRequest(urlStr, maxRedirects);
+  });
+}
 
 function extractExtensionId(urlOrId) {
   const trimmed = urlOrId.trim();
