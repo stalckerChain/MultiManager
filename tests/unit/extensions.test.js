@@ -5,6 +5,8 @@ import os from 'os';
 import {
   getExtensionsDir,
   getManifest,
+  getLocale,
+  resolveMSG,
   listExtensions,
   extractExtensionId,
   extractZipFromCrx,
@@ -81,6 +83,83 @@ describe('extractZipFromCrx', () => {
   });
 });
 
+describe('getLocale', () => {
+  const tmpDir = path.join(os.tmpdir(), 'ext-test-locale-' + Date.now());
+
+  beforeEach(() => {
+    fs.mkdirSync(tmpDir, { recursive: true });
+  });
+
+  afterEach(() => {
+    fs.rmSync(tmpDir, { recursive: true, force: true });
+  });
+
+  it('возвращает null при отсутствии _locales', () => {
+    expect(getLocale(tmpDir)).toBeNull();
+  });
+
+  it('возвращает en если доступна английская локаль', () => {
+    fs.mkdirSync(path.join(tmpDir, '_locales', 'en'), { recursive: true });
+    expect(getLocale(tmpDir)).toBe('en');
+  });
+
+  it('возвращает первую доступную локаль если en нет', () => {
+    fs.mkdirSync(path.join(tmpDir, '_locales', 'ru'), { recursive: true });
+    expect(getLocale(tmpDir)).toBe('ru');
+  });
+});
+
+describe('resolveMSG', () => {
+  const tmpDir = path.join(os.tmpdir(), 'ext-test-msg-' + Date.now());
+
+  beforeEach(() => {
+    fs.mkdirSync(tmpDir, { recursive: true });
+  });
+
+  afterEach(() => {
+    fs.rmSync(tmpDir, { recursive: true, force: true });
+  });
+
+  it('возвращает исходную строку если нет MSG-плейсхолдера', () => {
+    expect(resolveMSG('Normal Name', tmpDir)).toBe('Normal Name');
+  });
+
+  it('возвращает null для null', () => {
+    expect(resolveMSG(null, tmpDir)).toBeNull();
+  });
+
+  it('резолвит __MSG_appName__ из messages.json', () => {
+    const localesDir = path.join(tmpDir, '_locales', 'en');
+    fs.mkdirSync(localesDir, { recursive: true });
+    fs.writeFileSync(
+      path.join(localesDir, 'messages.json'),
+      JSON.stringify({ appName: { message: 'Zerion Wallet' } })
+    );
+    expect(resolveMSG('__MSG_appName__', tmpDir)).toBe('Zerion Wallet');
+  });
+
+  it('резолвит __MSG_appDesc__ в описании', () => {
+    const localesDir = path.join(tmpDir, '_locales', 'en');
+    fs.mkdirSync(localesDir, { recursive: true });
+    fs.writeFileSync(
+      path.join(localesDir, 'messages.json'),
+      JSON.stringify({ appDesc: { message: 'A crypto wallet' } })
+    );
+    expect(resolveMSG('__MSG_appDesc__', tmpDir)).toBe('A crypto wallet');
+  });
+
+  it('возвращает исходную строку если ключ отсутствует в messages.json', () => {
+    const localesDir = path.join(tmpDir, '_locales', 'en');
+    fs.mkdirSync(localesDir, { recursive: true });
+    fs.writeFileSync(path.join(localesDir, 'messages.json'), JSON.stringify({}));
+    expect(resolveMSG('__MSG_unknownKey__', tmpDir)).toBe('__MSG_unknownKey__');
+  });
+
+  it('возвращает исходную строку если _locales не существует', () => {
+    expect(resolveMSG('__MSG_appName__', tmpDir)).toBe('__MSG_appName__');
+  });
+});
+
 describe('getManifest', () => {
   const tmpDir = path.join(os.tmpdir(), 'ext-test-manifest-' + Date.now());
 
@@ -130,23 +209,39 @@ describe('listExtensions', () => {
   it('возвращает расширения с правильным полем enabled', () => {
     const ext1Dir = path.join(testDir, 'ext-one');
     const ext2Dir = path.join(testDir, 'ext-two');
+    const ext3Dir = path.join(testDir, 'ext-msg');
     fs.mkdirSync(ext1Dir, { recursive: true });
     fs.mkdirSync(ext2Dir, { recursive: true });
+    fs.mkdirSync(ext3Dir, { recursive: true });
 
     fs.writeFileSync(path.join(ext1Dir, 'manifest.json'), JSON.stringify({ name: 'Ext One', version: '1.0.0' }));
     fs.writeFileSync(path.join(ext2Dir, 'manifest.json'), JSON.stringify({ name: 'Ext Two', version: '2.0.0' }));
     fs.writeFileSync(path.join(ext2Dir, '.enabled'), 'true');
+    fs.writeFileSync(
+      path.join(ext3Dir, 'manifest.json'),
+      JSON.stringify({ name: '__MSG_appName__', description: '__MSG_appDesc__', version: '3.0.0' })
+    );
+    const ext3Locales = path.join(ext3Dir, '_locales', 'en');
+    fs.mkdirSync(ext3Locales, { recursive: true });
+    fs.writeFileSync(
+      path.join(ext3Locales, 'messages.json'),
+      JSON.stringify({ appName: { message: 'Zerion Wallet' }, appDesc: { message: 'A crypto wallet' } })
+    );
 
     const result = listExtensions(testDir);
-    expect(result).toHaveLength(2);
+    expect(result).toHaveLength(3);
 
     const ext1 = result.find(e => e.id === 'ext-one');
     const ext2 = result.find(e => e.id === 'ext-two');
+    const ext3 = result.find(e => e.id === 'ext-msg');
 
     expect(ext1.enabled).toBe(false);
     expect(ext2.enabled).toBe(true);
     expect(ext1.name).toBe('Ext One');
     expect(ext2.name).toBe('Ext Two');
+    expect(ext3.enabled).toBe(false);
+    expect(ext3.name).toBe('Zerion Wallet');
+    expect(ext3.description).toBe('A crypto wallet');
   });
 
   it('пропускает папки без manifest.json', () => {

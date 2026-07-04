@@ -40,6 +40,45 @@ function getManifest(extDir) {
   }
 }
 
+function getLocale(extDir) {
+  const localesDir = path.join(extDir, '_locales');
+  if (!fs.existsSync(localesDir)) return null;
+
+  try {
+    const locales = fs.readdirSync(localesDir);
+    const sysLocale = Intl.DateTimeFormat().resolvedOptions().locale;
+    const sysLang = sysLocale.split('-')[0];
+    if (locales.includes(sysLocale)) return sysLocale;
+    if (locales.includes(sysLang)) return sysLang;
+    if (locales.includes('en')) return 'en';
+    if (locales.includes('en_US')) return 'en_US';
+    return locales[0] || null;
+  } catch {
+    return null;
+  }
+}
+
+function resolveMSG(value, extDir) {
+  if (!value || typeof value !== 'string') return value;
+
+  const msgRegex = /__MSG_(\w+)__/g;
+  if (!msgRegex.test(value)) return value;
+  msgRegex.lastIndex = 0;
+
+  const locale = getLocale(extDir);
+  if (!locale) return value;
+
+  const messagesPath = path.join(extDir, '_locales', locale, 'messages.json');
+  if (!fs.existsSync(messagesPath)) return value;
+
+  try {
+    const messages = JSON.parse(fs.readFileSync(messagesPath, 'utf-8'));
+    return value.replace(msgRegex, (_, key) => messages[key]?.message || value);
+  } catch {
+    return value;
+  }
+}
+
 function listExtensions(dir) {
   const extDir = dir || getExtensionsDir();
   ensureDir(extDir);
@@ -56,9 +95,9 @@ function listExtensions(dir) {
     const extPath = path.join(extDir, entry.name);
     extensions.push({
       id: entry.name,
-      name: manifest.name || entry.name,
+      name: resolveMSG(manifest.name, extPath) || entry.name,
       version: manifest.version || '1.0.0',
-      description: manifest.description || '',
+      description: resolveMSG(manifest.description, extPath) || '',
       enabled: fs.existsSync(path.join(extPath, '.enabled')),
       path: extPath,
     });
@@ -104,9 +143,9 @@ router.post('/', (req, res) => {
     const manifest = getManifest(targetPath);
     res.status(201).json({
       id: targetName,
-      name: manifest?.name || targetName,
+      name: resolveMSG(manifest?.name, targetPath) || targetName,
       version: manifest?.version || '1.0.0',
-      description: manifest?.description || '',
+      description: resolveMSG(manifest?.description, targetPath) || '',
       enabled: true,
       path: targetPath,
     });
@@ -146,9 +185,9 @@ router.post('/from-store', async (req, res) => {
     const manifest = getManifest(targetPath);
     res.status(201).json({
       id: extId,
-      name: manifest?.name || extId,
+      name: resolveMSG(manifest?.name, targetPath) || extId,
       version: manifest?.version || '1.0.0',
-      description: manifest?.description || '',
+      description: resolveMSG(manifest?.description, targetPath) || '',
       enabled: true,
       path: targetPath,
     });
@@ -201,9 +240,9 @@ router.post('/from-zip', async (req, res) => {
       const manifest = getManifest(targetPath);
       return res.status(201).json({
         id: targetName,
-        name: manifest?.name || targetName,
+        name: resolveMSG(manifest?.name, targetPath) || targetName,
         version: manifest?.version || '1.0.0',
-        description: manifest?.description || '',
+        description: resolveMSG(manifest?.description, targetPath) || '',
         enabled: true,
         path: targetPath,
       });
@@ -221,9 +260,9 @@ router.post('/from-zip', async (req, res) => {
     const manifest = getManifest(targetPath);
     res.status(201).json({
       id: targetName,
-      name: manifest?.name || targetName,
+      name: resolveMSG(manifest?.name, targetPath) || targetName,
       version: manifest?.version || '1.0.0',
-      description: manifest?.description || '',
+      description: resolveMSG(manifest?.description, targetPath) || '',
       enabled: true,
       path: targetPath,
     });
@@ -365,6 +404,8 @@ router.post('/:id/assign-all', (req, res) => {
 module.exports = router;
 module.exports.getExtensionsDir = getExtensionsDir;
 module.exports.getManifest = getManifest;
+module.exports.getLocale = getLocale;
+module.exports.resolveMSG = resolveMSG;
 module.exports.listExtensions = listExtensions;
 module.exports.extractExtensionId = extractExtensionId;
 module.exports.extractZipFromCrx = extractZipFromCrx;

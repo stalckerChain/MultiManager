@@ -511,6 +511,8 @@ Get list of installed extensions.
 ]
 ```
 
+> **Note:** If the extension's `manifest.json` uses i18n placeholders like `__MSG_appName__`, they are automatically resolved via `_locales/<locale>/messages.json`. The locale is chosen based on the system language with a fallback to `en`. If resolution fails, the raw manifest value is returned.
+
 ---
 
 ### POST /api/extensions
