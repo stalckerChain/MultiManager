@@ -120,8 +120,8 @@ npm run build
 
 ```
 gui/release/
-├── MultiManager Setup 0.4.1.exe              # NSIS-установщик (~105 MB)
-├── MultiManager Setup 0.4.1.exe.blockmap     # Delta-обновления
+├── MultiManager Setup 1.0.0.exe              # NSIS-установщик (~105 MB)
+├── MultiManager Setup 1.0.0.exe.blockmap     # Delta-обновления
 └── win-unpacked/                               # Портативная версия (распакованная)
     ├── MultiManager.exe
     ├── resources/
@@ -187,7 +187,7 @@ gui/release/win-unpacked/MultiManager.exe
 ```bash
 cd MultiManager/gui/release
 # ZIP-архив
-powershell Compress-Archive -Path win-unpacked -DestinationPath "MultiManager-Portable-0.4.1.zip"
+powershell Compress-Archive -Path win-unpacked -DestinationPath "MultiManager-Portable-1.0.0.zip"
 ```
 
 ---
@@ -205,7 +205,7 @@ electron-builder автоматически выберет `mac.target: "dmg"` �
 
 ```
 gui/release/
-└── MultiManager-0.4.1.dmg
+└── MultiManager-1.0.0.dmg
 ```
 
 ### Кастомизация macOS-сборки
@@ -252,7 +252,7 @@ electron-builder выберет `linux.target: "AppImage"`. Требуется �
 
 ```
 gui/release/
-└── MultiManager-0.4.1.AppImage
+└── MultiManager-1.0.0.AppImage
 ```
 
 ### Альтернативные форматы

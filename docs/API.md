@@ -368,27 +368,33 @@ Authorization: Bearer <token>
 
 ---
 
-## Multi-Control (Синхронизация окон) — v0.4.0
+## Multi-Control (Синхронизация окон) — v0.13.0
 
-Система синхронизации ввода из master окна во все slave окна.
+Система синхронизации ввода из master окна во все slave окна через CDP (Chrome DevTools Protocol).
 
 **Архитектура:**
-- **Захват ввода**: CDP binding (`Runtime.addBinding`) инжектируется в master page через `SYNC_EVENT_SCRIPT`
-- **Передача**: DOM events → `window.__MM_SYNC_BIND__(JSON)` → `cdpManager.onEvent` → `inputCapture.injectFromCdp()`
-- **Dispatch**: CDP `Input.dispatchMouseEvent` / `Input.dispatchKeyEvent` / `Input.insertText` → slave окна
-- **Scroll sync**: CDP `Runtime.evaluate` (page-level)
-- **Multi-tab**: HTTP `/json` polling (DevTools endpoint) для обнаружения нативно-открытых вкладок (_blank, Ctrl+T, адресная строка). `Page.addScriptToEvaluateOnNewDocument` для инжекции sync-script в новые вкладки
+- **Захват ввода (DOM)**: CDP binding `Runtime.addBinding('__MM_SYNC_BIND__')` инжектируется в master page через `SYNC_EVENT_SCRIPT`. DOM events (mousemove, mousedown, mouseup, wheel, keydown, keyup) + `visibilitychange` → `window.__MM_SYNC_BIND__(JSON)` → `cdpManager.onEvent` → `inputCapture.injectFromCdp()` → `controller.onMouseMoved/onKeyDown/etc.`
+- **Native hooks (OS-level)**: C++ addon `WH_KEYBOARD_LL` перехватывает ВСЕ клавиши на уровне ОС, включая browser shortcuts (Ctrl+T, Ctrl+W). HTTP POST → `/api/multi-control/os-keyboard` → `controller.onKeyDown/onKeyUp`
+- **Broadcast**: `controller` → `_getSlaveSession(slaveId)` → CDP `Input.dispatch*` / `Input.dispatchKeyEvent` / `Input.insertText` → slave окна
+- **Mouse smoothing**: MouseSmoother (ghost-cursor `path()`: кубическая Безье + Fitts's Law + overshoot) + `setTimeout` dispatch loop + `flush()` перед кликом
+- **Scroll**: Разбивается на серию `wheel` dispatch'ей (SCROLL_STEP_PX=40, SCROLL_TICK_MS=16)
+- **Multi-tab**: HTTP `/json` polling каждые 300мс (DevTools endpoint) для обнаружения нативно-открытых вкладок. `Page.addScriptToEvaluateOnNewDocument` для инжекции sync-script в новые вкладки. Tab mapping 1:N через `Map<masterTargetId, Map<slaveId, slaveTargetId>>` + `tabIndex` matrix
+- **Активация фокуса**: Цепочка `Target.activateTarget` → `Page.bringToFront` → `DOM.focus` → `body.focus()` для закрепления DOM-фокуса в slave
 
 **Возможности:**
-- Синхронизация мыши (клик, движение, скролл) между окнами
-- Синхронизация клавиатуры (нажатия, печать текста)
+- Синхронизация мыши (клик, движение, скролл) с human-like траекториями
+- Синхронизация клавиатуры (нажатия, Enter, стрелки)
 - Ввод текста через `Input.insertText` (работает в полях ввода)
-- Multi-tab support: новые вкладки в master автоматически захватываются
+- Multi-tab support: новые вкладки в master автоматически захватываются через HTTP `/json` polling
 - Навигация sync: master переходит → slave следует (Page.navigate)
+- Browser shortcuts: Ctrl+T (нативное открытие, polling подхватывает), Ctrl+W (закрытие slave табов через CDP)
+- Native hooks: перехват ВСЕХ клавиш на уровне ОС для browser chrome (адресная строка, tab bar)
+- Double dispatch: при вводе в DOM-элементе клавиши уходят в slave дважды (CDP + native hook)
 
 **Ограничения:**
-- Browser shortcuts (Ctrl+L, Ctrl+T) не синхронизируются (DOM events не ловят браузерные шорткаты)
-- Events привязаны к DOM — не работают на chrome:// и devtools:// страницах
+- Events привязаны к DOM — не работают на chrome:// и devtools:// страницах (только native hooks для browser chrome)
+- Orphaned native tabs: возможны при race condition между `/json` polling и открытием таба в slave
+- Polling latency: до 300мс для обнаружения новых табов
 
 ### GET /api/multi-control/status
 
@@ -488,6 +494,30 @@ Authorization: Bearer <token>
 
 ---
 
+### POST /api/multi-control/window-position
+
+Установить позицию окна для slave-профиля.
+
+**Тело запроса:**
+```json
+{
+  "profileId": "uuid-slave-1",
+  "x": 100,
+  "y": 100,
+  "width": 800,
+  "height": 600
+}
+```
+
+**Ответ (200):**
+```json
+{
+  "status": "ok"
+}
+```
+
+---
+
 ### GET /api/multi-control/cdp-status
 
 Получить статус CDP подключений.
@@ -534,6 +564,19 @@ Authorization: Bearer <token>
 ```json
 {
   "ok": true
+}
+```
+
+---
+
+### POST /api/multi-control/focus-windows
+
+Перевести фокос на все окна multi-control (сначала slave, затем master).
+
+**Ответ (200):**
+```json
+{
+  "focused": true
 }
 ```
 

@@ -351,9 +351,35 @@ Clean profile cache. Only available for stopped profiles.
 
 ---
 
-## Multi-Control (Window Sync)
+### GET /api/browser/profile-windows
 
-Broadcasts actions from master window to all slave windows via CDP. Mouse coordinates are throttled at 25ms.
+Get list of profile-to-window bindings.
+
+**Response (200):**
+```json
+[
+  {
+    "profileId": "f81d4fae-...",
+    "pid": 48210,
+    "handle": "12345"
+  }
+]
+```
+
+---
+
+## Multi-Control (Window Sync) — v0.13.0
+
+Broadcasts actions from master window to all slave windows via CDP (Chrome DevTools Protocol).
+
+**Architecture:**
+- **DOM input capture**: CDP binding `Runtime.addBinding('__MM_SYNC_BIND__')` injected into master page via `SYNC_EVENT_SCRIPT`. DOM events (mousemove, mousedown, mouseup, wheel, keydown, keyup) + `visibilitychange` → `window.__MM_SYNC_BIND__(JSON)` → `cdpManager.onEvent` → `inputCapture.injectFromCdp()` → `controller`
+- **Native hooks (OS-level)**: C++ addon `WH_KEYBOARD_LL` intercepts ALL keys at OS level, including browser shortcuts (Ctrl+T, Ctrl+W). HTTP POST → `/api/multi-control/os-keyboard`
+- **Mouse smoothing**: MouseSmoother (ghost-cursor `path()`: cubic Bézier + Fitts's Law + overshoot) + `setTimeout` dispatch loop + `flush()` before click
+- **Scroll**: Split into series of `wheel` dispatches (SCROLL_STEP_PX=40, SCROLL_TICK_MS=16)
+- **Multi-tab**: HTTP `/json` polling every 300ms to detect natively opened tabs. Tab mapping 1:N via `Map<masterTargetId, Map<slaveId, slaveTargetId>>` + `tabIndex` matrix
+- **Focus activation**: Chain `Target.activateTarget` → `Page.bringToFront` → `DOM.focus` → `body.focus()` for DOM input focus in slaves
+- **Double dispatch**: When typing in DOM elements, keys are sent to slaves twice (CDP + native hook)
 
 ### GET /api/multi-control/status
 
@@ -382,11 +408,29 @@ Start multi-control. Sets master profile.
 }
 ```
 
+**Response (200):**
+```json
+{
+  "status": "active",
+  "masterId": "f81d4fae-...",
+  "mode": "cdp"
+}
+```
+
+**Response (412):** `{ "error": "CDP port unavailable" }`
+
 ---
 
 ### POST /api/multi-control/stop
 
 Stop multi-control. Detaches all slaves.
+
+**Response (200):**
+```json
+{
+  "status": "stopped"
+}
+```
 
 ---
 
@@ -401,6 +445,17 @@ Add slave profile.
 }
 ```
 
+**Response (200):**
+```json
+{
+  "status": "added",
+  "profileId": "uuid-slave-1",
+  "slaveCount": 1
+}
+```
+
+**Response (409):** `{ "error": "Multi-control not active" }`
+
 ---
 
 ### POST /api/multi-control/slave/remove
@@ -414,78 +469,94 @@ Remove slave profile.
 }
 ```
 
----
-
-### POST /api/multi-control/mouse/move
-
-Broadcast mouse movement (buffered, 25ms throttling).
-
-**Request Body:**
+**Response (200):**
 ```json
 {
-  "x": 500,
-  "y": 300
+  "status": "removed",
+  "profileId": "uuid-slave-1"
 }
 ```
 
 ---
 
-### POST /api/multi-control/mouse/click
+### POST /api/multi-control/window-position
 
-Broadcast click (mousePressed + mouseReleased).
+Set window position for a slave profile.
 
 **Request Body:**
 ```json
 {
-  "x": 500,
-  "y": 300,
-  "button": "left",
-  "clickCount": 1
+  "profileId": "uuid-slave-1",
+  "x": 100,
+  "y": 100,
+  "width": 800,
+  "height": 600
+}
+```
+
+**Response (200):**
+```json
+{
+  "status": "ok"
 }
 ```
 
 ---
 
-### POST /api/multi-control/mouse/scroll
+### GET /api/multi-control/cdp-status
 
-Broadcast scroll.
+Get CDP connection status.
 
-**Request Body:**
+**Response (200):**
 ```json
 {
-  "x": 500,
-  "y": 300,
-  "deltaX": 0,
-  "deltaY": -100
+  "f81d4fae-...": true,
+  "uuid-slave-1": true,
+  "uuid-slave-2": true
 }
 ```
 
 ---
 
-### POST /api/multi-control/keyboard/type
+### POST /api/multi-control/os-keyboard
 
-Broadcast text to all slave windows.
+Receive keyboard events from OS-level hook (Electron main process, WH_KEYBOARD_LL C++ addon).
+
+Intercepts ALL keys at OS level, including browser shortcuts (Ctrl+T, Ctrl+W, etc.) and address bar input.
+
+> **Double Dispatch:** When typing in a DOM element (textarea, input), the key is sent to slave twice — once via CDP SYNC_EVENT_SCRIPT and once via this endpoint.
 
 **Request Body:**
 ```json
 {
-  "text": "Hello, world!"
+  "type": "keyDown",
+  "key": "l",
+  "code": "KeyL",
+  "windowsVirtualKeyCode": 76,
+  "ctrlKey": true,
+  "shiftKey": false,
+  "altKey": false,
+  "metaKey": false
+}
+```
+
+**Response (200):**
+```json
+{
+  "ok": true
 }
 ```
 
 ---
 
-### POST /api/multi-control/keyboard/key
+### POST /api/multi-control/focus-windows
 
-Broadcast key press (keyDown + keyUp).
+Focus all multi-control windows (slaves first, then master).
 
-**Request Body:**
+**Response (200):**
 ```json
 {
-  "key": "Enter",
-  "code": "Enter",
-  "windowsVirtualKeyCode": 13,
-  "nativeVirtualKeyCode": 13
+  "focused": true
 }
 ```
 
@@ -683,6 +754,33 @@ Get list of current windows on screen.
 
 ---
 
+### GET /api/window-arranger/windows/grouped
+
+Get windows grouped by profile.
+
+**Response (200):**
+```json
+[
+  {
+    "profileId": "f81d4fae-...",
+    "profileName": "My Profile",
+    "profileNumber": 1,
+    "windows": [
+      {
+        "id": "12345",
+        "name": "CloakBrowser - Profile 1",
+        "x": 0,
+        "y": 0,
+        "width": 1920,
+        "height": 1080
+      }
+    ]
+  }
+]
+```
+
+---
+
 ### POST /api/window-arranger/grid
 
 Arrange all windows in a grid (tile mode).
@@ -699,9 +797,38 @@ Arrange all windows in a grid (tile mode).
 
 ---
 
+### POST /api/window-arranger/grid/grouped
+
+Arrange windows in a grid grouped by profile. Each profile's windows are placed in their own screen zone.
+
+**Response (200):**
+```json
+{
+  "arranged": 4,
+  "groups": 2,
+  "screen": { "width": 1920, "height": 1080 }
+}
+```
+
+---
+
 ### POST /api/window-arranger/cascade
 
 Arrange windows in cascade (overlapping with 30px offset).
+
+**Response (200):**
+```json
+{
+  "arranged": 4,
+  "offset": 30
+}
+```
+
+---
+
+### POST /api/window-arranger/cascade/grouped
+
+Arrange windows in cascade grouped by profile.
 
 **Response (200):**
 ```json

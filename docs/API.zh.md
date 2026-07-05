@@ -351,9 +351,35 @@ Authorization: Bearer <token>
 
 ---
 
-## Multi-Control（窗口同步）
+### GET /api/browser/profile-windows
 
-通过 CDP 将主窗口的操作广播到所有从窗口。鼠标坐标限制为 25ms 节流。
+获取配置文件到窗口的绑定列表。
+
+**响应 (200)：**
+```json
+[
+  {
+    "profileId": "f81d4fae-...",
+    "pid": 48210,
+    "handle": "12345"
+  }
+]
+```
+
+---
+
+## Multi-Control（窗口同步）— v0.13.0
+
+通过 CDP（Chrome DevTools Protocol）将主窗口的操作广播到所有从窗口。
+
+**架构：**
+- **DOM 输入捕获**：通过 `SYNC_EVENT_SCRIPT` 在主页面注入 CDP 绑定 `Runtime.addBinding('__MM_SYNC_BIND__')`。DOM 事件（mousemove、mousedown、mouseup、wheel、keydown、keyup）+ `visibilitychange` → `window.__MM_SYNC_BIND__(JSON)` → `cdpManager.onEvent` → `inputCapture.injectFromCdp()` → `controller`
+- **原生钩子（OS 级别）**：C++ 插件 `WH_KEYBOARD_LL` 在 OS 级别拦截所有按键，包括浏览器快捷键（Ctrl+T、Ctrl+W）。HTTP POST → `/api/multi-control/os-keyboard`
+- **鼠标平滑**：MouseSmoother（ghost-cursor `path()`：三次贝塞尔曲线 + Fitts's Law + 过冲）+ `setTimeout` 调度循环 + 点击前 `flush()`
+- **滚动**：分解为一系列 `wheel` 分发（SCROLL_STEP_PX=40，SCROLL_TICK_MS=16）
+- **多标签页**：每 300ms HTTP `/json` 轮询检测原生打开的标签页。标签映射 1:N 通过 `Map<masterTargetId, Map<slaveId, slaveTargetId>>` + `tabIndex` 矩阵
+- **焦点激活**：链式调用 `Target.activateTarget` → `Page.bringToFront` → `DOM.focus` → `body.focus()` 以在从窗口中设置 DOM 输入焦点
+- **双重分发**：在 DOM 元素中输入时，按键会发送到从窗口两次（CDP + 原生钩子）
 
 ### GET /api/multi-control/status
 
@@ -382,11 +408,29 @@ Authorization: Bearer <token>
 }
 ```
 
+**响应 (200)：**
+```json
+{
+  "status": "active",
+  "masterId": "f81d4fae-...",
+  "mode": "cdp"
+}
+```
+
+**响应 (412)：** `{ "error": "CDP 端口不可用" }`
+
 ---
 
 ### POST /api/multi-control/stop
 
 停止 multi-control。断开所有从窗口。
+
+**响应 (200)：**
+```json
+{
+  "status": "stopped"
+}
+```
 
 ---
 
@@ -401,6 +445,17 @@ Authorization: Bearer <token>
 }
 ```
 
+**响应 (200)：**
+```json
+{
+  "status": "added",
+  "profileId": "uuid-slave-1",
+  "slaveCount": 1
+}
+```
+
+**响应 (409)：** `{ "error": "Multi-control 未激活" }`
+
 ---
 
 ### POST /api/multi-control/slave/remove
@@ -414,82 +469,96 @@ Authorization: Bearer <token>
 }
 ```
 
----
-
-### POST /api/multi-control/mouse/move
-
-广播鼠标移动（缓冲，25ms 节流）。
-
-**请求体：**
+**响应 (200)：**
 ```json
 {
-  "x": 500,
-  "y": 300
+  "status": "removed",
+  "profileId": "uuid-slave-1"
 }
 ```
 
 ---
 
-### POST /api/multi-control/mouse/click
+### POST /api/multi-control/window-position
 
-广播点击（mousePressed + mouseReleased）。
+设置从窗口位置。
 
 **请求体：**
 ```json
 {
-  "x": 500,
-  "y": 300,
-  "button": "left",
-  "clickCount": 1
+  "profileId": "uuid-slave-1",
+  "x": 100,
+  "y": 100,
+  "width": 800,
+  "height": 600
+}
+```
+
+**响应 (200)：**
+```json
+{
+  "status": "ok"
 }
 ```
 
 ---
 
-### POST /api/multi-control/mouse/scroll
+### GET /api/multi-control/cdp-status
 
-广播滚动。
+获取 CDP 连接状态。
 
-**请求体：**
+**响应 (200)：**
 ```json
 {
-  "x": 500,
-  "y": 300,
-  "deltaX": 0,
-  "deltaY": -100
+  "f81d4fae-...": true,
+  "uuid-slave-1": true,
+  "uuid-slave-2": true
 }
 ```
 
 ---
 
-### POST /api/multi-control/keyboard/type
+### POST /api/multi-control/os-keyboard
 
-向所有从窗口广播文本。
+从 OS 级别钩子（Electron 主进程，WH_KEYBOARD_LL C++ 插件）接收键盘事件。
+
+在 OS 级别拦截所有按键，包括浏览器快捷键（Ctrl+T、Ctrl+W 等）和地址栏输入。
+
+> **双重分发：** 在 DOM 元素中输入时，按键会发送到从窗口两次——一次通过 CDP SYNC_EVENT_SCRIPT，一次通过此端点。
 
 **请求体：**
 ```json
 {
-  "text": "Hello, world!"
+  "type": "keyDown",
+  "key": "l",
+  "code": "KeyL",
+  "windowsVirtualKeyCode": 76,
+  "ctrlKey": true,
+  "shiftKey": false,
+  "altKey": false,
+  "metaKey": false
+}
+```
+
+**响应 (200)：**
+```json
+{
+  "ok": true
 }
 ```
 
 ---
 
-### POST /api/multi-control/keyboard/key
+### POST /api/multi-control/focus-windows
 
-广播按键（keyDown + keyUp）。
+聚焦所有 multi-control 窗口（先从窗口，后主窗口）。
 
-**请求体：**
+**响应 (200)：**
 ```json
 {
-  "key": "Enter",
-  "code": "Enter",
-  "windowsVirtualKeyCode": 13,
-  "nativeVirtualKeyCode": 13
+  "focused": true
 }
 ```
-
----
 
 ## 扩展
 
@@ -663,6 +732,33 @@ Authorization: Bearer <token>
 
 ---
 
+### GET /api/window-arranger/windows/grouped
+
+获取按配置文件分组的窗口。
+
+**响应 (200)：**
+```json
+[
+  {
+    "profileId": "f81d4fae-...",
+    "profileName": "我的配置",
+    "profileNumber": 1,
+    "windows": [
+      {
+        "id": "12345",
+        "name": "CloakBrowser - Profile 1",
+        "x": 0,
+        "y": 0,
+        "width": 1920,
+        "height": 1080
+      }
+    ]
+  }
+]
+```
+
+---
+
 ### POST /api/window-arranger/grid
 
 将所有窗口排列为网格（平铺模式）。
@@ -679,9 +775,38 @@ Authorization: Bearer <token>
 
 ---
 
+### POST /api/window-arranger/grid/grouped
+
+按配置文件分组排列窗口为网格。每组窗口放置在自己的屏幕区域中。
+
+**响应 (200)：**
+```json
+{
+  "arranged": 4,
+  "groups": 2,
+  "screen": { "width": 1920, "height": 1080 }
+}
+```
+
+---
+
 ### POST /api/window-arranger/cascade
 
 将窗口排列为层叠式（重叠，偏移 30px）。
+
+**响应 (200)：**
+```json
+{
+  "arranged": 4,
+  "offset": 30
+}
+```
+
+---
+
+### POST /api/window-arranger/cascade/grouped
+
+按配置文件分组层叠排列窗口。
 
 **响应 (200)：**
 ```json
