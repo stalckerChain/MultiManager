@@ -17,7 +17,7 @@ const SYNC_EVENT_SCRIPT = `
     }
   }
 
-  var _buf = null, _timer = null, THROTTLE = 25;
+  var _buf = null, _timer = null, THROTTLE = 16;
   function flush() { var b = _buf; _buf = null; _timer = null; if (b) SEND(JSON.stringify(b)); }
   function emit(type, data) {
     var msg = Object.assign({ __mm_event: true, type: type }, data);

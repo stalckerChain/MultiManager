@@ -119,31 +119,26 @@ describe('InputCapture', () => {
     expect(h).not.toHaveBeenCalled();
   });
 
-  it('throttles mouseMove', () => {
+  it('emits mouseMove immediately without throttle', () => {
+    const h = vi.fn();
+    cap.on('mouseMove', h);
+    cap.injectFromCdp({ type: 'mouseMove', x: 1, y: 1 });
+    expect(h).toHaveBeenCalledTimes(1);
+    expect(h).toHaveBeenCalledWith({ x: 1, y: 1 });
+  });
+
+  it('emits each mouseMove without buffering', () => {
     const h = vi.fn();
     cap.on('mouseMove', h);
     cap.injectFromCdp({ type: 'mouseMove', x: 1, y: 1 });
     cap.injectFromCdp({ type: 'mouseMove', x: 2, y: 2 });
     cap.injectFromCdp({ type: 'mouseMove', x: 3, y: 3 });
-    expect(h).not.toHaveBeenCalled();
-    return new Promise(r => setTimeout(() => {
-      expect(h).toHaveBeenCalledTimes(1);
-      expect(h).toHaveBeenCalledWith({ x: 3, y: 3 });
-      r();
-    }, 20));
-  });
-
-  it('mouseMove stores lastMousePos', () => {
-    cap.injectFromCdp({ type: 'mouseMove', x: 42, y: 99 });
-    expect(cap.lastMousePos).toEqual({ x: 42, y: 99 });
+    expect(h).toHaveBeenCalledTimes(3);
+    expect(h).toHaveBeenLastCalledWith({ x: 3, y: 3 });
   });
 
   it('stop clears state', () => {
-    cap.throttleTimer = setTimeout(() => {}, 5000);
-    cap.lastMousePos = { x: 1, y: 1 };
     cap.stop();
-    expect(cap.throttleTimer).toBeNull();
-    expect(cap.lastMousePos).toBeNull();
     expect(cap.active).toBe(false);
   });
 });

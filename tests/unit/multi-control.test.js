@@ -1,11 +1,32 @@
 import { describe, it, expect, beforeEach, vi } from 'vitest';
+
+vi.mock('ghost-cursor', () => ({
+  path: vi.fn((from, to) => {
+    const pts = [];
+    for (let i = 0; i <= 10; i++) {
+      const t = i / 10;
+      pts.push({
+        x: from.x + (to.x - from.x) * t,
+        y: from.y + (to.y - from.y) * t,
+        timestamp: i * 8,
+      });
+    }
+    return pts;
+  }),
+}));
+
+await import('ghost-cursor');
+
 import { MultiController } from '../../src/multi-control/index.js';
 
 function createMockCdp() {
   return {
     dispatchMouseEvent: vi.fn(),
+    dispatchMouseEventToSession: vi.fn(),
     dispatchKeyEvent: vi.fn(),
+    dispatchKeyEventToSession: vi.fn(),
     insertText: vi.fn(),
+    insertTextToSession: vi.fn(),
     getPageScroll: vi.fn().mockResolvedValue({ scrollX: 0, scrollY: 0 }),
     activateAndFocusTarget: vi.fn().mockResolvedValue(undefined),
     getPageTargets: vi.fn().mockResolvedValue([]),
@@ -117,13 +138,11 @@ describe('MultiController', () => {
       await controller.addSlave('slave-1');
 
       await controller.scrollTo({ deltaY: -100 });
+      await new Promise(r => setTimeout(r, 80));
 
-      expect(mockCdp.dispatchMouseEvent).toHaveBeenCalledWith('slave-1', 'mouseWheel', {
-        x: 0,
-        y: 0,
-        deltaX: 0,
-        deltaY: -100,
-      });
+      const wheelCalls = mockCdp.dispatchMouseEvent.mock.calls.filter(c => c[1] === 'mouseWheel');
+      const totalDelta = wheelCalls.reduce((sum, c) => sum + c[2].deltaY, 0);
+      expect(totalDelta).toBeCloseTo(-100, 0);
     });
   });
 
@@ -174,27 +193,76 @@ describe('MultiController', () => {
     });
   });
 
-  describe('throttling мыши', () => {
-    it('буферизует движение мыши', async () => {
+  describe('smoother мыши', () => {
+    it('onMouseMoved вызывает smoother.setTarget для каждого слейва', async () => {
       controller.setMaster('master-1');
       controller.setWindowPosition('master-1', 0, 0, 1920, 1080);
       controller.setWindowPosition('slave-1', 0, 0, 1920, 1080);
       await controller.addSlave('slave-1');
 
-      await controller.onMouseMoved({ x: 10, y: 10 });
-      await controller.onMouseMoved({ x: 20, y: 20 });
-      await controller.onMouseMoved({ x: 30, y: 30 });
+      await controller.onMouseMoved({ x: 100, y: 200 });
 
-      expect(mockCdp.dispatchMouseEvent).not.toHaveBeenCalled();
+      const smoother = controller.smoothers.get('slave-1');
+      expect(smoother).toBeDefined();
+      expect(smoother._target).toEqual({ x: 100, y: 200 });
+    });
 
-      await new Promise(resolve => setTimeout(resolve, 30));
+      it('flush перед кликом dispatches final point', async () => {
+        controller.setMaster('master-1');
+        controller.setWindowPosition('master-1', 0, 0, 1920, 1080);
+        controller.setWindowPosition('slave-1', 0, 0, 1920, 1080);
+        await controller.addSlave('slave-1');
 
-      expect(mockCdp.dispatchMouseEvent).toHaveBeenCalledTimes(1);
-      expect(mockCdp.dispatchMouseEvent).toHaveBeenCalledWith(
-        'slave-1',
-        'mouseMoved',
-        expect.objectContaining({ x: 30, y: 30 })
-      );
+        controller.onMouseMoved({ x: 100, y: 200 });
+        await new Promise(r => setTimeout(r, 2));
+
+        mockCdp.dispatchMouseEvent.mockClear();
+        mockCdp.dispatchMouseEventToSession.mockClear();
+        await controller.onMousePressed({ x: 100, y: 200, button: 0, clickCount: 1 });
+
+        const allMouseMoved = [
+          ...mockCdp.dispatchMouseEvent.mock.calls.filter(c => c[1] === 'mouseMoved'),
+          ...mockCdp.dispatchMouseEventToSession.mock.calls.filter(c => c[2] === 'mouseMoved'),
+        ];
+        const flushCall = allMouseMoved[allMouseMoved.length - 1];
+        expect(flushCall).toBeDefined();
+      });
+
+    it('smoother.stop() вызывается в removeSlave', async () => {
+      controller.setMaster('master-1');
+      await controller.addSlave('slave-1');
+      const smoother = controller.smoothers.get('slave-1');
+      const stopSpy = vi.spyOn(smoother, 'stop');
+
+      controller.removeSlave('slave-1');
+
+      expect(stopSpy).toHaveBeenCalled();
+      expect(controller.smoothers.has('slave-1')).toBe(false);
+    });
+  });
+
+  describe('scroll разбивается на шаги', () => {
+    it('scrollTo({deltaY: 200}) dispatches multiple mouseWheel calls', async () => {
+      controller.setMaster('master-1');
+      await controller.addSlave('slave-1');
+
+      await controller.scrollTo({ deltaY: 200 });
+      await new Promise(r => setTimeout(r, 120));
+
+      const wheelCalls = mockCdp.dispatchMouseEvent.mock.calls.filter(c => c[1] === 'mouseWheel');
+      expect(wheelCalls.length).toBeGreaterThanOrEqual(2);
+      const totalDelta = wheelCalls.reduce((sum, c) => sum + Math.abs(c[2].deltaY), 0);
+      expect(totalDelta).toBeCloseTo(200, 0);
+    });
+
+    it('scrollTo({deltaY: 30}) — single step', async () => {
+      controller.setMaster('master-1');
+      await controller.addSlave('slave-1');
+
+      await controller.scrollTo({ deltaY: 30 });
+
+      const wheelCalls = mockCdp.dispatchMouseEvent.mock.calls.filter(c => c[1] === 'mouseWheel');
+      expect(wheelCalls).toHaveLength(1);
     });
   });
 

@@ -343,7 +343,8 @@ if (event.type === 'keyDown' && event.key === 'Enter') {
 | Файл | Назначение |
 |------|-----------|
 | `src/multi-control/cdp-manager.js` | CDP connection, dispatch, navigation, createTab, activateTarget |
-| `src/multi-control/index.js` | MultiController (broadcast, tabMapping 1:N, tabIndex matrix, focus switching) |
+| `src/multi-control/index.js` | MultiController (broadcast, tabMapping 1:N, tabIndex matrix, focus switching, MouseSmoother integration) |
+| `src/multi-control/mouse-smoothing.js` | MouseSmoother: ghost-cursor path() trajectory + setTimeout dispatch loop |
 | `src/api/multi-control.js` | API routes + CDP event wiring + os-keyboard + tab mapping + slave tab discovery |
 | `src/api/window-arranger.js` | Window arranger (taskbar-aware) |
 | `src/os-input/input-capture.js` | EventEmitter wrapper (CDP mode) |
@@ -366,12 +367,32 @@ if (event.type === 'keyDown' && event.key === 'Enter') {
 12. **Трёхшаговая активация фокуса в Slave** — `Target.activateTarget` (переключение вкладки) → `Page.bringToFront` (вывод на передний план) → `DOM.focus` (программный фокус ввода). Без `DOM.focus` движок Chromium игнорирует эмулируемые события `Input.dispatchKeyEvent`/`dispatchMouseEvent`
 13. **`visibilitychange` как единственный надёжный детектор переключения вкладок** — `Target.targetInfoChanged` не содержит признака активации вкладки. `visibilitychange` ловит все сценарии: Ctrl+Tab, Ctrl+Shift+Tab, Ctrl+1..9, клики по tab bar. Событие передаётся через `Runtime.bindingCalled` → разрешение `targetId` из `sessionId`
 14. **Принудительная реактивация фона в Slave при background-табах** — `_enforceSlaveFocusOnActiveTab` отправляет полную цепочку фокуса (`activateAndFocusTarget`: `Target.activateTarget` → `Page.bringToFront` → `DOM.focus` → `body.focus()`) сразу после `mapTab`, если новый таб не является `activeMasterTab`. Chromium в Slave автоактивирует табы, созданные через `Input.dispatchMouseEvent` — одного `Target.activateTarget` недостаточно для закрепления DOM-фокуса, поэтому используется та же цепочка, что и в `_syncActiveTabToSlaves`
+15. **Гибрид: наш MouseSmoother loop + математика ghost-cursor path()** — high-level API GhostCursor.click/scroll требует Puppeteer/Playwright page object, что недоступно на голом CDP. Экспорт `path(start, end, options)` — чистая синхронная функция, возвращающая массив точек {x,y} с кубической Безье, Fitts's Law и overshoot. Наш loop диспатчит точки через setTimeout, flush() перед кликом гарантирует точную позицию
 
 ## Версия
 
-Текущая: v0.12.1 (enforceSlaveFocusOnActiveTab → activateAndFocusTarget — полная цепочка фокуса для background-табов)
+Текущая: v0.13.0 (Human-like движения: ghost-cursor path() + плавный скролл)
 
 ## История версий
+
+### v0.13.0 — Human-like движения: ghost-cursor path() + плавный скролл
+
+- Курсор в слейвах движется по человеческой траектории (ghost-cursor path(): кубическая Безье + Fitts's Law + overshoot) вместо телепортации между точками
+- Наш MouseSmoother loop диспатчит точки в CDP слейва, flush() перед mousePressed гарантирует точность клика
+- Скролл разбивается на серию мелких wheel-dispatch'ей (SCROLL_STEP_PX=40, SCROLL_TICK_MS=16)
+- Удалён дублирующий throttle в InputCapture, THROTTLE master-page уменьшен 25→16 мс
+- Новая зависимость: ghost-cursor
+
+| Файл | Изменение |
+|------|-----------|
+| `src/multi-control/mouse-smoothing.js` | Новый класс MouseSmoother: ghost-cursor path() генерирует траекторию, setTimeout-цепочка диспатчит точки. flush() перед кликом, setTarget() пересчитывает путь из текущей позиции |
+| `src/multi-control/index.js` | Интеграция MouseSmoother: onMouseMoved → smoother.setTarget, onMousePressed/Released → smoother.flush(). Удалён throttle 25мс, mouseBuffer, throttleTimer. Новый _dispatchSlaveMove, _runScrollSequence |
+| `src/multi-control/cdp-manager.js` | SYNC_EVENT_SCRIPT: THROTTLE 25→16 мс |
+| `src/os-input/input-capture.js` | Удалён throttle 16мс в _onMouseMove — mouseMove эмиттится немедленно |
+| `tests/unit/mouse-smoothing.test.js` | 7 тестов MouseSmoother: dispatch, flush, stop, pathFn injection, stepInterval |
+| `tests/unit/multi-control.test.js` | Обновлены: smoother интеграция, flush перед кликом, scroll разбивается на шаги |
+| `tests/unit/os-input.test.js` | Обновлены: mouseMove без throttle |
+| `package.json` | Новая зависимость: ghost-cursor |
 
 ### v0.12.1 (2026-07-04) — Fix: enforceSlaveFocusOnActiveTab использует activateAndFocusTarget
 

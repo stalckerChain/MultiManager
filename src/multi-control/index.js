@@ -1,13 +1,14 @@
 const { logger } = require('../logger');
+const { MouseSmoother } = require('./mouse-smoothing');
 
-const MOUSE_THROTTLE_MS = 25;
+const SCROLL_STEP_PX = 40;
+const SCROLL_TICK_MS = 16;
 
 class MultiController {
   constructor(cdpManagerRef) {
     this.masterId = null;
     this.slaves = new Map();
-    this.mouseBuffer = null;
-    this.throttleTimer = null;
+    this.smoothers = new Map();
     this.active = false;
     this.masterScroll = { x: 0, y: 0 };
     this.windowPositions = new Map();
@@ -19,6 +20,8 @@ class MultiController {
 
   setMaster(profileId) {
     this.masterId = profileId;
+    for (const smoother of this.smoothers.values()) smoother.stop();
+    this.smoothers.clear();
     this.slaves.clear();
     this.active = true;
     this._loadMasterScroll();
@@ -29,11 +32,20 @@ class MultiController {
   async addSlave(profileId) {
     this.slaves.set(profileId, { position: null });
     logger.info(`Multi-control: slave добавлен — ${profileId}, всего: ${this.slaves.size}`);
-    logger.info({ masterId: this.masterId, slaves: Array.from(this.slaves.keys()) }, 'Multi-control: addSlave DONE');
     await this._loadSlavePosition(profileId);
+
+    const smoother = new MouseSmoother({
+      dispatch: (x, y) => this._dispatchSlaveMove(profileId, x, y),
+    });
+    this.smoothers.set(profileId, smoother);
   }
 
   removeSlave(profileId) {
+    const smoother = this.smoothers.get(profileId);
+    if (smoother) {
+      smoother.stop();
+      this.smoothers.delete(profileId);
+    }
     this.slaves.delete(profileId);
     logger.info(`Multi-control: slave удалён — ${profileId}, всего: ${this.slaves.size}`);
   }
@@ -41,17 +53,16 @@ class MultiController {
   stop() {
     this.active = false;
     this.masterId = null;
+    for (const smoother of this.smoothers.values()) {
+      smoother.stop();
+    }
+    this.smoothers.clear();
     this.slaves.clear();
     this.masterScroll = { scrollX: 0, scrollY: 0 };
     this.windowPositions.clear();
     this.tabMapping.clear();
     this.tabIndex = [];
     this.activeMasterTab = null;
-    if (this.throttleTimer) {
-      clearTimeout(this.throttleTimer);
-      this.throttleTimer = null;
-    }
-    this.mouseBuffer = null;
     logger.info('Multi-control: остановлен');
   }
 
@@ -245,33 +256,24 @@ class MultiController {
   }
 
   async onMouseMoved(params) {
-    if (!this.active) {
-      logger.warn('Multi-control: onMouseMoved called but controller NOT active');
-      return;
-    }
+    if (!this.active) return;
 
-    this.mouseBuffer = params;
-
-    if (!this.throttleTimer) {
-      this.throttleTimer = setTimeout(async () => {
-        const buffered = this.mouseBuffer;
-        this.mouseBuffer = null;
-        this.throttleTimer = null;
-
-        if (buffered) {
-          await this._broadcastMouse('mouseMoved', buffered);
-        }
-      }, MOUSE_THROTTLE_MS);
+    for (const [slaveId] of this.slaves) {
+      const coords = this._toSlaveCoords(params.x || 0, params.y || 0, slaveId);
+      const smoother = this.smoothers.get(slaveId);
+      if (smoother) smoother.setTarget(coords.x, coords.y);
     }
   }
 
   async onMousePressed(params) {
     if (!this.active) return;
+    for (const smoother of this.smoothers.values()) smoother.flush();
     await this._broadcastMouse('mousePressed', params);
   }
 
   async onMouseReleased(params) {
     if (!this.active) return;
+    for (const smoother of this.smoothers.values()) smoother.flush();
     await this._broadcastMouse('mouseReleased', params);
   }
 
@@ -331,25 +333,50 @@ class MultiController {
 
   async scrollTo(params) {
     if (!this.active || !this.cdp) return;
+    const totalY = params.deltaY || 0;
+    const totalX = params.deltaX || 0;
+    const steps = Math.max(1, Math.ceil(Math.max(Math.abs(totalY), Math.abs(totalX)) / SCROLL_STEP_PX));
+
     for (const [id] of this.slaves) {
-      try {
-        const session = this._getSlaveSession(id);
-        if (session) {
-          this.cdp.dispatchMouseEventToSession(id, session.sessionId, 'mouseWheel', {
-            x: 0, y: 0,
-            deltaX: params.deltaX || 0,
-            deltaY: params.deltaY || 0,
-          });
-        } else {
-          this.cdp.dispatchMouseEvent(id, 'mouseWheel', {
-            x: 0, y: 0,
-            deltaX: params.deltaX || 0,
-            deltaY: params.deltaY || 0,
-          });
-        }
-      } catch (err) {
-        logger.error(`Multi-control: scroll error slave ${id}`, { error: err.message });
+      if (this.smoothers.has(id)) {
+        this._runScrollSequence(id, steps, totalX, totalY);
       }
+    }
+  }
+
+  _runScrollSequence(slaveId, steps, totalX, totalY) {
+    let i = 0;
+    const stepX = totalX / steps;
+    const stepY = totalY / steps;
+    const fire = () => {
+      if (i >= steps || !this.active || !this.slaves.has(slaveId)) return;
+      i++;
+      const isLast = i === steps;
+      const dx = isLast ? totalX - stepX * (steps - 1) : stepX;
+      const dy = isLast ? totalY - stepY * (steps - 1) : stepY;
+      const session = this._getSlaveSession(slaveId);
+      const wheelParams = { x: 0, y: 0, deltaX: dx, deltaY: dy };
+      if (session) {
+        this.cdp.dispatchMouseEventToSession(slaveId, session.sessionId, 'mouseWheel', wheelParams);
+      } else {
+        this.cdp.dispatchMouseEvent(slaveId, 'mouseWheel', wheelParams);
+      }
+      const slaveData = this.slaves.get(slaveId);
+      if (slaveData && slaveData.scroll) {
+        slaveData.scroll.scrollX = (slaveData.scroll.scrollX || 0) + dx;
+        slaveData.scroll.scrollY = (slaveData.scroll.scrollY || 0) + dy;
+      }
+      if (!isLast) setTimeout(fire, SCROLL_TICK_MS);
+    };
+    fire();
+  }
+
+  _dispatchSlaveMove(slaveId, x, y) {
+    const session = this._getSlaveSession(slaveId);
+    if (session) {
+      this.cdp.dispatchMouseEventToSession(slaveId, session.sessionId, 'mouseMoved', { x, y });
+    } else {
+      this.cdp.dispatchMouseEvent(slaveId, 'mouseMoved', { x, y });
     }
   }
 

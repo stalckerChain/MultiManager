@@ -5,8 +5,6 @@ class InputCapture extends EventEmitter {
   constructor() {
     super();
     this.active = false;
-    this.throttleTimer = null;
-    this.lastMousePos = null;
   }
 
   start() {
@@ -18,13 +16,6 @@ class InputCapture extends EventEmitter {
   stop() {
     if (!this.active) return;
     this.active = false;
-
-    if (this.throttleTimer) {
-      clearTimeout(this.throttleTimer);
-      this.throttleTimer = null;
-    }
-    this.lastMousePos = null;
-
     logger.info('OS-INPUT: InputCapture stopped');
   }
 
@@ -63,17 +54,7 @@ class InputCapture extends EventEmitter {
 
   _onMouseMove(data) {
     if (!this.active) return;
-
-    this.lastMousePos = { x: data.x, y: data.y };
-
-    if (!this.throttleTimer) {
-      this.throttleTimer = setTimeout(() => {
-        this.throttleTimer = null;
-        if (this.lastMousePos) {
-          this.emit('mouseMove', this.lastMousePos);
-        }
-      }, 16);
-    }
+    this.emit('mouseMove', { x: data.x, y: data.y });
   }
 }
 
