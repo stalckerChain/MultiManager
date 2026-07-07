@@ -1,284 +1,370 @@
-﻿-------------------------------
-## SOFTWARE REQUIREMENTS SPECIFICATION (SRS) / ТЕХНИЧЕСКОЕ ЗАДАНИЕ
-## Кросссплатформенный антидетект-браузер с API для ИИ (MVP аналог AdsPower)
-**Версия системы:** 1.0.0 | **Multi-Control:** 0.13.0
 -------------------------------
-## 1. Общие сведения и архитектура системы ✅ РЕАЛИЗОВАНО
-Продукт предназначен для создания, хранения и запуска изолированных профилей браузера на базе кастомного C++ ядра CloakBrowser.
+## SOFTWARE REQUIREMENTS SPECIFICATION (SRS) / ТЕХНИЧЕСКОЕ ЗАДАНИЕ
+## AI-Driven Web Automation Platform на базе антидетект-браузера (MVP аналог AdsPower + ферма автоматизации)
+**Версия системы:** 1.1.0 | **Multi-Control:** 0.13.0 | **Дата ревизии:** 2026-07-07
 
-Архитектура системы жестко разделена на два независимых слоя:
+> **Принцип маркировки:** ✅ РЕАЛИЗОВАНО в коде | ⚠️ ЧАСТИЧНО | ❌ НЕ РЕАЛИЗОВАНО (в ТЗ, но в коде нет). Каждое утверждение о статусе подкреплено ссылкой на реальный файл аудита.
+> **Спутник-документ:** [TS_INTEGRATION.md](./TS_INTEGRATION.md) — миграция Python-фреймворка stAuto0 на интеграцию с MultiManager.
+-------------------------------
 
-1. **Core-движок (Бэкенд):** Консольное Node.js-приложение (Express + better-sqlite3), работающее в фоновом режиме ОС. Предоставляет локальный REST API + WebSocket для управления БД и жизненным циклом процессов браузера.
-2. **GUI (Фронтенд):** Графическая десктопная оболочка (Electron + Vue 3), выполняющая роль визуального интерфейса. GUI коммуницирует с Core-движком исключительно через локальные HTTP-запросы и WebSocket.
+## 1. Общие сведения и архитектура системы
 
-Система является кроссплатформенной и стабильно работает на Windows 11, macOS и Linux.
+Продукт — гибрид антидетект-браузера и платформы Web3-автоматизации. В v1.1.0 направление смещается от «чистого антидетекта» к **AI-Driven Web Automation Platform** (квесты, дроп-охота, мультиаккаунтинг с кошельками/соцсетями), при этом ядро антидетекта остаётся фундаментом.
+
+Архитектура жёстко разделена на два независимых слоя:
+
+1. **Core-движок (Бэкенд):** Консольное Node.js-приложение (Express + better-sqlite3), работающее в фоновом режиме ОС. Предоставляет локальный REST API + WebSocket для управления БД, жизненным циклом процессов браузера и задачами автоматизации. ✅ `src/index.js`, `src/core/app.js`
+2. **GUI (Фронтенд):** Графическая десктопная оболочка (Electron + Vue 3), выполняющая роль визуального интерфейса. GUI коммуницирует с Core исключительно через локальные HTTP-запросы и WebSocket. ✅ `gui/src/main/index.js`, `gui/src/renderer/`
+
+Система кроссплатформенная (Windows 11, macOS, Linux). Полный антидетект-стек реализован; модули автоматизации (Web3, планировщик, шифрование) — к реализации (см. Roadmap, раздел 11).
 
 **Технологический стек Core:**
-- Node.js ≥ 20.x, Express 4.x, better-sqlite3 (WAL + ACID), pino (логирование), ws (WebSocket), socks (SOCKS5-proxy), adm-zip (работа с архивами), ghost-cursor (человекоподобные движения мыши), tree-kill (кросс-платформенное убийство процессов)
+- Node.js ≥ 20.x, Express 4.x, better-sqlite3 (WAL + ACID), pino (логирование), ws (WebSocket), socks (SOCKS5-proxy), adm-zip, ghost-cursor, tree-kill, koffi (FFI для нативных Windows-хуков)
 
-**Тестирование:** Vitest (unit + integration), ~500 тестов
+**Тестирование:** Vitest (unit + integration), ~500 тестов. ✅ `tests/`, `vitest.config.js`
+
 -------------------------------
 ## 2. Безопасность и авторизация локального API ✅ РЕАЛИЗОВАНО
 
-* **Локальный хост:** Core-движок открывает защищенный порт только на локальном интерфейсе (127.0.0.1). Внешние сетевые запросы из интернета блокируются брандмауэром.
-* **Handshake:** GUI при запуске Core через child_process.fork генерирует случайный токен и передает его бэкенду как `--api-token=SECRET_VALUE`.
-* **Авторизация запросов:** Все HTTP-запросы к Core (как от GUI, так и от внешних ИИ-агентов) должны содержать заголовок `Authorization: Bearer SECRET_VALUE`. При отсутствии или несовпадении токена API возвращает 401 Unauthorized.
-* **Доступ для ИИ-агентов:** Токен доступен для копирования в окне настроек GUI.
-* **Health endpoint:** `GET /health` — возвращает `{"status":"ok"}` (до middleware авторизации).
+- **Локальный хост:** Core открывает порт только на `127.0.0.1`. ✅ `src/index.js:27`
+- **Handshake:** GUI при fork Core передаёт токен как `--api-token=SECRET_VALUE` и порт через **env `PORT=N`** (см. примечание в §3.2). ✅ `gui/src/main/core-manager.js:60,70`
+- **Авторизация:** Все HTTP-запросы требуют `Authorization: Bearer SECRET`. Middleware возвращает 401 при отсутствии/несовпадении токена. ✅ `src/api/auth.js`
+- **Доступ для ИИ-агентов:** Токен доступен для копирования в Settings GUI. ✅ `gui/src/renderer/views/Settings.vue`
+- **Health:** `GET /health` — `{"status":"ok"}` (до middleware авторизации). ✅ `src/core/app.js:20`
+
 -------------------------------
-## 3. Хранение данных (База данных и локальные файлы) ✅ РЕАЛИЗОВАНО
+## 3. Хранение данных (База данных и локальные файлы) ⚠️ РАСШИРЯЕТСЯ
 
-* **Тип БД:** SQLite через нативную библиотеку `better-sqlite3`.
-* **Режим:** WAL (Write-Ahead Logging) + ACID-транзакции для защиты от повреждения данных.
-* **Директория приложения:** Все файлы (БД `app.db`, кэш, логи, расширения) сохраняются в защищенную домашнюю папку:
-  * **Windows:** `%APPDATA%/CloakManager/`
-  * **macOS:** `~/Library/Application Support/CloakManager/`
-  * **Linux:** `~/.config/CloakManager/`
+- **Тип БД:** SQLite через нативную `better-sqlite3`. ✅ `src/db/index.js`
+- **Режим:** WAL + ACID (pragma `journal_mode=WAL`, `foreign_keys=ON`). ✅ `src/db/index.js:35-36`
+- **Директория приложения:**
+  - **Windows:** `%APPDATA%/CloakManager/` ✅ `src/db/index.js:14`
+  - **macOS:** `~/Library/Application Support/CloakManager/`
+  - **Linux:** `~/.config/CloakManager/`
+- **Канонический путь профилей:** `%APPDATA%/CloakManager/profiles/{UUID}/BrowserData/` ✅ `src/cookie/inject.js:6`, используется в `src/api/browser.js:286,476`
+  > **Примечание:** документ TS_ADDON предлагал путь `profiles_data/{UUIDv4}`. Каноническим закреплён реально работающий путь `profiles/{UUID}` — переименование не требуется.
 
-### Таблицы БД:
+### 3.1. Существующая схема БД ✅ РЕАЛИЗОВАНО (`src/db/schema.js`)
 | Таблица | Назначение |
 |---------|-----------|
-| `profiles` | Профили браузера (UUID, имя, платформа, отпечаток, прокси, расширения, статус, PID) |
-| `proxies` | Прокси-серверы (тип, хост, порт, авторизация, URL ротации, last_ip, is_active) |
-| `cookies` | Куки профилей (имя, значение, домен, путь, expires, http_only, secure, same_site) |
-| `profile_logs` | Логи профилей (уровень, сообщение, метаданные) |
+| `profiles` | Профили браузера (16 колонок — см. ниже) |
+| `proxies` | Прокси (тип, хост, порт, авторизация, rotation_url, last_ip, is_active) |
+| `cookies` | Куки профилей |
+| `profile_logs` | Логи профилей |
 | `system_config` | Системные настройки (key-value) |
 
-### Структура схемы БД профиля:
-- `id` (TEXT UUIDv4) — уникальный ключ профиля для API
-- `number` (INTEGER) — инкрементный порядковый номер
-- `name` (TEXT) — пользовательское имя
-- `proxy_id` (INTEGER) — внешний ключ → proxies(id) ON DELETE SET NULL
-- `fingerprint_seed` (TEXT) — зерно для генерации шума Canvas/WebGL
-- `platform` (TEXT: windows | macos | linux)
-- `user_agent`, `screen_resolution` (TEXT)
-- `hardware_cores`, `hardware_memory` (INTEGER)
-- `extensions` (TEXT, JSON-массив ID расширений)
-- `tags` (TEXT, JSON-массив тегов)
-- `notes` (TEXT)
-- `status` (TEXT: stopped | starting | running)
-- `pid` (INTEGER) — PID процесса браузера
-- `created_at`, `updated_at` (DATETIME)
+**`profiles` (16 колонок, всё ✅):** `id` (UUIDv4 PK), `number`, `name`, `proxy_id` FK, `fingerprint_seed`, `platform`, `user_agent`, `screen_resolution`, `hardware_cores`, `hardware_memory`, `extensions` (JSON), `tags` (JSON), `notes`, `status` (stopped|starting|running), `pid`, `created_at`, `updated_at`.
 
-### Структура схемы БД прокси:
-- `id` (INTEGER PK AUTOINCREMENT)
-- `type` (TEXT: http | https | socks5)
-- `host` (TEXT), `port` (INTEGER)
-- `username`, `password` (TEXT, опционально)
-- `proxy_rotation_url` (TEXT, опционально — URL для ротации мобильных прокси)
-- `last_ip` (TEXT), `last_checked_at` (DATETIME)
-- `is_active` (INTEGER DEFAULT 1)
-- `created_at`, `updated_at` (DATETIME)
+### 3.2. Расширение схемы v1.1.0 ❌ НЕ РЕАЛИЗОВАНО (Roadmap Ф1)
+
+**Новые колонки таблицы `profiles`:**
+| Колонка | Тип | Назначение |
+|---------|-----|-----------|
+| `timezone` | TEXT DEFAULT 'Asia/Bishkek' | Прокидывается через CDP `Emulation.setTimezoneOverride` при старте |
+| `email` | TEXT | Email аккаунта |
+| `email_password` | TEXT | Пароль почты (AES-256-GCM, см. §4.X) |
+| `twitter_username` | TEXT NOT NULL (если есть X-блок) | Логин X/Twitter |
+| `twitter_password` | TEXT | Пароль X (AES) |
+| `twitter_auth_token` | TEXT | Auth token X (AES) |
+| `twitter_email` | TEXT | Email X |
+| `discord_username` | TEXT | Логин Discord |
+| `discord_password` | TEXT | Пароль Discord (AES) |
+| `discord_token` | TEXT | Token Discord (AES) |
+| `discord_email` | TEXT | Email Discord |
+| `wallet_evm_address` | TEXT | EVM-адрес (публичный) |
+| `wallet_sol_address` | TEXT | Solana-адрес (публичный) |
+| `wallet_password` | TEXT | Пароль расширения Zerion (AES, default 'asdfj*KK') |
+
+> **🛑 КРИТИЧНОЕ РЕШЕНИЕ:** приватных ключей (`wallet_evm_private`, `wallet_sol_private`) **В СХЕМЕ НЕТ**. Сид-фразы хранятся только во временном файле `config/auto_sids.py` и уничтожаются после инициализации (см. TS_INTEGRATION.md §5). Recovery кошелька по базе невозможен по дизайну — это сознательный параноидальный выбор.
+
+**Миграция:** через `ALTER TABLE ADD COLUMN` (SQLite безопасно добавляет колонки с дефолтами к существующим БД без потери данных). Новая версия `src/db/schema.js` должна содержать и CREATE для свежих БД, и блок миграций `ALTER ... WHERE NOT EXISTS`.
+
+### 3.3. Новые таблицы планировщика ❌ НЕ РЕАЛИЗОВАНО (Roadmap Ф1)
+
+**`tasks`** — задачи/квесты:
+| Колонка | Тип | Назначение |
+|---------|-----|-----------|
+| `id` | TEXT UUIDv4 PK | |
+| `name` | TEXT | Название квеста/задачи |
+| `script_name` | TEXT | Соответствует `--project=` аргументу stAuto0 (например, `concrete`) |
+| `schedule_type` | TEXT | `once` \| `daily` \| `weekly` \| `manual` \| `archive` |
+| `cron_expression` | TEXT | Для daily/weekly (опционально) |
+| `params` | TEXT JSON | Динамические параметры (referral codes, диапазоны, теги аккаунтов) |
+| `is_active` | INTEGER | 1/0 |
+| `created_at`, `updated_at` | DATETIME | |
+
+**`task_executions`** — история запусков:
+| Колонка | Тип | Назначение |
+|---------|-----|-----------|
+| `id` | INTEGER PK AUTOINCREMENT | |
+| `task_id` | TEXT FK → tasks(id) | |
+| `profile_id` | TEXT FK → profiles(id) | |
+| `status` | TEXT | `success` \| `failed` \| `running` |
+| `exit_code` | INTEGER | Код выхода Python-процесса (0=success) |
+| `last_run_at` | DATETIME | |
+| `log_file_path` | TEXT | Путь к логу запуска (tail'ится встроенным терминалом, §9.5) |
+
+> **«Tasks как контейнер» (решение #10):** код самих проектов (Concrete, Paragraph и др.) живёт в `stAuto0/projects/*.py`. MultiManager хранит только мета (script_name, params JSON, schedule). Планировщик может менять параметры задачи без правки Python-кода.
+
+### 3.4. Порт Core (исправление расхождения)
+GUI передаёт порт бэкенду через **env-переменную `PORT=N`** ✅ `gui/src/main/core-manager.js:60`, а не через CLI `--port=N`, как утверждал старый TS.md §3.2. `--api-token=` передаётся как CLI-аргумент. ✅ `gui/src/main/core-manager.js:70-71`
+
+**Опциональная правка (Roadmap Ф4):** дополнительно принимать `--port=N` для консистентности с `--api-token=` и упрощения документации.
 
 -------------------------------
 ## 4. Функциональные модули системы
 
 ### 4.1. Генератор случайных отпечатков (Fingerprint Generator) ✅ РЕАЛИЗОВАНО
-- **API:** `POST /api/fingerprint/generate` — генерация отпечатка для указанной платформы
-- **Параметры платформы:** windows | macos | linux
-- **Генерация:** Случайный подбор User-Agent, разрешения экрана, ядер CPU, ОЗУ, WebGL-renderer и fingerprint_seed
-- **Логические проверки:** Исключение невалидных комбинаций (например, Safari UA на Windows)
+- `POST /api/fingerprint/generate` — генерация под платформу (windows|macos|linux). ✅ `src/fingerprint/index.js`, `src/api/fingerprint.js`
+- Случайный подбор UA, разрешения, ядер CPU, ОЗУ, WebGL-renderer, fingerprint_seed. Логические проверки исключают невалидные комбинации (например, Safari UA на Windows).
 
 ### 4.2. Менеджер прокси и ротация (Proxy Manager) ✅ РЕАЛИЗОВАНО
-- **API:** `CRUD /api/proxies`, `POST /api/proxies/import` (пакетный импорт), `POST /api/proxies/:id/check`
-- **Поддержка протоколов:** HTTP, HTTPS, SOCKS5
-- **Парсинг прокси:** Четыре формата ввода:
-  1. `socks5://user:pass@host:port`
-  2. `http://host:port`
-  3. `host:port:user:pass`
-  4. `host:port`
-- **Ротация (мобильные прокси):** Если у прокси заполнено поле `proxy_rotation_url`, перед стартом профиля Core выполняет HTTP GET к API провайдера, ожидает status 200 и выдерживает паузу 3 секунды
-- **Proxy Checker:** После ротации (или для обычного прокси) движок делает тестовый запрос к `https://api.ipify.org?format=json`. Если прокси не отвечает — запуск блокируется, API возвращает 412 Precondition Failed
-- **Автоопределение типа:** Если HTTP-проверка не удалась, система пробует SOCKS5; при успехе автоматически обновляет тип прокси в БД
-- **Формат флага браузера:** `--proxy-server={type}://{user}:{pass}@{host}:{port}`
+- CRUD `CRUD /api/proxies`, `POST /api/proxies/import`, `POST /api/proxies/:id/check`. ✅ `src/api/proxies.js`
+- Протоколы HTTP/HTTPS/SOCKS5. Четыре формата парсинга. ✅ `src/proxy/index.js:7-39`
+- Ротация мобильных прокси: GET к `proxy_rotation_url`, пауза 3 сек. ✅ `src/proxy/index.js:180`
+- Proxy Checker: тестовый запрос к `api.ipify.org`; при недоступности — 412 Precondition Failed. ✅ `src/api/browser.js:263-276`
+- Автоопределение типа (HTTP→SOCKS5 fallback). ✅ `src/proxy/index.js:163-175`
+- Флаг браузера `--proxy-server={type}://{user}:{pass}@{host}:{port}`. ✅ `src/api/browser.js:307`
 
-### 4.3. Управление куки (Cookie Import/Export) ✅ РЕАЛИЗОВАНО
-- **API:** `GET|POST|DELETE /api/cookies/:profileId`, экспорт в JSON/Netscape
-- **Форматы:** JSON и Netscape (TXT)
-- **Инжекция:** Перед запуском браузера куки раскладываются в изолированную директорию `--user-data-dir` профиля
+### 4.3. Управление куки (Cookie Import/Export) ✅ РЕАЛИЗОВАНО (частично — GUI)
+- `GET|POST|DELETE /api/cookies/:profileId`, экспорт в JSON/Netscape. ✅ `src/api/cookies.js`, `src/cookie/inject.js`
+- Инжекция в `--user-data-dir` профиля перед запуском. ✅ `src/api/browser.js:289`
 
-### 4.4. Логика синхронизатора (Multi-Control) — v0.13.0 ✅ РЕАЛИЗОВАНО
-- **Архитектура:** CDP-based синтез мыши/клавиатуры + Native OS hooks (WH_KEYBOARD_LL) для browser chrome
-- **Master→Slave:** Окно мастера транслирует ввод во все ведомые окна через Chrome DevTools Protocol
-- **MouseSmoother:** Человекоподобная траектория курсора (математика ghost-cursor `path()` — кубическая Безье + Fitts's Law + overshoot). `flush()` перед кликом гарантирует точность. Скролл разбивается на микрошаги (SCROLL_STEP_PX=40, SCROLL_TICK_MS=16)
-- **Tab Mapping 1:N:** `Map<masterTargetId, Map<slaveId, slaveTargetId>>` + `tabIndex` matrix для упорядочивания
-- **Обнаружение новых вкладок:** HTTP `/json` polling (DevTools endpoint, 300 мс). Единственный надёжный способ для антидетект-браузера, который не экспортирует нативные табы через WS
-- **Активация фокуса:** Трёхшаговая цепочка `Target.activateTarget` → `Page.bringToFront` → `DOM.focus` + `body.focus()`
-- **Native hooks:** C++ addon WH_KEYBOARD_LL перехватывает все клавиши на уровне ОС (Windows). Единственный источник событий для browser chrome
-- **Double dispatch:** При вводе в DOM-элементе клавиши уходят в slave дважды (CDP + native hook)
-- **Эндпоинты:** `/api/multi-control/*`, `/api/window-arranger/*`
+### 4.4. Логика синхронизатора (Multi-Control) v0.13.0 ✅ РЕАЛИЗОВАНО
+- CDP-синтез мыши/клавиатуры + Native OS hooks (WH_KEYBOARD_LL) для browser chrome. ✅ `src/multi-control/`, `src/os-input/native-hooks/`
+- MouseSmoother (ghost-cursor path(), Безье + Fitts + overshoot), `flush()` перед кликом, микрошаговый скролл. ✅ `src/multi-control/mouse-smoothing.js`
+- Tab Mapping 1:N (`Map<masterTargetId, Map<slaveId, slaveTargetId>>`). ✅ `src/multi-control/cdp-manager.js`
+- Активация фокуса: `Target.activateTarget` → `Page.bringToFront` → `DOM.focus` + `body.focus()`.
+- Endpoints `/api/multi-control/*`, `/api/window-arranger/*`. ✅ `src/core/app.js:28-29`
 
-### 4.5. Автоматизация ввода для ИИ (Human-like Typing) ⚠️ РЕАЛИЗОВАНО ЧАСТИЧНО (нет HTTP endpoint для ИИ-агента)
-- **API:** Специализированный метод ввода текста ИИ-агентом через CDP
-- **Эмуляция:** Последовательное нажатие клавиш со случайной задержкой 50–150 мс на символ, случайные опечатки с Backspace
+### 4.5. Human-like Typing (для ИИ-агента) ⚠️ ЧАСТИЧНО
+- Функция `humanType(cdp, text)` есть: задержки 50–150 мс, 3% опечаток с Backspace. ✅ `src/typing/index.js`
+- **HTTP endpoint отсутствует ❌.** Roadmap Ф4: добавить `POST /api/browser/:id/type {text}` — обёртку, открывающую CDP-сессию и вызывающую `humanType()`.
 
 ### 4.6. Менеджер расширений (Extensions Manager) ✅ РЕАЛИЗОВАНО
-- **API:** `CRUD /api/extensions`, `POST /api/extensions/:id/toggle`, `POST /api/extensions/:id/assign-all`
-- **Установка:** Из директории на диске (`POST /api/extensions`), Chrome Web Store (`POST /api/extensions/from-store`), ZIP/CRX-архива (`POST /api/extensions/from-zip`)
-- **i18n:** Автоматический резолв `__MSG_*__` плейсхолдеров из `_locales/<locale>/messages.json`
-- **Загрузка в браузер:** При старте профиля включенные расширения загружаются через `--load-extension` и CDP `chrome.developerPrivate.loadUnpacked`
-- **CRX support:** Распаковка CRX v2 и CRX v3 форматов
+- `CRUD /api/extensions`, `POST /api/extensions/:id/toggle`, `POST /api/extensions/:id/assign-all`. ✅ `src/api/extensions.js`
+- Установка из папки, Chrome Web Store, ZIP/CRX (v2+v3). i18n `__MSG_*__`. Загрузка через `--load-extension` + CDP `chrome.developerPrivate.loadUnpacked`. ✅ `src/api/browser.js:180-222`
 
-### 4.7. Управление окнами (Window Arranger) ⚠️ РЕАЛИЗОВАНО ЧАСТИЧНО (требуется кроссплатформенная замена PowerShell)
-- **API:** `GET /api/window-arranger/windows`, `POST /api/window-arranger/grid`, `POST /api/window-arranger/cascade`, `POST /api/window-arranger/focus/:windowId`
-- **Режимы расстановки:** Сетка (grid, tile mode), каскад (cascade, offset 30px), группировка по профилям
-- **WorkingArea:** Учёт панели задач (taskbar-aware)
+### 4.7. Управление окнами (Window Arranger) ⚠️ ЧАСТИЧНО
+- `GET /api/window-arranger/windows`, `/grid`, `/cascade`, `/focus/:windowId`. ✅ `src/api/window-arranger.js`
+- PowerShell-зависимость (только Windows). ❌ Cross-platform замена (ToDo.md §4).
+- Группировка по профилям в GUI. ❌ (ToDo.md §3)
 
-### 4.8. Очистка дискового пространства ✅ РЕАЛИЗОВАНО
-- **API:** `POST /api/browser/:id/clean`
-- **Mutex:** Очистка кэша заблокирована при статусе starting/running. При активном профиле → 409 Conflict
-- **Очищаемые директории:** `Cache`, `Code Cache`, `GPUCache`
+### 4.8. Очистка диска ✅ РЕАЛИЗОВАНО
+- `POST /api/browser/:id/clean`. Mutex при starting/running → 409 Conflict. Очистка `Cache`, `Code Cache`, `GPUCache`. ✅ `src/api/browser.js:463-487`
 
-### 4.9. Кроссплатформенный контроль процессов (Anti-Zombie) ✅ РЕАЛИЗОВАНО
-- **Сохранение PID** при старте CloakBrowser
-- **Graceful shutdown:** SIGTERM → ожидание 8 секунд → SIGKILL (через tree-kill)
-- **Health check:** Периодическая проверка живых процессов (каждые 5 секунд). Автоматическая очистка при неожиданной смерти процесса
-- **Shutdown all:** `POST /api/browser/shutdown` — массовая остановка всех запущенных профилей
+### 4.9. Anti-Zombie контроль процессов ✅ РЕАЛИЗОВАНО
+- PID сохраняется в БД при старте. Health-check каждые 5 сек (`process.kill(pid, 0)`). ✅ `src/api/browser.js:71-78,98-115`
+- Graceful shutdown: SIGTERM → ожидание 8 сек → SIGKILL (tree-kill). ✅ `src/api/browser.js:497-531`
+- `POST /api/browser/shutdown` — массовая остановка. ✅ `src/api/browser.js:533-564`
 
-### 4.10. Пакетный импорт/экспорт (Migration Wizard) ❌ НЕ РЕАЛИЗОВАНО
-> Детальное описание перенесено в [ToDo.md](./ToDo.md) — раздел «Модуль миграции данных (Migration Wizard) из AdsPower и Dolphin{anty}»
+### 4.10. Hot Backup + Rolling Window ❌ НЕ РЕАЛИЗОВАНО (Roadmap Ф3)
+> **Расхождение с TS_ADDON §3.2**, который утверждал «реализована». Аудит: `grep -r backup src/` пуст. Нет ни `db.backup()`, ни папки `backups/`.
 
-### 4.11. Облачная синхронизация (Cloud Sync) ❌ НЕ РЕАЛИЗОВАНО
-> Детальное описание перенесено в [ToDo.md](./ToDo.md) — раздел «Модуль облачной синхронизации профилей (Cloud Sync)»
+**Спецификация к реализации:**
+- `src/backup/index.js`: метод `db.backup()` библиотеки better-sqlite3 (копирование на лету, исключает повреждение WAL).
+- Триггер: холодный старт приложения, сразу после `initDatabase()` в `src/index.js:15`.
+- Бэкапится **только** `app.db`. Папки кэша браузеров полностью игнорируются.
+- Ротация Rolling Window: дампы в `backups/app_YYYYMMDD_HHmmss.db` старше 7 дней (168 ч) удаляются по `mtime`.
+- Имя файла: `backups/app_{ISO-date}.db`. Папка `backups/` создаётся в директории приложения (рядом с `app.db`).
+
+### 4.11. Шифрование AES-256-GCM секретов ❌ НЕ РЕАЛИЗОВАНО (Roadmap Ф2)
+> **Расхождение с TS_ADDON §2**, который требовал AES-256-GCM для приватников. Аудит: `crypto` используется только для генерации api-token (`src/index.js:11`). Шифрования секретов нет, пароли прокси хранятся открыто (`src/db/queries.js:69`).
+
+**Спецификация к реализации:**
+
+**Мастер-ключ — гибрид (решение #6):**
+1. **Дефолт: OS Keyring.** Случайный 256-бит ключ генерируется 1 раз при первом старте, сохраняется в Windows Credential Manager (win32) / macOS Keychain (darwin) / libsecret/Secret Service (linux). Автозапуск без ввода пароля. ✅ Подходит для фермы.
+2. **Опция: Мастер-пароль.** В Settings пользователь задаёт пароль → PBKDF2 (210000 итераций, SHA-256, salt из system_config) → ключ в RAM на время сессии. Переносимо между ПК.
+3. **Recovery-key.** Показывается 1 раз при первом шифровании, хранится пользователем в надёжном месте для emergency (потеря keyring/пароля).
+
+**Шифруемые колонки:** `email_password`, `twitter_password`, `twitter_auth_token`, `discord_password`, `discord_token`, `wallet_password`.
+
+**Формат хранения:** `aes-256-gcm:<iv_hex>:<ciphertext_hex>:<tag_hex>` (GCM даёт аутентификацию + целостность).
+
+**Модуль:** `src/crypto/index.js` — функции `encrypt(plaintext)`, `decrypt(blob)`, `rotateKey(oldMaster, newMaster)`, `hasMasterKey()`. Интегрируется в `src/db/queries.js` (прозрачное шифрование при записи, расшифровка при чтении).
+
+> **🛑 Сиды — НИКОГДА в БД и RAM GUI.** Этот инвариант нельзя нарушать шифрованием приватников в БД (см. §3.2): сид-фраза существует только во временном файле stAuto0 и уничтожается.
+
+### 4.12. Endpoints для интеграции со stAuto0 ❌ НЕ РЕАЛИЗОВАНО (Roadmap Ф4)
+
+| Endpoint | Метод | Назначение |
+|----------|-------|-----------|
+| `/api/internal/profiles` | GET | **Выборка аккаунтов для Python.** Query `?range=001-010` разворачивается в `auto_001..auto_010`. Возвращает массив JSON со всеми Web3-метриками, почтами, соцсетями, прокси (готовая строка `host:port:user:pass`). Этот endpoint возвращает секреты в **cleartext** — он нужен Python для автоматизации. См. TS_INTEGRATION §2.3 для маппинга полей. |
+| `/api/browser/:id/type` | POST | Human-like typing через CDP (обёртка над `humanType()`). Тело `{text}`. |
+| `/api/browser/:id/zerion-login` | POST | Авто-логин Zerion (логика перенесена из `stAuto0/Core/browser.py::login_zerion`): открытие `chrome-extension://klghhnkeealcohjjanjjdaeeggmfmlpl/popup.html#/login`, fill `wallet_password`, Enter, ожидание скрытия поля. Тело `{password?}` (если нет — берётся из БД). |
+| `/api/tasks/:id/run` | POST | **Триггер внешнего планировщика.** Core spawn `python main.py --project={script_name} --range={params.range} --log-name={task.id}` (решение #8). Пишет строку в `task_executions` со статусом `running`, по exit code обновляет на `success`/`failed`. |
+| `/api/profiles/batch` | POST | Массовый импорт для Wallet Factory (1 транзакция вместо N запросов). Тело `{accounts: [...]}`. |
+| `/api/tasks` | CRUD | Управление задачами (UI Tasks Manager). |
+
+> **`/api/internal/profiles` минует часть шифрования:** Python-агенту нужен cleartext для работы. Этот endpoint защищён тем же Bearer-token, но логируется как `[INTERNAL]` для аудита.
+
+### 4.13. Авто-логин Zerion по CDP ❌ НЕ РЕАЛИЗОВАНО (Roadmap Ф2 + Ф4)
+> Логика сейчас в Python (`stAuto0/Core/browser.py:348 login_zerion`). Переносится в Node.js, чтобы Python получал уже залогиненный `ws_endpoint`.
+
+Zerion ID: `klghhnkeealcohjjanjjdaeeggmfmlpl`. Flow:
+1. Открыть `chrome-extension://{ZERION_ID}/popup.8e8f209b.html?windowType=dialog#/login` через CDP.
+2. `wait_for_selector("input[type='password']", 15000)`.
+3. `fill(wallet_password)`, `press("Enter")`.
+4. `wait_for_selector("input[type='password']", state="hidden", 10000)`.
+Реализуется как `/api/browser/:id/zerion-login` (§4.12) + используется в расширенном `/:id/start` (опция `auto_login_zerion: true`).
+
+### 4.14. Migration Wizard (AdsPower/Dolphin{anty}) ❌ ЗАМОРОЖЕНО
+Подробности в [ToDo.md](./ToDo.md) §5.
+
+### 4.15. Cloud Sync ❌ ЗАМОРОЖЕНО
+Подробности в [ToDo.md](./ToDo.md) §6.
 
 -------------------------------
-## 5. Стратегия логирования (Logging) ✅ РЕАЛИЗОВАНО
-Система ведет раздельные логи с использованием легковесного логгера (pino):
-
-1. **Системный лог (`logs/core.log`):** Фиксирует запуск API-сервера, ошибки SQLite, генерацию токенов, общие сбои бэкенда. В dev-режиме также вывод в pino-pretty (stdout)
-2. **Лог профиля (`logs/profile_[ID].log`):** Каждый профиль имеет изолированный файл, куда записываются этапы ротации прокси, результаты Proxy Checker, ошибки запуска CloakBrowser и логи сессий автоматизации ИИ
-
--------------------------------
-## 6. Стратегия тестирования (Testing) ✅ РЕАЛИЗОВАНО
-Фреймворк: **Vitest** (v3.x). Всего ~500 тестов.
-
-**Unit-тесты (21 файл):**
-- Парсеры (прокси, куки JSON/Netscape)
-- Генератор отпечатков (логические аномалии, edge cases)
-- Auth middleware (валидный/невалидный токен, формат заголовка)
-- Расширения (парсинг manifest, i18n, CRX, Chrome Web Store ID)
-- CDP Manager (getHttpTabs, attachToExistingTarget, activateAndFocusTarget)
-- Multi-Control (tabIndex, MouseSmoother, scroll, flush, focus)
-- Window Arranger (grid, cascade, focus)
-- Human-like Typing (задержки, опечатки)
-
-**Integration-тесты (4 файла):**
-- SQLite WAL (параллельная запись)
-- API endpoints (real HTTP)
-- Запуск/остановка профиля (полный lifecycle)
-- Proxy checker с реальными/мокнутыми соединениями
-
-**Запуск:** `npm test` (vitest run), `npm run test:watch` (watch mode)
+## 5. Стратегия логирования ✅ РЕАЛИЗОВАНО
+- **Системный лог `logs/core.log`:** запуск API, ошибки SQLite, генерация токенов, общие сбои. Dev → pino-pretty. ✅ `src/logger/index.js`
+- **Лог профиля `logs/profile_[ID].log`:** изолированный файл (ротация прокси, Proxy Checker, ошибки запуска, сессии автоматизации). ✅ `src/api/browser.js:10` (`createProfileLogger`)
+- **Лог задачи** (новый ❌ Roadmap Ф4): `logs/task_{task_id}_{timestamp}.log` — stdout/stderr spawn'нутого Python. Путь пишется в `task_executions.log_file_path`. Tail'ится встроенным терминалом GUI (§9.5).
 
 -------------------------------
-## 7. Формат ответа API для интеграции с ИИ ✅ РЕАЛИЗОВАНО
-При успешной валидации прокси и запуске CloakBrowser Core-движок возвращает JSON:
+## 6. Стратегия тестирования ✅ РЕАЛИЗОВАНО
+Фреймворк **Vitest v3.x**, ~500 тестов. Запуск: `npm test`, `npm run test:watch`.
+
+**Unit (21 файл):** парсеры прокси/куки, fingerprint, auth middleware, расширения, CDP Manager, Multi-Control, Window Arranger, Human-like Typing.
+
+**Integration (4 файла):** SQLite WAL (параллельная запись), API endpoints, lifecycle профиля, Proxy Checker.
+
+**К новым тестам (Roadmap):** crypto (encrypt/decrypt/rotate), backup (rolling cleanup), `/api/internal/profiles` range-parsing, `tasks` CRUD, `zerion-login` с моком CDP.
+
+-------------------------------
+## 7. Формат ответа API для ИИ/Python ❌ ИСПРАВИТЬ (Roadmap Ф4)
+
+**Текущий код** возвращает **нерабочую заглушку**:
+```js
+ws_endpoint: `ws://127.0.0.1:3000/devtools/browser/${req.params.id}` // src/api/browser.js:410
+```
+Этот URL не существует — DevTools не挂在ится на порт Core.
+
+**Канон v1.1.0 (решение #12):** использовать реальный CDP-порт, который уже ловится из stderr в `cdpPorts` Map (`src/api/browser.js:344-348`). Ответ должен содержать discovery-URL, из которого Python достаёт browserId через `GET /json/version`, либо прямо готовый `ws_endpoint`:
 
 ```json
 {
   "status": "success",
-  "profile_id": "8f3b201a-cb41-4c12-8671-50e50f3b4d11",
+  "profile_id": "8f3b201a-...",
   "pid": 14208,
-  "ws_endpoint": "ws://127.0.0.1:3000/devtools/browser/6b9a84ed-733d-4cbf-a9f4-8845fcda942b"
+  "cdp_port": 9331,
+  "ws_endpoint": "http://127.0.0.1:9331"
 }
 ```
+Python: `connect_over_cdp("http://127.0.0.1:9331")`. Таймаут ожидания CDP-порта — 15 сек (`waitForCdpPort` уже есть в `src/api/browser.js:167`).
 
-ИИ-агент считывает `ws_endpoint` и подключает свою библиотеку (Puppeteer/Playwright) для выполнения задач в браузере.
-
-### Коды ошибок API:
-| Код | Описание |
-|-----|----------|
-| 200 | Успешный запрос |
-| 201 | Ресурс создан |
-| 204 | Успешное удаление |
-| 400 | Неверный запрос (валидация) |
-| 401 | Не авторизован |
-| 404 | Ресурс не найден |
-| 409 | Конфликт (профиль запущен/остановлен, кэш активен) |
-| 412 | Прокси недоступен |
-| 500 | Внутренняя ошибка сервера |
-| 502 | Ошибка ротации прокси |
+**Коды ошибок API:** 200 / 201 / 204 / 400 / 401 / 404 / 409 (конфликт) / 412 (прокси недоступен) / 500 / 502 (ротация прокси). ✅ Соответствует коду.
 
 -------------------------------
 
-## РАЗДЕЛ: ГРАФИЧЕСКИЙ ИНТЕРФЕЙС ПОЛЬЗОВАТЕЛЯ (GUI)
+## РАЗДЕЛ: ГРАФИЧЕСКИЙ ИНТЕРФЕЙС (GUI)
 
-## 1. Технологический стек и архитектура интерфейса ✅ РЕАЛИЗОВАНО
-- **Платформа:** Electron.js
-- **Фронтенд-фреймворк:** Vue 3
-- **Сборка:** Vite + electron-builder (NSIS для Windows, DMG для macOS, AppImage для Linux)
-- **Библиотека компонентов:** На основе Tailwind CSS
-- **Интеграция с Core:** HTTP-запросы (127.0.0.1:3000+) + WebSocket для мгновенного обновления статусов
+## 8. Технологический стек GUI ✅ РЕАЛИЗОВАНО
+- Electron + Vue 3 + Vite + electron-builder (NSIS/DMG/AppImage). ✅ `gui/package.json`
+- Tailwind CSS + Ant Design Vue (`ant-design-vue ^4.2.6`).
+- HTTP + WebSocket к Core (127.0.0.1:порт).
 
-## 2. Функциональные экраны и модули GUI
+## 9. Функциональные экраны GUI
 
-### 2.1. Экран «Менеджер профилей» (Profile Manager) ✅ РЕАЛИЗОВАНО
-Главный рабочий экран, разделенный на три зоны:
+### 9.1. Экран «Менеджер профилей» ⚠️ РАСШИРЯЕТСЯ
+**Реализовано ✅** (`gui/src/renderer/views/Profiles.vue`, `ProfileModal.vue`):
+- Toolbar: Создать, «В 1 клик», активация синхронизатора, массовые операции, поиск, фильтр по тегам.
+- Таблица профилей: №, имя+теги, прокси, отпечаток, статус, СТАРТ/СТОП, контекстное меню. WebSocket-обновление статусов.
+- Модалка редактирования с вкладками «Основные»/«Прокси»/«Дополнительно».
 
-1. **Верхняя панель действий (Toolbar):**
-   - Кнопка «Создать профиль» + выпадающее меню «В 1 клик»
-   - Кнопка активации «Синхронизатора»
-   - Панель групповых операций (Массовый старт/стоп, удаление, очистка кэша)
-   - Поле поиска + фильтр по тегам
+**К реализации ❌ (Roadmap Ф5):**
+- **Новые вкладки в ProfileModal:**
+  - «Аккаунты»: `email`, `email_password`, блоки X/Twitter и Discord (4+4 поля). Пароли маскируются, есть кнопка «показать/скрыть».
+  - «Кошельки»: `wallet_evm_address`, `wallet_sol_address` (read-only, генерируются Wallet Factory), `wallet_password` (с возможностью смены).
+  - Поле `timezone` (select из common tz).
+- Эти поля пишутся через `PUT /api/profiles/:id` и шифруются на бэке (§4.11).
 
-2. **Центральная таблица профилей:**
-   - Столбцы: чекбокс, №, имя + теги, прокси (флаг страны, IP, ротация), отпечаток (ОС, Chrome, ОЗУ, ядра), статус, СТАРТ/СТОП, контекстное меню
-   - WebSocket: автоматическое обновление статуса при удаленном запуске через API
+### 9.2. Window Arranger ⚠️ ЧАСТИЧНО (см. §4.7)
+### 9.3. Экран «Менеджер прокси» ✅ РЕАЛИЗОВАНО (`gui/src/renderer/views/Proxies.vue`)
+### 9.4. Cookie Manager ⚠️ ЧАСТИЧНО (`gui/src/renderer/views/CookieImportModal.vue`)
+- Drag-and-drop + пре-валидатор — ❌ (ToDo.md §2).
+### 9.5. Extensions Manager ✅ РЕАЛИЗОВАНО (`gui/src/renderer/views/Extensions.vue`)
 
-3. **Модальное окно редактирования:**
-   - Вкладки: «Основные» (имя, теги, ОС, генерация отпечатка), «Прокси» (выбор/ввод), «Дополнительно» (расширения, заметки)
+### 9.6. Мониторинг логов и статуса API ✅ РЕАЛИЗОВАНО
+- Панель разработчика: бегущая строка core.log. ✅ `gui/src/renderer/components/LogPanel.vue`
+- Статус-бар: статус сервера, порт, копирование AUTH_TOKEN. ✅ `gui/src/renderer/components/StatusBar.vue`
 
-### 2.2. Модуль «Window Arranger» ⚠️ РЕАЛИЗОВАНО ЧАСТИЧНО (нет группировки по профилям)
-- **Режим «Сетка» (Grid):** Автоматическая расстановка окон стык в стык
-- **Режим «Каскад» (Cascade):** Стопка окон со смещением 30px
-- **Группировка:** Расстановка с группировкой по профилям
+### 9.7. Экран «Tasks Manager» (Планировщик) ❌ НЕ РЕАЛИЗОВАНО (Roadmap Ф5)
+- Таблица задач: name, script_name, schedule_type, is_active, last_run.
+- История executions (task_executions): статус, exit_code, время, ссылка на лог.
+- Кнопка «Run now» → `POST /api/tasks/:id/run`.
+- CRUD задач (создание/редактирование с выбором script_name из списка доступных проектов stAuto0).
 
-### 2.3. Экран «Менеджер прокси» (Proxy Manager) ✅ РЕАЛИЗОВАНО
-- Таблица со статусами (живой/мертвый/проверка), GEO, протоколом, пингом, счетчиком профилей
-- Глобальные кнопки: добавить, проверить выбранные, удалить неиспользуемые
-- Smart Parsing: автоматическое распознавание популярных форматов прокси-строк
+### 9.8. Встроенный терминал (xterm.js + node-pty) ❌ НЕ РЕАЛИЗОВАНО (Roadmap Ф6)
+> **Расхождение с TS_ADDON §7.** Аудит: `xterm.js` и `node-pty` отсутствуют в `gui/package.json` dependencies.
 
-### 2.4. Модуль импорта/экспорта куки (Cookie Manager) ⚠️ РЕАЛИЗОВАНО ЧАСТИЧНО (нет drag-and-drop и пре-валидатора)
-- Drag-and-drop загрузка файлов (.json/.txt)
-- Пре-валидатор: сводка по найденным куки
-- Экспорт в JSON
+**Спецификация:**
+- Компонент в `gui/src/renderer/components/Terminal.vue` (xterm.js renderer).
+- node-pty spawn на стороне Electron main, IPC-канал передаёт данные в renderer.
+- Источник: tail -f файла из `task_executions.log_file_path`. Вкладка в Layout рядом с LogPanel.
+- Поддержка цвета ANSI (pino-pretty выводит ANSI-цвета).
 
-### 2.5. Экран расширений (Extensions Manager) ✅ РЕАЛИЗОВАНО
-- Сетка карточек установленных расширений (имя, иконка, toggle)
-- Установка: ZIP/CRX, распакованная папка, Chrome Web Store
+### 9.9. Локализация (i18n) ✅ РЕАЛИЗОВАНО
+- i18next, English (default) / Русский / 简体中文. Ключи `t('...')`. Выбор сохраняется в SQLite. ✅ `gui/src/renderer/i18n/`
+- Коды ошибок бэкенда (`ERR_PROXY_REFUSED`) локализуются на фронтенде.
 
-### 2.6. Мониторинг логов и статуса API ✅ РЕАЛИЗОВАНО
-- Панель разработчика: бегущая строка core.log в реальном времени
-- Статус-бар: статус сервера, порт, кнопка копирования AUTH_TOKEN
+## 10. Системная интеграция
+### 10.1. Темизация ✅ РЕАЛИЗОВАНО (`gui/src/renderer/composables/useTheme.js`)
+### 10.2. Автозапуск Core и конфликты портов ✅ РЕАЛИЗОВАНО (`gui/src/main/core-manager.js:42-49` — инкрементный поиск 3000–3100)
+### 10.3. WebSocket Auto-Reconnect ✅ РЕАЛИЗОВАНО (exponential backoff 1→2→4→8 сек)
+### 10.4. Системный трей ✅ РЕАЛИЗОВАНО (`gui/src/main/tray.js`)
+### 10.5. Автообновление ✅ РЕАЛИЗОВАНО (`gui/src/main/updater.js` — electron-updater + GitHub Releases)
 
-### 2.7. Модуль локализации (i18n) ✅ РЕАЛИЗОВАНО
-- **Библиотека:** i18next
-- **Языки MVP:** English (default), Русский, 简体中文
-- **Архитектура:** Строго через ключи `t('buttons.start')`. Сохранение выбора в SQLite
-- **Коды ошибок бэкенда:** Ошибки передаются как коды (например `ERR_PROXY_REFUSED`), фронтенд переводит их сам
+### 10.6. Settings — расширение ❌ (Roadmap Ф5)
+- Раздел «Безопасность»: переключатель мастер-пароль (вкл/выкл), поле ввода/смены пароля, отображение recovery-key (один раз), статус OS Keyring.
+- Раздел «Автоматизация»: путь к stAuto0 (`cwd` для spawn), выбор Python-интерпретатора, список доступных проектов (для Tasks Manager).
 
-## 3. Системная интеграция
+-------------------------------
+## 11. Roadmap реализации (MultiManager-сторона)
 
-### 3.1. Темизация (Theme Switcher) ✅ РЕАЛИЗОВАНО
-- Динамическая смена тем (Тёмная / Светлая / Системная) через CSS-переменные
-- Отслеживание `prefers-color-scheme` + Electron `nativeTheme`
-- Сохранение выбора в SQLite
+| Фаза | Задача | Файлы | Зависимости |
+|------|--------|-------|-------------|
+| **Ф1** | Расширение БД: `timezone`, новые колонки `profiles`, таблицы `tasks`/`task_executions`. Миграция `ALTER TABLE`. | `src/db/schema.js`, `src/db/queries.js` | — |
+| **Ф2** | Crypto-модуль AES-256-GCM + гибрид мастер-ключа (Keyring/PBKDF2/recovery) + авто-логин Zerion. | `src/crypto/index.js` (новый), `src/db/queries.js`, `src/api/browser.js` | Ф1 |
+| **Ф3** | Backup Hot Backup + Rolling 7д. | `src/backup/index.js` (новый), `src/index.js` | — |
+| **Ф4** | Endpoints: `/api/internal/profiles`, `/api/browser/:id/type`, `/api/browser/:id/zerion-login`, `/api/tasks/:id/run`, `/api/profiles/batch`. Исправление `ws_endpoint` (реальный CDP-порт). | `src/api/internal.js` (новый), `src/api/browser.js`, `src/api/tasks.js` (новый), `src/core/app.js` | Ф1, Ф2 |
+| **Ф5** | GUI: новые вкладки ProfileModal, экран Tasks Manager, Settings crypto/automation. | `gui/src/renderer/views/ProfileModal.vue`, `gui/src/renderer/views/Tasks.vue` (новый), `gui/src/renderer/views/Settings.vue` | Ф1, Ф2, Ф4 |
+| **Ф6** | Терминал xterm.js + node-pty. | `gui/package.json`, `gui/src/main/pty.js` (новый), `gui/src/renderer/components/Terminal.vue` (новый) | Ф4 |
 
-### 3.2. Автозапуск Core и обработка конфликтов портов ✅ РЕАЛИЗОВАНО
-- Инкрементный поиск свободного порта (3000–3100)
-- Передача порта бэкенду как `--port=N`
-- Автоматическое перенаправление HTTP и WS запросов на динамический порт
+> **Параллельный трек (TS_INTEGRATION.md):** миграция stAuto0 идёт фазами ФА–ФД и стыкуется с MultiManager Ф1–Ф4 (API-контракт).
 
-### 3.3. WebSocket Auto-Reconnect ✅ РЕАЛИЗОВАНО
-- Экспоненциальный backoff (1, 2, 4, 8 секунд)
-- Автоматическое восстановление состояния таблицы профилей после реконнекта
+-------------------------------
+## 12. Сводная таблица статусов (аудит 2026-07-07)
 
-### 3.4. Системный трей (System Tray) ✅ РЕАЛИЗОВАНО
-- Иконка в трее с меню (Открыть панель, Статус API, Выход)
-- Закрытие окна → `window.hide()`. Полное завершение только через трей
-
-### 3.5. Автоматические обновления (Auto-Update) ✅ РЕАЛИЗОВАНО
-- `electron-updater` + GitHub Releases (latest.yml)
-- Фоновое скачивание, уведомление о готовности установки
+| # | Фича | В ТЗ | В коде | Приоритет |
+|---|------|------|--------|-----------|
+| 1 | БД: 16 колонок profiles | ✅ | ✅ `schema.js` | — |
+| 2 | БД: новые колонки v1.1.0 | ✅ | ❌ | Ф1 |
+| 3 | БД: таблицы tasks/task_executions | ✅ | ❌ | Ф1 |
+| 4 | Timezone в профиле | ✅ | ❌ | Ф1 |
+| 5 | Шифрование AES-256-GCM | ✅ | ❌ (только token-gen) | Ф2 |
+| 6 | Hot Backup + Rolling | ✅ | ❌ | Ф3 |
+| 7 | `/api/internal/profiles?range=` | ✅ | ❌ | Ф4 |
+| 8 | Human-like Typing endpoint | ✅ | ⚠️ (функция есть) | Ф4 |
+| 9 | Авто-логин Zerion по CDP | ✅ | ❌ (в Python) | Ф2/Ф4 |
+| 10 | `POST /api/tasks/:id/run` | ✅ | ❌ | Ф4 |
+| 11 | `POST /api/profiles/batch` | ✅ | ❌ | Ф4 |
+| 12 | Исправление `ws_endpoint` | ✅ | ❌ (заглушка) | Ф4 |
+| 13 | ProfileModal вкладки (акки/кошельки) | ✅ | ❌ | Ф5 |
+| 14 | Экран Tasks Manager | ✅ | ❌ | Ф5 |
+| 15 | Встроенный терминал | ✅ | ❌ (нет deps) | Ф6 |
+| 16 | Settings: crypto + automation | ✅ | ⚠️ (базовый Settings) | Ф5 |
+| 17 | Cookie drag-and-drop + валидатор | ✅ | ⚠️ | ToDo §2 |
+| 18 | Window Arranger cross-platform | ✅ | ⚠️ (Windows-only) | ToDo §4 |
+| 19 | Migration Wizard (AdsPower) | ❌ заморожено | ❌ | ToDo §5 |
+| 20 | Cloud Sync | ❌ заморожено | ❌ | ToDo §6 |
+| 21 | Multi-Control v0.13.0 | ✅ | ✅ | — |
+| 22 | Fingerprint Generator | ✅ | ✅ | — |
+| 23 | Proxy Manager + ротация | ✅ | ✅ | — |
+| 24 | Extensions Manager | ✅ | ✅ | — |
+| 25 | Anti-Zombie процесс-контроль | ✅ | ✅ | — |
+| 26 | Очистка кэша | ✅ | ✅ | — |
+| 27 | i18n / Темизация / Tray / Auto-update | ✅ | ✅ | — |
+| 28 | Порт через env `PORT` (не `--port`) | ⚠️ док | ✅ факт | Ф4 док. |
 
 -------------------------------
