@@ -18,4 +18,5 @@ gui/src/proxy/
 gui/src/typing/
 tmp/
 build/
+.opencode/
 .mimocode/

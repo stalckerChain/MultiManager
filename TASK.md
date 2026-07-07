@@ -1,6 +1,6 @@
-# ✅ TASK: Расширение БД + Crypto-модуль + GUI (ProfileModal) — ВЫПОЛНЕНО
+# ✅ TASK: Расширение БД + GUI (ProfileModal) — ВЫПОЛНЕНО
 
-> **Статус:** ✅ Реализовано (без crypto, вынесено в ToDo.md §7.2)
+> **Статус:** ✅ Реализовано
 > **Фазы:** MultiManager Ф1 + Ф5 (ProfileModal)
 > **Дата:** 2026-07-07
 
@@ -44,45 +44,20 @@ MultiManager v1.0.0 имеет 16 колонок в таблице `profiles` и
 
 **Проверка:** `npm test` — существующие тесты не должны сломаться (новые колонки имеют дефолты).
 
-### 2. Crypto-модуль AES-256-GCM (`src/crypto/index.js`) — НОВЫЙ ФАЙЛ
+### 2. Queries: новые поля в CRUD (`src/db/queries.js`)
 
 **Что делаем:**
-- Создать модуль `src/crypto/index.js` с функциями:
-  - `initMasterKey()` — проверить наличие мастер-ключа в OS Keyring / system_config. Если нет — сгенерировать случайный 256-бит ключ и сохранить.
-  - `getMasterKey()` → Buffer (ключ в RAM).
-  - `encrypt(plaintext) → string` — формат `aes-256-gcm:<iv_hex>:<ciphertext_hex>:<tag_hex>`.
-  - `decrypt(blob) → string` — парсит формат, расшифровывает через AES-256-GCM.
-  - `hasEncryption() → boolean` — проверяет, есть ли мастер-ключ.
-  - `isEncrypted(value) → boolean` — проверяет префикс `aes-256-gcm:`.
-- **OS Keyring (дефолт):**
-  - Windows: `reg.exe ADD HKCU\Software\CloakManager /v MasterKey /t REG_SZ /d {hex_key}`
-  - macOS: `security add-generic-password -a CloakManager -s MasterKey -w {hex_key}`
-  - Linux: `secret-tool store --label=MultiManager application CloakManager masterkey {hex_key}`
-  - Фоллбэк при ошибке Keyring: сохранить в `system_config` (менее безопасно, но работает).
-- **Recovery-key:** при первой инициализации вывести в logger.info() (одноразово). Пользователь записывает вручную.
-
-**Зависимости:** только встроенный `crypto` модуль Node.js (добавлять npm-пакеты НЕ нужно).
-
-**Файлы:** `src/crypto/index.js` (новый)
-
-**Проверка:** написать unit-тест `tests/unit/crypto.test.js` (encrypt → decrypt roundtrip, isEncrypted, формат).
-
-### 3. Queries: прозрачное шифрование (`src/db/queries.js`)
-
-**Что делаем:**
-- Список шифруемых колонок: `['email_password', 'twitter_password', 'twitter_auth_token', 'discord_password', 'discord_token', 'wallet_password']`.
-- `createProfileQueries(db)`:
-  - Обновить `create(data)`: для шифруемых полей — вызвать `encrypt(value)` перед INSERT.
-  - Обновить `getById()` / `getAll()`: для шифруемых полей — вызвать `decrypt(value)` после SELECT.
-  - Добавить методы для новых полей (timezone, email, wallet_evm_address и т.д.) в UPDATE-запросы.
-- `PUT /api/profiles/:id`: при PATCH/PUT — шифровать шифруемые поля перед UPDATE.
-- Если `crypto.hasEncryption()` === false (мастер-ключ не инициализирован) — писать в cleartext с logger.warn() (обратная совместимость при первом старте).
+- Добавить новые поля (timezone, email, twitter_*, discord_*, wallet_*) во все CRUD-запросы:
+  - `create(data)`: включить новые поля в INSERT.
+  - `getById()` / `getAll()`: включить новые поля в SELECT (plaintext).
+  - `update(id, data)`: включить новые поля в UPDATE.
+- `PUT /api/profiles/:id`: передавать новые поля в update() без шифрования.
 
 **Файлы:** `src/db/queries.js`
 
-**Проверка:** `npm test` — существующие тесты не должны сломаться (новые поля читаются как null/пустые, шифрование только при записи новых данных).
+**Проверка:** `npm test` — существующие тесты не должны сломаться (новые поля читаются как null/пустые).
 
-### 4. API: новые поля в Profile endpoints (`src/api/profiles.js`)
+### 3. API: новые поля в Profile endpoints (`src/api/profiles.js`)
 
 **Что делаем:**
 - `POST /api/profiles` — принять новые поля из `req.body` (email, twitter_*, discord_*, wallet_*).
@@ -91,7 +66,7 @@ MultiManager v1.0.0 имеет 16 колонок в таблице `profiles` и
 
 **Файлы:** `src/api/profiles.js`
 
-### 5. GUI: ProfileModal — новые вкладки (`gui/src/renderer/views/ProfileModal.vue`)
+### 4. GUI: ProfileModal — новые вкладки (`gui/src/renderer/views/ProfileModal.vue`)
 
 **Что делаем:**
 - Добавить вкладку **«Аккаунты»** (tab key="accounts"):
@@ -112,7 +87,7 @@ MultiManager v1.0.0 имеет 16 колонок в таблице `profiles` и
 
 **Файлы:** `gui/src/renderer/views/ProfileModal.vue`
 
-### 6. GUI: i18n ключи (`gui/src/renderer/i18n/ru.json`, `en.json`, `zh.json`)
+### 5. GUI: i18n ключи (`gui/src/renderer/i18n/ru.json`, `en.json`, `zh.json`)
 
 **Что делаем:**
 - Добавить ключи для новых полей:
@@ -132,32 +107,30 @@ MultiManager v1.0.0 имеет 16 колонок в таблице `profiles` и
 | Файл | Действие |
 |------|----------|
 | `src/db/schema.js` | Изменить (новые колонки + таблицы + миграция) |
-| `src/crypto/index.js` | Создать (AES-256-GCM модуль) |
-| `src/db/queries.js` | Изменить (прозрачное шифрование + новые поля) |
-| `src/db/index.js` | Изменить (import crypto для init) |
-| `src/index.js` | Изменить (initMasterKey при старте) |
+| `src/db/queries.js` | Изменить (новые поля в CRUD) |
+| `src/db/index.js` | Изменить (import схемы) |
+| `src/index.js` | Изменить (init DB) |
 | `src/api/profiles.js` | Изменить (новые поля в POST/PUT) |
 | `gui/src/renderer/views/ProfileModal.vue` | Изменить (вкладки Аккаунты + Кошельки + timezone) |
 | `gui/src/renderer/i18n/ru.json` | Изменить (новые ключи) |
 | `gui/src/renderer/i18n/en.json` | Изменить (новые ключи) |
 | `gui/src/renderer/i18n/zh.json` | Изменить (новые ключи) |
-| `tests/unit/crypto.test.js` | Создать (тесты шифрования) |
 
 ---
 
 ## Порядок реализации
 
 1. **Schema** → запуск тестов (убедиться что ничего не сломалось)
-2. **Crypto** → unit-тесты
-3. **Queries** → шифрование при чтении/записи
-4. **API** → POST/PUT/GET новых полей
-5. **GUI ProfileModal** → вкладки + i18n
-6. **Коммит + ручное тестирование в dev-режиме**
+2. **Queries** → новые поля в CRUD
+3. **API** → POST/PUT/GET новых полей
+4. **GUI ProfileModal** → вкладки + i18n
+5. **Коммит + ручное тестирование в dev-режиме**
 
 ---
 
 ## Не делаем в рамках этой задачи
 
+- ❌ Crypto-модуль AES-256-GCM (вынесено в ToDo.md §7.2 — Ф2)
 - ❌ `/api/internal/profiles` endpoint (Ф4)
 - ❌ `/api/browser/:id/type` и `/api/browser/:id/zerion-login` (Ф4)
 - ❌ `POST /api/tasks/:id/run` (Ф4)

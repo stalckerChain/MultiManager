@@ -138,7 +138,41 @@
 | 7.19 | MCP: переключение server.py на MultiManager API + Recorder-режим + мультимодальный анализ | Большая | stAuto0 ФД | ❌ |
 
 **Порядок реализации (минимальный набор для стыковки):**
-MultiManager Ф1 (БД) → Ф4 (endpoints + ws_endpoint) → параллельно stAuto0 ФА+ФБ (авто-детект + browser refactoring) → оставшиеся фазы.
+MultiManager Ф1 (БД) → Ф2 (Crypto) → Ф4 (endpoints + ws_endpoint) → параллельно stAuto0 ФА+ФБ (авто-детект + browser refactoring) → оставшиеся фазы.
+
+---
+
+### 7.2. Crypto-модуль AES-256-GCM — спецификация
+
+> Вынесено из TASK.md при чистке. Планируется к реализации в MultiManager Ф2.
+
+**Модуль:** `src/crypto/index.js` (новый файл)
+
+**Зависимости:** только встроенный `crypto` модуль Node.js (npm-пакеты не нужны).
+
+**Функции:**
+- `initMasterKey()` — проверить наличие мастер-ключа в OS Keyring / system_config. Если нет — сгенерировать случайный 256-бит ключ и сохранить.
+- `getMasterKey()` → Buffer (ключ в RAM).
+- `encrypt(plaintext) → string` — формат `aes-256-gcm:<iv_hex>:<ciphertext_hex>:<tag_hex>`.
+- `decrypt(blob) → string` — парсит формат, расшифровывает через AES-256-GCM.
+- `hasEncryption() → boolean` — проверяет, есть ли мастер-ключ.
+- `isEncrypted(value) → boolean` — проверяет префикс `aes-256-gcm:`.
+
+**OS Keyring (дефолт):**
+- Windows: `reg.exe ADD HKCU\Software\CloakManager /v MasterKey /t REG_SZ /d {hex_key}`
+- macOS: `security add-generic-password -a CloakManager -s MasterKey -w {hex_key}`
+- Linux: `secret-tool store --label=MultiManager application CloakManager masterkey {hex_key}`
+- Фоллбэк при ошибке Keyring: сохранить в `system_config` (менее безопасно, но работает).
+
+**Recovery-key:** при первой инициализации вывести в logger.info() (одноразово). Пользователь записывает вручную.
+
+**Интеграция с queries (`src/db/queries.js`):**
+- Список шифруемых колонок: `['email_password', 'twitter_password', 'twitter_auth_token', 'discord_password', 'discord_token', 'wallet_password']`
+- `create(data)`: для шифруемых полей — вызвать `encrypt(value)` перед INSERT
+- `getById()` / `getAll()`: для шифруемых полей — вызвать `decrypt(value)` после SELECT
+- Если `hasEncryption() === false` — писать в cleartext с logger.warn() (обратная совместимость)
+
+**Тесты:** `tests/unit/crypto.test.js` — encrypt → decrypt roundtrip, isEncrypted, формат строки.
 
 ---
 
