@@ -94,7 +94,7 @@ describe('Authentication', () => {
 describe('Profiles', () => {
   let createdProfileId;
 
-  it('POST /api/profiles creates profile', async () => {
+  it('POST /api/profiles creates profile with legacy fields', async () => {
     const res = await request('POST', '/api/profiles', {
       name: 'Test Profile',
       platform: 'windows',
@@ -111,6 +111,44 @@ describe('Profiles', () => {
     createdProfileId = res.body.id;
   });
 
+  it('POST /api/profiles creates profile with new fields', async () => {
+    const res = await request('POST', '/api/profiles', {
+      name: 'Full Profile',
+      platform: 'macos',
+      timezone: 'Europe/Berlin',
+      email: 'user@example.com',
+      email_password: 'secret123',
+      twitter_username: 'tw_user',
+      twitter_password: 'tw_pass',
+      twitter_auth_token: 'tw_token',
+      twitter_email: 'tw@example.com',
+      discord_username: 'dc_user',
+      discord_password: 'dc_pass',
+      discord_token: 'dc_token',
+      discord_email: 'dc@example.com',
+      wallet_evm_address: '0x1234567890abcdef1234567890abcdef12345678',
+      wallet_sol_address: 'AbCdEfGhIjKlMnOpQrStUvWxYz1234567890abcd',
+      wallet_password: 'wallet_pass',
+    });
+    expect(res.status).toBe(201);
+    expect(res.body.timezone).toBe('Europe/Berlin');
+    expect(res.body.email).toBe('user@example.com');
+    expect(res.body.email_password).toBe('secret123');
+    expect(res.body.twitter_username).toBe('tw_user');
+    expect(res.body.twitter_password).toBe('tw_pass');
+    expect(res.body.twitter_auth_token).toBe('tw_token');
+    expect(res.body.twitter_email).toBe('tw@example.com');
+    expect(res.body.discord_username).toBe('dc_user');
+    expect(res.body.discord_password).toBe('dc_pass');
+    expect(res.body.discord_token).toBe('dc_token');
+    expect(res.body.discord_email).toBe('dc@example.com');
+    expect(res.body.wallet_evm_address).toBe('0x1234567890abcdef1234567890abcdef12345678');
+    expect(res.body.wallet_sol_address).toBe('AbCdEfGhIjKlMnOpQrStUvWxYz1234567890abcd');
+    expect(res.body.wallet_password).toBe('wallet_pass');
+
+    await request('DELETE', `/api/profiles/${res.body.id}`);
+  });
+
   it('POST /api/profiles returns 400 without platform', async () => {
     const res = await request('POST', '/api/profiles', { name: 'Bad' });
     expect(res.status).toBe(400);
@@ -123,11 +161,16 @@ describe('Profiles', () => {
     expect(res.body.length).toBeGreaterThanOrEqual(1);
   });
 
-  it('GET /api/profiles/:id returns profile', async () => {
+  it('GET /api/profiles/:id returns profile with new fields', async () => {
     const res = await request('GET', `/api/profiles/${createdProfileId}`);
     expect(res.status).toBe(200);
     expect(res.body.id).toBe(createdProfileId);
     expect(res.body.name).toBe('Test Profile');
+    expect(res.body).toHaveProperty('timezone');
+    expect(res.body).toHaveProperty('email');
+    expect(res.body).toHaveProperty('twitter_username');
+    expect(res.body).toHaveProperty('discord_username');
+    expect(res.body).toHaveProperty('wallet_evm_address');
   });
 
   it('GET /api/profiles/:id returns 404 for unknown', async () => {
@@ -142,6 +185,20 @@ describe('Profiles', () => {
     });
     expect(res.status).toBe(200);
     expect(res.body.name).toBe('Updated Profile');
+  });
+
+  it('PUT /api/profiles/:id updates new fields', async () => {
+    const res = await request('PUT', `/api/profiles/${createdProfileId}`, {
+      timezone: 'America/New_York',
+      email: 'new@example.com',
+      twitter_username: 'new_tw',
+      wallet_evm_address: '0xabcdef1234567890abcdef1234567890abcdef12',
+    });
+    expect(res.status).toBe(200);
+    expect(res.body.timezone).toBe('America/New_York');
+    expect(res.body.email).toBe('new@example.com');
+    expect(res.body.twitter_username).toBe('new_tw');
+    expect(res.body.wallet_evm_address).toBe('0xabcdef1234567890abcdef1234567890abcdef12');
   });
 
   it('POST /api/profiles/:id/regenerate changes fingerprint', async () => {

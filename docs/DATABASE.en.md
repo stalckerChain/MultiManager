@@ -25,6 +25,20 @@ Stores anti-detect browser profiles.
 | `notes` | TEXT | Notes |
 | `status` | TEXT | Status (stopped/starting/running) |
 | `pid` | INTEGER | Browser process PID |
+| `timezone` | TEXT | Timezone (default 'Asia/Bishkek') |
+| `email` | TEXT | Email |
+| `email_password` | TEXT | Email password |
+| `twitter_username` | TEXT | X/Twitter username |
+| `twitter_password` | TEXT | X/Twitter password |
+| `twitter_auth_token` | TEXT | X/Twitter auth token |
+| `twitter_email` | TEXT | X/Twitter email |
+| `discord_username` | TEXT | Discord username |
+| `discord_password` | TEXT | Discord password |
+| `discord_token` | TEXT | Discord token |
+| `discord_email` | TEXT | Discord email |
+| `wallet_evm_address` | TEXT | EVM wallet address |
+| `wallet_sol_address` | TEXT | Solana wallet address |
+| `wallet_password` | TEXT | Wallet password (default 'asdfj*KK') |
 | `created_at` | DATETIME | Creation date |
 | `updated_at` | DATETIME | Update date |
 
@@ -34,6 +48,56 @@ Stores anti-detect browser profiles.
 
 **Triggers:**
 - `update_profiles_timestamp` — Auto-update `updated_at`
+
+**Migration (v1.0.0 → v1.1.0):**
+On DB initialization, `migrateTables()` checks for new columns via `PRAGMA table_info` and adds missing ones via `ALTER TABLE ADD COLUMN`. Migrated columns: `timezone`, `email`, `email_password`, `twitter_username`, `twitter_password`, `twitter_auth_token`, `twitter_email`, `discord_username`, `discord_password`, `discord_token`, `discord_email`, `wallet_evm_address`, `wallet_sol_address`, `wallet_password`.
+
+---
+
+### tasks
+
+Stores scheduler tasks.
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `id` | TEXT (UUID) | Unique identifier |
+| `name` | TEXT | Task name |
+| `script_name` | TEXT | Script to run |
+| `schedule_type` | TEXT | Schedule type (cron/interval/manual) |
+| `cron_expression` | TEXT | Cron expression (for schedule_type=cron) |
+| `params` | TEXT | JSON task parameters |
+| `is_active` | INTEGER | Active flag (0/1) |
+| `created_at` | DATETIME | Creation date |
+| `updated_at` | DATETIME | Update date |
+
+**Indexes:**
+- `idx_tasks_is_active` — Active task search
+- `idx_tasks_schedule_type` — Filter by schedule type
+
+**Triggers:**
+- `update_tasks_timestamp` — Auto-update `updated_at`
+
+---
+
+### task_executions
+
+Stores task execution history.
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `id` | INTEGER | Auto-increment ID |
+| `task_id` | TEXT | Foreign key to tasks |
+| `profile_id` | TEXT | Foreign key to profiles |
+| `status` | TEXT | Status (pending/running/success/failed) |
+| `exit_code` | INTEGER | Exit code |
+| `last_run_at` | DATETIME | Last run time |
+| `log_file_path` | TEXT | Log file path |
+
+**Indexes:**
+- `idx_task_executions_task_id` — Search by task
+- `idx_task_executions_profile_id` — Search by profile
+
+**Cascade Delete:** When a task is deleted, all its executions are deleted.
 
 ---
 
@@ -128,7 +192,9 @@ Stores system configuration.
 ```
 profiles ──┬── proxies (proxy_id)
            ├── cookies (profile_id) [CASCADE DELETE]
-           └── profile_logs (profile_id) [CASCADE DELETE]
+           ├── profile_logs (profile_id) [CASCADE DELETE]
+           └── task_executions (profile_id)
+tasks ─────┴── task_executions (task_id) [CASCADE DELETE]
 ```
 
 ## WAL Mode

@@ -25,6 +25,20 @@ SQLite 数据库，使用 WAL 日志和 ACID 事务。
 | `notes` | TEXT | 备注 |
 | `status` | TEXT | 状态（stopped/starting/running） |
 | `pid` | INTEGER | 浏览器进程 PID |
+| `timezone` | TEXT | 时区（默认 'Asia/Bishkek'） |
+| `email` | TEXT | 邮箱 |
+| `email_password` | TEXT | 邮箱密码 |
+| `twitter_username` | TEXT | X/Twitter 用户名 |
+| `twitter_password` | TEXT | X/Twitter 密码 |
+| `twitter_auth_token` | TEXT | X/Twitter 认证令牌 |
+| `twitter_email` | TEXT | X/Twitter 邮箱 |
+| `discord_username` | TEXT | Discord 用户名 |
+| `discord_password` | TEXT | Discord 密码 |
+| `discord_token` | TEXT | Discord 令牌 |
+| `discord_email` | TEXT | Discord 邮箱 |
+| `wallet_evm_address` | TEXT | EVM 钱包地址 |
+| `wallet_sol_address` | TEXT | Solana 钱包地址 |
+| `wallet_password` | TEXT | 钱包密码（默认 'asdfj*KK'） |
 | `created_at` | DATETIME | 创建时间 |
 | `updated_at` | DATETIME | 更新时间 |
 
@@ -34,6 +48,56 @@ SQLite 数据库，使用 WAL 日志和 ACID 事务。
 
 **触发器：**
 - `update_profiles_timestamp` — 自动更新 `updated_at`
+
+**迁移 (v1.0.0 → v1.1.0)：**
+数据库初始化时，`migrateTables()` 通过 `PRAGMA table_info` 检查新列，并通过 `ALTER TABLE ADD COLUMN` 添加缺失列。迁移的列包括：`timezone`, `email`, `email_password`, `twitter_username`, `twitter_password`, `twitter_auth_token`, `twitter_email`, `discord_username`, `discord_password`, `discord_token`, `discord_email`, `wallet_evm_address`, `wallet_sol_address`, `wallet_password`。
+
+---
+
+### tasks
+
+存储调度任务。
+
+| 字段 | 类型 | 描述 |
+|------|------|------|
+| `id` | TEXT (UUID) | 唯一标识符 |
+| `name` | TEXT | 任务名称 |
+| `script_name` | TEXT | 要运行的脚本 |
+| `schedule_type` | TEXT | 调度类型（cron/interval/manual） |
+| `cron_expression` | TEXT | Cron 表达式（schedule_type=cron 时使用） |
+| `params` | TEXT | JSON 任务参数 |
+| `is_active` | INTEGER | 活动标志（0/1） |
+| `created_at` | DATETIME | 创建时间 |
+| `updated_at` | DATETIME | 更新时间 |
+
+**索引：**
+- `idx_tasks_is_active` — 活动任务搜索
+- `idx_tasks_schedule_type` — 按调度类型筛选
+
+**触发器：**
+- `update_tasks_timestamp` — 自动更新 `updated_at`
+
+---
+
+### task_executions
+
+存储任务执行历史。
+
+| 字段 | 类型 | 描述 |
+|------|------|------|
+| `id` | INTEGER | 自增 ID |
+| `task_id` | TEXT | 外键关联 tasks |
+| `profile_id` | TEXT | 外键关联 profiles |
+| `status` | TEXT | 状态（pending/running/success/failed） |
+| `exit_code` | INTEGER | 退出码 |
+| `last_run_at` | DATETIME | 最后运行时间 |
+| `log_file_path` | TEXT | 日志文件路径 |
+
+**索引：**
+- `idx_task_executions_task_id` — 按任务搜索
+- `idx_task_executions_profile_id` — 按配置文件搜索
+
+**级联删除：** 删除任务时，其所有执行记录一并删除。
 
 ---
 
@@ -128,7 +192,9 @@ SQLite 数据库，使用 WAL 日志和 ACID 事务。
 ```
 profiles ──┬── proxies (proxy_id)
            ├── cookies (profile_id) [CASCADE DELETE]
-           └── profile_logs (profile_id) [CASCADE DELETE]
+           ├── profile_logs (profile_id) [CASCADE DELETE]
+           └── task_executions (profile_id)
+tasks ─────┴── task_executions (task_id) [CASCADE DELETE]
 ```
 
 ## WAL 模式

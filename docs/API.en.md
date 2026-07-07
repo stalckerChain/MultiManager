@@ -41,7 +41,21 @@ Create a new profile. Fingerprint is auto-generated.
   "proxy_id": 1,
   "extensions": ["ext1", "ext2"],
   "tags": ["tag1"],
-  "notes": "Note"
+  "notes": "Note",
+  "timezone": "Asia/Bishkek",
+  "email": "user@example.com",
+  "email_password": "secret",
+  "twitter_username": "my_twitter",
+  "twitter_password": "tw_secret",
+  "twitter_auth_token": "auth_token_123",
+  "twitter_email": "tw@example.com",
+  "discord_username": "my_discord",
+  "discord_password": "dc_secret",
+  "discord_token": "dc_token_456",
+  "discord_email": "dc@example.com",
+  "wallet_evm_address": "0x1234567890abcdef1234567890abcdef12345678",
+  "wallet_sol_address": "AbCdEfGhIjKlMnOpQrStUvWxYz1234567890abcd",
+  "wallet_password": "my_wallet_pass"
 }
 ```
 
@@ -63,6 +77,20 @@ Create a new profile. Fingerprint is auto-generated.
   "extensions": "[\"ext1\",\"ext2\"]",
   "tags": "[\"tag1\"]",
   "notes": "Note",
+  "timezone": "Asia/Bishkek",
+  "email": "user@example.com",
+  "email_password": "secret",
+  "twitter_username": "my_twitter",
+  "twitter_password": "tw_secret",
+  "twitter_auth_token": "auth_token_123",
+  "twitter_email": "tw@example.com",
+  "discord_username": "my_discord",
+  "discord_password": "dc_secret",
+  "discord_token": "dc_token_456",
+  "discord_email": "dc@example.com",
+  "wallet_evm_address": "0x1234567890abcdef1234567890abcdef12345678",
+  "wallet_sol_address": "AbCdEfGhIjKlMnOpQrStUvWxYz1234567890abcd",
+  "wallet_password": "my_wallet_pass",
   "status": "stopped",
   "created_at": "2024-01-01T00:00:00.000Z",
   "updated_at": "2024-01-01T00:00:00.000Z"
@@ -99,7 +127,14 @@ Update profile.
   "proxy_id": 2,
   "extensions": ["new_ext"],
   "tags": ["new_tag"],
-  "notes": "New note"
+  "notes": "New note",
+  "timezone": "Europe/London",
+  "email": "new@example.com",
+  "email_password": "new_secret",
+  "twitter_username": "new_twitter",
+  "twitter_auth_token": "new_token",
+  "discord_username": "new_discord",
+  "wallet_evm_address": "0xabcdef1234567890abcdef1234567890abcdef12"
 }
 ```
 
