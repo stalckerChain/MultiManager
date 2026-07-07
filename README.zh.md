@@ -1,4 +1,4 @@
-# MultiManager
+# MultiManager v1.2.0
 
 工业级跨平台反检测浏览器，配备图形界面和本地 REST API / WebSocket，支持自主 AI 代理（AdsPower 替代方案），基于 CloakBrowser C++ 内核构建。
 
@@ -42,7 +42,10 @@ MultiManager/
 │   │   ├── multi-control.js  # 窗口同步（CDP）
 │   │   ├── window-arranger.js # 窗口定位（Grid/Cascade）
 │   │   ├── extensions.js     # Chrome 扩展管理
-│   │   └── logs.js           # 配置文件和系统日志访问
+│   │   ├── logs.js           # 配置文件和系统日志访问
+│   │   ├── internal.js       # Internal API（按范围获取配置文件）
+│   │   ├── settings.js       # 设置（加密模块，自动化）
+│   │   └── tasks.js          # 调度任务
 │   ├── db/                   # SQLite（WAL 模式初始化、表结构、CRUD）
 │   │   ├── index.js
 │   │   ├── schema.js         # 表、索引、触发器
@@ -58,6 +61,7 @@ MultiManager/
 │   │   └── index.js
 │   ├── multi-control/        # 窗口同步器（通过 CDP 广播鼠标/键盘）
 │   │   └── index.js
+│   ├── crypto/               # AES-256-GCM 加密（keytar/PBKDF2）
 │   ├── logger/               # 高性能 Pino 日志器（core.log + profile_[ID].log）
 │   │   └── index.js
 │   └── utils/
@@ -107,8 +111,8 @@ MultiManager/
 │           │   └── WalletsTab.vue
 │           ├── composables/  # Vue Composables
 │           └── api/          # Core 请求的 HTTP 客户端
-└── tests/                    # Vitest（480+ 测试）
-    ├── unit/                 # 20 个文件：auth、proxy、fingerprint、typing、multi-control 等
+└── tests/                    # Vitest（524 测试）
+    ├── unit/                 # 23 个文件：auth、proxy、fingerprint、typing、crypto、tasks 等
     └── integration/          # 4 个文件：SQLite WAL、API、生命周期、代理
 ```
 
@@ -256,7 +260,7 @@ requests.post(f"{BASE}/api/browser/{profile['id']}/stop", headers=HEADERS)
 
 ### 系统目录结构：
 
-- `app.db` — WAL 模式的 SQLite 数据库。配置文件（30 列）、代理、Cookie、任务（tasks/task_executions）。
+- `app.db` — WAL 模式的 SQLite 数据库。配置文件（30 列，AES-256-GCM）、代理、Cookie、任务（tasks/task_executions）、system_config。
 - `profiles_data/` — 隔离的 Chromium 会话文件夹（每个账户的 `BrowserData/`：Cookies、LocalStorage、Cache）。
 - `extensions/` — 已安装的 Chrome 扩展。
 - `logs/core.log` — 通用系统日志（Pino JSON）。
@@ -266,7 +270,7 @@ requests.post(f"{BASE}/api/browser/{profile['id']}/stop", headers=HEADERS)
 
 ## 测试
 
-项目包含 24 个测试文件（480+ 测试）基于 **Vitest**：
+项目包含 27 个测试文件（524 测试）基于 **Vitest**：
 
 | 测试 | 类型 | 描述 |
 |------|------|------|
@@ -291,6 +295,9 @@ requests.post(f"{BASE}/api/browser/{profile['id']}/stop", headers=HEADERS)
 | `wal-stress.test.js` | 集成 | WAL 模式压力测试 |
 | `api-real.test.js` | 集成 | 完整 REST API 周期 |
 | `profile-launch.test.js` | 集成 | CloakBrowser 启动和 PID 捕获 |
+| `crypto.test.js` | 单元 | AES-256-GCM 加密/解密，keytar，PBKDF2，恢复密钥 |
+| `internal-profiles.test.js` | 单元 | Internal API 配置文件范围端点 |
+| `tasks.test.js` | 单元 | 任务 CRUD 和执行 API |
 
 ```bash
 # 运行所有测试

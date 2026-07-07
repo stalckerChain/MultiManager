@@ -1,4 +1,4 @@
-# MultiManager
+# MultiManager v1.2.0
 
 Industrial cross-platform anti-detect browser with a graphical interface and local REST API / WebSocket for autonomous AI agents (AdsPower alternative), built on the CloakBrowser C++ core.
 
@@ -42,7 +42,10 @@ MultiManager/
 │   │   ├── multi-control.js  # Window synchronization (CDP)
 │   │   ├── window-arranger.js # Window positioning (Grid/Cascade)
 │   │   ├── extensions.js     # Chrome extensions management
-│   │   └── logs.js           # Profile and system log access
+│   │   ├── logs.js           # Profile and system log access
+│   │   ├── internal.js       # Internal API (profiles by range)
+│   │   ├── settings.js       # Settings (crypto module, automation)
+│   │   └── tasks.js          # Scheduler tasks
 │   ├── db/                   # SQLite (WAL-mode initialization, table schemas, CRUD)
 │   │   ├── index.js
 │   │   ├── schema.js         # Tables, indexes, triggers
@@ -58,6 +61,7 @@ MultiManager/
 │   │   └── index.js
 │   ├── multi-control/        # Window synchronizer (mouse/keyboard broadcast via CDP)
 │   │   └── index.js
+│   ├── crypto/               # AES-256-GCM encryption (keytar/PBKDF2)
 │   ├── logger/               # High-performance Pino logger (core.log + profile_[ID].log)
 │   │   └── index.js
 │   └── utils/
@@ -107,8 +111,8 @@ MultiManager/
 │           │   └── WalletsTab.vue
 │           ├── composables/  # Vue Composables
 │           └── api/          # HTTP client for Core requests
-└── tests/                    # Vitest (480+ tests)
-    ├── unit/                 # 20 files: auth, proxy, fingerprint, typing, multi-control, etc.
+└── tests/                    # Vitest (524 tests)
+    ├── unit/                 # 23 files: auth, proxy, fingerprint, typing, crypto, tasks, etc.
     └── integration/          # 4 files: SQLite WAL, API, lifecycle, proxy
 ```
 
@@ -256,7 +260,7 @@ All isolated user data is stored at:
 
 ### System Directory Structure:
 
-- `app.db` — SQLite database in WAL mode. Profiles (30 columns), proxies, cookies, tasks (tasks/task_executions).
+- `app.db` — SQLite database in WAL mode. Profiles (30 columns, AES-256-GCM), proxies, cookies, tasks (tasks/task_executions), system_config.
 - `profiles_data/` — Isolated Chromium session folders (`BrowserData/` for each account: Cookies, LocalStorage, Cache).
 - `extensions/` — Installed Chrome extensions.
 - `logs/core.log` — General system logs (Pino JSON).
@@ -266,7 +270,7 @@ All isolated user data is stored at:
 
 ## Testing
 
-The project includes 24 test files (480+ tests) based on **Vitest**:
+The project includes 27 test files (524 tests) based on **Vitest**:
 
 | Test | Type | Description |
 |------|------|-------------|
@@ -291,6 +295,9 @@ The project includes 24 test files (480+ tests) based on **Vitest**:
 | `wal-stress.test.js` | Integration | WAL-mode stress test |
 | `api-real.test.js` | Integration | Full REST API cycle |
 | `profile-launch.test.js` | Integration | CloakBrowser launch and PID capture |
+| `crypto.test.js` | Unit | AES-256-GCM encrypt/decrypt, keytar, PBKDF2, recovery key |
+| `internal-profiles.test.js` | Unit | Internal API profiles range endpoint |
+| `tasks.test.js` | Unit | Tasks CRUD and execution API |
 
 ```bash
 # Run all tests
