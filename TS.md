@@ -1,7 +1,7 @@
 -------------------------------
 ## SOFTWARE REQUIREMENTS SPECIFICATION (SRS) / ТЕХНИЧЕСКОЕ ЗАДАНИЕ
 ## AI-Driven Web Automation Platform на базе антидетект-браузера (MVP аналог AdsPower + ферма автоматизации)
-**Версия системы:** 1.2.1 | **Multi-Control:** 0.13.0 | **Дата ревизии:** 2026-07-08
+**Версия системы:** 1.2.1 | **Multi-Control:** 0.13.0 | **Дата ревизии:** 2026-07-08 | **Ф6:** 2026-07-08 ✅
 
 > **Принцип маркировки:** ✅ РЕАЛИЗОВАНО в коде | ⚠️ ЧАСТИЧНО | ❌ НЕ РЕАЛИЗОВАНО (в ТЗ, но в коде нет). Каждое утверждение о статусе подкреплено ссылкой на реальный файл аудита.
 > **Спутник-документ:** [TS_INTEGRATION.md](./TS_INTEGRATION.md) — миграция Python-фреймворка stAuto0 на интеграцию с MultiManager.
@@ -221,7 +221,7 @@ Zerion ID: `klghhnkeealcohjjanjjdaeeggmfmlpl`. Flow:
 ## 5. Стратегия логирования ✅ РЕАЛИЗОВАНО
 - **Системный лог `logs/core.log`:** запуск API, ошибки SQLite, генерация токенов, общие сбои. Dev → pino-pretty. ✅ `src/logger/index.js`
 - **Лог профиля `logs/profile_[ID].log`:** изолированный файл (ротация прокси, Proxy Checker, ошибки запуска, сессии автоматизации). ✅ `src/api/browser.js:10` (`createProfileLogger`)
-- **Лог задачи** (новый ⚠️ Roadmap Ф4): `logs/task_{task_id}_{timestamp}.log` — stdout/stderr spawn'нутого Python. Путь пишется в `task_executions.log_file_path`. Tail'ится встроенным терминалом GUI (§9.5). API готов, терминал ❌ (Ф6).
+- **Лог задачи** (новый ✅ Roadmap Ф4): `logs/task_{task_id}_{timestamp}.log` — stdout/stderr spawn'нутого Python. Путь пишется в `task_executions.log_file_path`. Tail'ится встроенным терминалом GUI (§9.5). API готов, терминал ✅ (Ф6).
 
 -------------------------------
 ## 6. Стратегия тестирования ✅ РЕАЛИЗОВАНО
@@ -294,14 +294,12 @@ Python: `connect_over_cdp("http://127.0.0.1:9331")`.
 - CRUD задач (создание/редактирование с выбором script_name). ✅ `gui/src/renderer/views/Tasks.vue`
 - Pinia store: `stores/tasks.js` c CRUD + run + getExecutions. ✅ `gui/src/renderer/stores/tasks.js`
 
-### 9.8. Встроенный терминал (xterm.js + node-pty) ❌ НЕ РЕАЛИЗОВАНО (Roadmap Ф6)
-> **Расхождение с TS_ADDON §7.** Аудит: `xterm.js` и `node-pty` отсутствуют в `gui/package.json` dependencies.
-
-**Спецификация:**
-- Компонент в `gui/src/renderer/components/Terminal.vue` (xterm.js renderer).
-- node-pty spawn на стороне Electron main, IPC-канал передаёт данные в renderer.
-- Источник: tail -f файла из `task_executions.log_file_path`. Вкладка в Layout рядом с LogPanel.
-- Поддержка цвета ANSI (pino-pretty выводит ANSI-цвета).
+### 9.8. Встроенный терминал (xterm.js + child_process) ✅ РЕАЛИЗОВАНО (Roadmap Ф6)
+> **Компонент:** `gui/src/renderer/components/Terminal.vue` (xterm.js renderer).
+> **Бэкенд:** `gui/src/main/pty.js` — IPC-модуль на child_process.spawn (powershell Get-Content -Wait на Windows, tail -f на Linux/macOS).
+> **Интеграция:** Расположен над LogPanel в Layout.vue. Поле ввода пути к файлу + кнопки Tail/Stop.
+> **Зависимости:** xterm ^5.3.0, xterm-addon-fit ^0.8.0 (без node-pty — используется нативный child_process).
+> **Тесты:** `tests/unit/pty.test.js` (4 теста: экспорт, ошибка несуществующего файла, успешный запуск, безопасный stop).
 
 ### 9.9. Локализация (i18n) ✅ РЕАЛИЗОВАНО
 - i18next, English (default) / Русский / 简体中文. Ключи `t('...')`. Выбор сохраняется в SQLite. ✅ `gui/src/renderer/i18n/`
@@ -328,12 +326,12 @@ Python: `connect_over_cdp("http://127.0.0.1:9331")`.
 | **Ф3** | **✅ Backup Hot Backup + Rolling 7д.** | `src/backup/index.js`, `src/index.js`, `tests/unit/backup.test.js` | — |
 | **Ф4** | **✅ Все endpoints:** `/api/browser/:id/type`, `/api/profiles/batch`, `ws_endpoint`, `/api/internal/profiles`, `/api/browser/:id/zerion-login`, `/api/tasks/:id/run`, `/api/tasks` CRUD. | `src/api/browser.js`, `src/api/profiles.js`, `src/api/internal.js`, `src/api/tasks.js` | Ф1, Ф2 |
 | **Ф5** | **✅ ProfileModal** вкладки (Аккаунты + Кошельки). **✅ Settings** crypto/automation. **✅ Экран Tasks Manager.** | `gui/src/renderer/views/ProfileModal.vue`, `gui/src/renderer/views/Tasks.vue`, `gui/src/renderer/views/Settings.vue` | Ф1, Ф2, Ф4 |
-| **Ф6** | Терминал xterm.js + node-pty. | `gui/package.json`, `gui/src/main/pty.js` (новый), `gui/src/renderer/components/Terminal.vue` (новый) | Ф4 |
+| **Ф6** | **✅ Терминал xterm.js + child_process.** | `gui/package.json`, `gui/src/main/pty.js`, `gui/src/renderer/components/Terminal.vue`, `tests/unit/pty.test.js` | Ф4 |
 
 > **Параллельный трек (TS_INTEGRATION.md):** миграция stAuto0 идёт фазами ФА–ФД и стыкуется с MultiManager Ф1–Ф4 (API-контракт).
 
 -------------------------------
-## 12. Сводная таблица статусов (аудит 2026-07-08, Ф3 ✅)
+## 12. Сводная таблица статусов (аудит 2026-07-08, Ф3 ✅, Ф6 ✅)
 
 | # | Фича | В ТЗ | В коде | Приоритет |
 |---|------|------|--------|-----------|
@@ -351,7 +349,7 @@ Python: `connect_over_cdp("http://127.0.0.1:9331")`.
 | 12 | Исправление `ws_endpoint` | ✅ | ✅ `src/api/browser.js:377-419` | Ф4 ✅ |
 | 13 | ProfileModal вкладки (акки/кошельки) | ✅ | ✅ `gui/src/renderer/components/AccountsTab.vue`, `WalletsTab.vue` | Ф5 ✅ |
 | 14 | Экран Tasks Manager | ✅ | ✅ `gui/src/renderer/views/Tasks.vue`, `gui/src/renderer/stores/tasks.js` | Ф5 ✅ |
-| 15 | Встроенный терминал | ✅ | ❌ (нет deps) | Ф6 |
+| 15 | Встроенный терминал | ✅ | ✅ `gui/src/main/pty.js`, `gui/src/renderer/components/Terminal.vue` | Ф6 ✅ |
 | 16 | Settings: crypto + automation | ✅ | ✅ `gui/src/renderer/views/Settings.vue`, `src/api/settings.js` | Ф5 ✅ |
 | 17 | Cookie drag-and-drop + валидатор | ✅ | ⚠️ | ToDo §2 |
 | 18 | Window Arranger cross-platform | ✅ | ⚠️ (Windows-only) | ToDo §4 |

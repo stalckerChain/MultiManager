@@ -12,4 +12,17 @@ contextBridge.exposeInMainWorld('electronAPI', {
   invoke: (channel, ...args) => ipcRenderer.invoke(channel, ...args),
   onBrowserInstallStart: (callback) => ipcRenderer.on('browser:install-start', () => callback()),
   onBrowserInstallComplete: (callback) => ipcRenderer.on('browser:install-complete', (event, data) => callback(data)),
+
+  ptyStart: (filePath) => ipcRenderer.invoke('pty:start', filePath),
+  ptyStop: () => ipcRenderer.invoke('pty:stop'),
+  onPtyData: (callback) => {
+    const handler = (event, data) => callback(data);
+    ipcRenderer.on('pty:data', handler);
+    return () => ipcRenderer.removeListener('pty:data', handler);
+  },
+  onPtyError: (callback) => {
+    const handler = (event, error) => callback(error);
+    ipcRenderer.on('pty:error', handler);
+    return () => ipcRenderer.removeListener('pty:error', handler);
+  },
 });

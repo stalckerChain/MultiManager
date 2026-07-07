@@ -7,6 +7,7 @@ const { createTray } = require('./tray');
 const { setupUpdater } = require('./updater');
 const { setupBrowserManager } = require('./browser-manager');
 const keyboardHooks = require('./keyboard-hooks');
+const pty = require('./pty');
 
 let appVersion = '0.0.0';
 try {
@@ -203,6 +204,7 @@ async function createWindow() {
 
   setupUpdater(mainWindow);
   setupBrowserManager(mainWindow);
+  pty.init(mainWindow);
 }
 
 app.whenReady().then(createWindow).catch(err => {

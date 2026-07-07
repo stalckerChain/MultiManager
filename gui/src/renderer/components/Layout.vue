@@ -46,6 +46,7 @@
       <slot />
     </main>
 
+    <Terminal />
     <LogPanel />
     <StatusBar />
   </div>
@@ -59,6 +60,7 @@ import { useAppStore } from '../stores/app.js';
 import { useWebSocket } from '../composables/useWebSocket.js';
 import StatusBar from './StatusBar.vue';
 import LogPanel from './LogPanel.vue';
+import Terminal from './Terminal.vue';
 
 const { t } = useTranslation();
 const router = useRouter();

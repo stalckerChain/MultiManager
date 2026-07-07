@@ -118,7 +118,7 @@
 | 7.10 | Исправление `ws_endpoint` — реальный CDP-порт вместо заглушки `ws://127.0.0.1:3000/...` | Малая | MultiManager Ф4 | ✅ |
 | 7.11 | GUI: новые вкладки ProfileModal (Аккаунты, Кошельки, Timezone) | Средняя | MultiManager Ф5 | ✅ |
 | 7.13 | GUI: Settings — разделы Безопасность (crypto) + Автоматизация (путь stAuto0, Python) | Малая | MultiManager Ф5 | ✅ |
-| 7.14 | GUI: Встроенный терминал xterm.js + node-pty (tail логов задач) | Большая | MultiManager Ф6 | ❌ |
+| 7.14 | GUI: Встроенный терминал xterm.js + child_process (tail логов задач) | Большая | MultiManager Ф6 | ✅ |
 | 7.15 | stAuto0 `main.py`: авто-детект Core (health-check → API / fallback legacy) | Средняя | stAuto0 ФА | ❌ |
 | 7.16 | stAuto0 `Core/browser.py`: рефакторинг launch() (_launch_via_multimanager + _launch_legacy), удаление прокси/fingerprint/zerion из основного пути | Большая | stAuto0 ФБ | ❌ |
 | 7.17 | stAuto0 Wallet Factory на SQLite (create_wallets, init_wallet4browser, fill_emails через API) | Средняя | stAuto0 ФВ | ❌ |
