@@ -10,6 +10,7 @@ const { injectCookies, getProfileDir } = require('../cookie/inject');
 const { createProfileLogger } = require('../logger');
 const { broadcastStatus } = require('../core/websocket');
 const { getExtensionsDir } = require('./extensions');
+const { humanType } = require('../typing');
 
 const router = express.Router();
 
@@ -374,6 +375,13 @@ router.post('/:id/start', async (req, res) => {
     loadExtensionsViaCDP(req.params.id, enabledExtPaths, logQueries, profileLogger);
   }
 
+  let cdpPort = null;
+  try {
+    cdpPort = await waitForCdpPort(req.params.id);
+  } catch (err) {
+    logQueries.add(req.params.id, 'warn', `CDP port not detected: ${err.message}`);
+  }
+
   child.on('error', (err) => {
     profileQueries.updateStatus(req.params.id, 'stopped');
     broadcastStatus(req.params.id, 'stopped');
@@ -407,7 +415,8 @@ router.post('/:id/start', async (req, res) => {
     status: 'success',
     profile_id: req.params.id,
     pid: child.pid,
-    ws_endpoint: `ws://127.0.0.1:3000/devtools/browser/${req.params.id}`,
+    cdp_port: cdpPort,
+    ws_endpoint: cdpPort ? `http://127.0.0.1:${cdpPort}` : null,
   });
 });
 
@@ -529,6 +538,96 @@ async function gracefulCloseBrowser(child, profileId, profileLogger, logQueries)
     });
   });
 }
+
+async function createCdpSession(port) {
+  const ws = new WebSocket(`ws://127.0.0.1:${port}/devtools/browser`);
+  await new Promise((resolve, reject) => {
+    ws.on('open', resolve);
+    ws.on('error', reject);
+    setTimeout(() => reject(new Error('WS connect timeout')), 5000);
+  });
+
+  let id = 1;
+  const { targetInfos } = await cdpCall(ws, id++, 'Target.getTargets');
+  let targetId = null;
+  if (targetInfos) {
+    const page = targetInfos.find(t => t.type === 'page');
+    if (page) targetId = page.targetId;
+  }
+  if (!targetId) {
+    const result = await cdpCall(ws, id++, 'Target.createTarget', { url: 'about:blank' });
+    targetId = result.targetId;
+  }
+
+  const { sessionId } = await cdpCall(ws, id++, 'Target.attachToTarget', { targetId, flatten: true });
+  let callId = 1000;
+
+  return {
+    send(method, params) {
+      const currentId = callId++;
+      return new Promise((resolve, reject) => {
+        const msg = { id: currentId, method, params, sessionId };
+        const timeout = setTimeout(() => reject(new Error(`CDP timeout: ${method}`)), 15000);
+        const handler = (data) => {
+          const resp = JSON.parse(data.toString());
+          if (resp.id === currentId) {
+            ws.removeListener('message', handler);
+            clearTimeout(timeout);
+            if (resp.error) reject(new Error(resp.error.message));
+            else resolve(resp.result);
+          }
+        };
+        ws.on('message', handler);
+        ws.send(JSON.stringify(msg));
+      });
+    },
+    close() { ws.close(); },
+  };
+}
+
+router.post('/:id/type', async (req, res) => {
+  const db = getDatabase();
+  const profileQueries = createProfileQueries(db);
+  const logQueries = createLogQueries(db);
+
+  const { text } = req.body;
+  if (!text || typeof text !== 'string' || text.length === 0) {
+    return res.status(400).json({ error: 'Поле text обязательно и не может быть пустым' });
+  }
+
+  const profile = profileQueries.getById(req.params.id);
+  if (!profile) {
+    return res.status(404).json({ error: 'Профиль не найден' });
+  }
+
+  if (profile.status !== 'running') {
+    return res.status(409).json({ error: 'Профиль не запущен' });
+  }
+
+  const cdpPort = cdpPorts.get(req.params.id);
+  if (!cdpPort) {
+    return res.status(502).json({ error: 'CDP порт не найден' });
+  }
+
+  let session;
+  try {
+    session = await createCdpSession(cdpPort);
+  } catch (err) {
+    logQueries.add(req.params.id, 'error', `Ошибка CDP подключения: ${err.message}`);
+    return res.status(502).json({ error: 'Ошибка подключения к CDP', details: err.message });
+  }
+
+  try {
+    await humanType(session, text);
+    logQueries.add(req.params.id, 'info', `Введен текст: ${text.length} символов`);
+    res.json({ status: 'success' });
+  } catch (err) {
+    logQueries.add(req.params.id, 'error', `Ошибка ввода текста: ${err.message}`);
+    res.status(500).json({ error: 'Ошибка ввода текста', details: err.message });
+  } finally {
+    session.close();
+  }
+});
 
 router.post('/shutdown', async (req, res) => {
   const db = getDatabase();

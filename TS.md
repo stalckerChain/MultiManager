@@ -1,7 +1,7 @@
 -------------------------------
 ## SOFTWARE REQUIREMENTS SPECIFICATION (SRS) / ТЕХНИЧЕСКОЕ ЗАДАНИЕ
 ## AI-Driven Web Automation Platform на базе антидетект-браузера (MVP аналог AdsPower + ферма автоматизации)
-**Версия системы:** 1.1.0 | **Multi-Control:** 0.13.0 | **Дата ревизии:** 2026-07-07
+**Версия системы:** 1.1.0 | **Multi-Control:** 0.13.0 | **Дата ревизии:** 2026-07-08
 
 > **Принцип маркировки:** ✅ РЕАЛИЗОВАНО в коде | ⚠️ ЧАСТИЧНО | ❌ НЕ РЕАЛИЗОВАНО (в ТЗ, но в коде нет). Каждое утверждение о статусе подкреплено ссылкой на реальный файл аудита.
 > **Спутник-документ:** [TS_INTEGRATION.md](./TS_INTEGRATION.md) — миграция Python-фреймворка stAuto0 на интеграцию с MultiManager.
@@ -137,9 +137,9 @@ GUI передаёт порт бэкенду через **env-переменну
 - Активация фокуса: `Target.activateTarget` → `Page.bringToFront` → `DOM.focus` + `body.focus()`.
 - Endpoints `/api/multi-control/*`, `/api/window-arranger/*`. ✅ `src/core/app.js:28-29`
 
-### 4.5. Human-like Typing (для ИИ-агента) ⚠️ ЧАСТИЧНО
+### 4.5. Human-like Typing (для ИИ-агента) ✅ РЕАЛИЗОВАНО
 - Функция `humanType(cdp, text)` есть: задержки 50–150 мс, 3% опечаток с Backspace. ✅ `src/typing/index.js`
-- **HTTP endpoint отсутствует ❌.** Roadmap Ф4: добавить `POST /api/browser/:id/type {text}` — обёртку, открывающую CDP-сессию и вызывающую `humanType()`.
+- **HTTP endpoint:** `POST /api/browser/:id/type {text}` — обёртка, открывающая CDP-сессию и вызывающая `humanType()`. ✅ `src/api/browser.js:587-630
 
 ### 4.6. Менеджер расширений (Extensions Manager) ✅ РЕАЛИЗОВАНО
 - `CRUD /api/extensions`, `POST /api/extensions/:id/toggle`, `POST /api/extensions/:id/assign-all`. ✅ `src/api/extensions.js`
@@ -186,16 +186,16 @@ GUI передаёт порт бэкенду через **env-переменну
 
 > **🛑 Сиды — НИКОГДА в БД и RAM GUI.** Этот инвариант нельзя нарушать шифрованием приватников в БД (см. §3.2): сид-фраза существует только во временном файле stAuto0 и уничтожается.
 
-### 4.12. Endpoints для интеграции со stAuto0 ❌ НЕ РЕАЛИЗОВАНО (Roadmap Ф4)
+### 4.12. Endpoints для интеграции со stAuto0 ⚠️ ЧАСТИЧНО (Roadmap Ф4)
 
-| Endpoint | Метод | Назначение |
-|----------|-------|-----------|
-| `/api/internal/profiles` | GET | **Выборка аккаунтов для Python.** Query `?range=001-010` разворачивается в `auto_001..auto_010`. Возвращает массив JSON со всеми Web3-метриками, почтами, соцсетями, прокси (готовая строка `host:port:user:pass`). Этот endpoint возвращает секреты в **cleartext** — он нужен Python для автоматизации. См. TS_INTEGRATION §2.3 для маппинга полей. |
-| `/api/browser/:id/type` | POST | Human-like typing через CDP (обёртка над `humanType()`). Тело `{text}`. |
-| `/api/browser/:id/zerion-login` | POST | Авто-логин Zerion (логика перенесена из `stAuto0/Core/browser.py::login_zerion`): открытие `chrome-extension://klghhnkeealcohjjanjjdaeeggmfmlpl/popup.html#/login`, fill `wallet_password`, Enter, ожидание скрытия поля. Тело `{password?}` (если нет — берётся из БД). |
-| `/api/tasks/:id/run` | POST | **Триггер внешнего планировщика.** Core spawn `python main.py --project={script_name} --range={params.range} --log-name={task.id}` (решение #8). Пишет строку в `task_executions` со статусом `running`, по exit code обновляет на `success`/`failed`. |
-| `/api/profiles/batch` | POST | Массовый импорт для Wallet Factory (1 транзакция вместо N запросов). Тело `{accounts: [...]}`. |
-| `/api/tasks` | CRUD | Управление задачами (UI Tasks Manager). |
+| Endpoint | Метод | Назначение | Статус |
+|----------|-------|-----------|--------|
+| `/api/internal/profiles` | GET | **Выборка аккаунтов для Python.** Query `?range=001-010` разворачивается в `auto_001..auto_010`. Возвращает массив JSON со всеми Web3-метриками, почтами, соцсетями, прокси (готовая строка `host:port:user:pass`). Этот endpoint возвращает секреты в **cleartext** — он нужен Python для автоматизации. См. TS_INTEGRATION §2.3 для маппинга полей. | ❌ |
+| `/api/browser/:id/type` | POST | Human-like typing через CDP (обёртка над `humanType()`). Тело `{text}`. | ✅ `src/api/browser.js:587-630` |
+| `/api/browser/:id/zerion-login` | POST | Авто-логин Zerion (логика перенесена из `stAuto0/Core/browser.py::login_zerion`). | ❌ |
+| `/api/tasks/:id/run` | POST | Триггер внешнего планировщика. | ❌ |
+| `/api/profiles/batch` | POST | Массовый импорт для Wallet Factory (1 транзакция вместо N запросов). Тело `{accounts: [...]}`. | ✅ `src/api/profiles.js:24-81` |
+| `/api/tasks` | CRUD | Управление задачами (UI Tasks Manager). | ❌ |
 
 > **`/api/internal/profiles` минует часть шифрования:** Python-агенту нужен cleartext для работы. Этот endpoint защищён тем же Bearer-token, но логируется как `[INTERNAL]` для аудита.
 
@@ -232,15 +232,9 @@ Zerion ID: `klghhnkeealcohjjanjjdaeeggmfmlpl`. Flow:
 **К новым тестам (Roadmap):** crypto (encrypt/decrypt/rotate), backup (rolling cleanup), `/api/internal/profiles` range-parsing, `tasks` CRUD, `zerion-login` с моком CDP.
 
 -------------------------------
-## 7. Формат ответа API для ИИ/Python ❌ ИСПРАВИТЬ (Roadmap Ф4)
+## 7. Формат ответа API для ИИ/Python ✅ ИСПРАВЛЕНО (Roadmap Ф4)
 
-**Текущий код** возвращает **нерабочую заглушку**:
-```js
-ws_endpoint: `ws://127.0.0.1:3000/devtools/browser/${req.params.id}` // src/api/browser.js:410
-```
-Этот URL не существует — DevTools не挂在ится на порт Core.
-
-**Канон v1.1.0 (решение #12):** использовать реальный CDP-порт, который уже ловится из stderr в `cdpPorts` Map (`src/api/browser.js:344-348`). Ответ должен содержать discovery-URL, из которого Python достаёт browserId через `GET /json/version`, либо прямо готовый `ws_endpoint`:
+**Код** возвращает реальный CDP-порт, захваченный из stderr в `cdpPorts` Map (`src/api/browser.js:344-348`). Ответ содержит discovery-URL:
 
 ```json
 {
@@ -251,7 +245,10 @@ ws_endpoint: `ws://127.0.0.1:3000/devtools/browser/${req.params.id}` // src/api/
   "ws_endpoint": "http://127.0.0.1:9331"
 }
 ```
-Python: `connect_over_cdp("http://127.0.0.1:9331")`. Таймаут ожидания CDP-порта — 15 сек (`waitForCdpPort` уже есть в `src/api/browser.js:167`).
+
+✅ `src/api/browser.js:377-419` — `await waitForCdpPort(req.params.id)` ждёт порт до 15 сек, затем `cdp_port` и `ws_endpoint` формируются из реального порта.
+
+Python: `connect_over_cdp("http://127.0.0.1:9331")`.
 
 **Коды ошибок API:** 200 / 201 / 204 / 400 / 401 / 404 / 409 (конфликт) / 412 (прокси недоступен) / 500 / 502 (ротация прокси). ✅ Соответствует коду.
 
@@ -326,14 +323,14 @@ Python: `connect_over_cdp("http://127.0.0.1:9331")`. Таймаут ожидан
 | **Ф1** | **✅ Расширение БД:** `timezone`, новые колонки `profiles`, таблицы `tasks`/`task_executions`. Миграция `ALTER TABLE`. | `src/db/schema.js`, `src/db/queries.js` | — |
 | **Ф2** | ❌ Crypto-модуль AES-256-GCM + гибрид мастер-ключа (Keyring/PBKDF2/recovery) + авто-логин Zerion. | `src/crypto/index.js` (новый), `src/db/queries.js`, `src/api/browser.js` | Ф1 |
 | **Ф3** | ❌ Backup Hot Backup + Rolling 7д. | `src/backup/index.js` (новый), `src/index.js` | — |
-| **Ф4** | ❌ Endpoints: `/api/internal/profiles`, `/api/browser/:id/type`, `/api/browser/:id/zerion-login`, `/api/tasks/:id/run`, `/api/profiles/batch`. Исправление `ws_endpoint` (реальный CDP-порт). | `src/api/internal.js` (новый), `src/api/browser.js`, `src/api/tasks.js` (новый), `src/core/app.js` | Ф1, Ф2 |
+| **Ф4** | ⚠️ Endpoints: `/api/browser/:id/type` ✅, `/api/profiles/batch` ✅, `ws_endpoint` исправлен ✅. ❌ Ещё не реализовано: `/api/internal/profiles`, `/api/browser/:id/zerion-login`, `/api/tasks/:id/run`, `/api/tasks` CRUD. | `src/api/browser.js`, `src/api/profiles.js` | Ф1, Ф2 |
 | **Ф5** | **✅ ProfileModal** вкладки (Аккаунты + Кошельки). ❌ Экран Tasks Manager, Settings crypto/automation. | `gui/src/renderer/views/ProfileModal.vue`, `gui/src/renderer/views/Tasks.vue` (новый), `gui/src/renderer/views/Settings.vue` | Ф1, Ф2, Ф4 |
 | **Ф6** | Терминал xterm.js + node-pty. | `gui/package.json`, `gui/src/main/pty.js` (новый), `gui/src/renderer/components/Terminal.vue` (новый) | Ф4 |
 
 > **Параллельный трек (TS_INTEGRATION.md):** миграция stAuto0 идёт фазами ФА–ФД и стыкуется с MultiManager Ф1–Ф4 (API-контракт).
 
 -------------------------------
-## 12. Сводная таблица статусов (аудит 2026-07-07)
+## 12. Сводная таблица статусов (аудит 2026-07-08)
 
 | # | Фича | В ТЗ | В коде | Приоритет |
 |---|------|------|--------|-----------|
@@ -344,11 +341,11 @@ Python: `connect_over_cdp("http://127.0.0.1:9331")`. Таймаут ожидан
 | 5 | Шифрование AES-256-GCM | ✅ | ❌ (только token-gen) | Ф2 |
 | 6 | Hot Backup + Rolling | ✅ | ❌ | Ф3 |
 | 7 | `/api/internal/profiles?range=` | ✅ | ❌ | Ф4 |
-| 8 | Human-like Typing endpoint | ✅ | ⚠️ (функция есть) | Ф4 |
+| 8 | Human-like Typing endpoint | ✅ | ✅ `src/api/browser.js:587-630` | Ф4 ✅ |
 | 9 | Авто-логин Zerion по CDP | ✅ | ❌ (в Python) | Ф2/Ф4 |
 | 10 | `POST /api/tasks/:id/run` | ✅ | ❌ | Ф4 |
-| 11 | `POST /api/profiles/batch` | ✅ | ❌ | Ф4 |
-| 12 | Исправление `ws_endpoint` | ✅ | ❌ (заглушка) | Ф4 |
+| 11 | `POST /api/profiles/batch` | ✅ | ✅ `src/api/profiles.js:24-81` | Ф4 ✅ |
+| 12 | Исправление `ws_endpoint` | ✅ | ✅ `src/api/browser.js:377-419` | Ф4 ✅ |
 | 13 | ProfileModal вкладки (акки/кошельки) | ✅ | ✅ `gui/src/renderer/components/AccountsTab.vue`, `WalletsTab.vue` | Ф5 ✅ |
 | 14 | Экран Tasks Manager | ✅ | ❌ | Ф5 |
 | 15 | Встроенный терминал | ✅ | ❌ (нет deps) | Ф6 |

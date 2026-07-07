@@ -159,6 +159,34 @@ Regenerate profile fingerprint.
 
 ---
 
+### POST /api/profiles/batch
+
+Bulk create profiles. All operations run in a single transaction (auto-rollback on error).
+
+**Request Body:**
+```json
+{
+  "accounts": [
+    { "name": "Profile 1", "platform": "windows" },
+    { "name": "Profile 2", "platform": "macos" }
+  ]
+}
+```
+
+**Required fields per item:** `name`, `platform`
+
+**Response (201):** Array of created profiles
+```json
+[
+  { "id": "...", "name": "Profile 1", "number": 1, ... },
+  { "id": "...", "name": "Profile 2", "number": 2, ... }
+]
+```
+
+**Response (400):** `{ "error": "Item [0] requires name and platform" }`
+
+---
+
 ## Proxies
 
 ### POST /api/proxies
@@ -322,7 +350,8 @@ Start browser. Automatically checks proxy if assigned.
   "status": "success",
   "profile_id": "f81d4fae-...",
   "pid": 48210,
-  "ws_endpoint": "ws://127.0.0.1:3000/devtools/browser/f81d4fae-..."
+  "cdp_port": 9331,
+  "ws_endpoint": "http://127.0.0.1:9331"
 }
 ```
 
@@ -400,6 +429,33 @@ Get list of profile-to-window bindings.
   }
 ]
 ```
+
+---
+
+### POST /api/browser/:id/type
+
+Human-like text input via CDP. Simulates real typing with 50–150 ms delays and 3% typos with Backspace.
+
+**Request Body:**
+```json
+{
+  "text": "Hello, world!"
+}
+```
+
+**Required fields:** `text`
+
+**Response (200):**
+```json
+{
+  "status": "success"
+}
+```
+
+**Response (400):** `{ "error": "Text field is required" }`
+**Response (404):** `{ "error": "Profile not found" }`
+**Response (409):** `{ "error": "Profile is not running" }`
+**Response (502):** `{ "error": "CDP port not found" }`
 
 ---
 
@@ -942,4 +998,4 @@ Generate a random fingerprint for the specified platform. Does not create a prof
 | 409 | Conflict (running profile, etc.) |
 | 412 | Proxy unavailable |
 | 500 | Internal server error |
-| 502 | Proxy/rotation error |
+| 502 | Proxy/rotation error / CDP port not found |

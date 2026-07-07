@@ -209,6 +209,69 @@ describe('Profiles', () => {
   });
 });
 
+describe('Profiles Batch', () => {
+  let batchIds = [];
+
+  afterAll(async () => {
+    for (const id of batchIds) {
+      await request('DELETE', `/api/profiles/${id}`).catch(() => {});
+    }
+  });
+
+  it('POST /api/profiles/batch creates multiple profiles', async () => {
+    const res = await request('POST', '/api/profiles/batch', {
+      accounts: [
+        { name: 'Batch Alpha', platform: 'windows' },
+        { name: 'Batch Beta', platform: 'macos' },
+        { name: 'Batch Gamma', platform: 'linux' },
+      ],
+    });
+    expect(res.status).toBe(201);
+    expect(res.body.length).toBe(3);
+    expect(res.body[0].name).toBe('Batch Alpha');
+    expect(res.body[0].platform).toBe('windows');
+    expect(res.body[0].fingerprint_seed).toBeTruthy();
+    expect(res.body[1].name).toBe('Batch Beta');
+    expect(res.body[1].platform).toBe('macos');
+    expect(res.body[2].name).toBe('Batch Gamma');
+    expect(res.body[2].platform).toBe('linux');
+    batchIds = res.body.map(p => p.id);
+  });
+
+  it('POST /api/profiles/batch returns 400 for empty accounts', async () => {
+    const res = await request('POST', '/api/profiles/batch', { accounts: [] });
+    expect(res.status).toBe(400);
+  });
+
+  it('POST /api/profiles/batch returns 400 for missing fields', async () => {
+    const res = await request('POST', '/api/profiles/batch', {
+      accounts: [{ name: 'No Platform' }],
+    });
+    expect(res.status).toBe(400);
+    expect(res.body.error).toContain('[0]');
+  });
+
+  it('POST /api/profiles/batch returns 400 when accounts is missing', async () => {
+    const res = await request('POST', '/api/profiles/batch', {});
+    expect(res.status).toBe(400);
+  });
+
+  it('POST /api/profiles/batch creates profiles with platform-specific fingerprints', async () => {
+    const res = await request('POST', '/api/profiles/batch', {
+      accounts: [
+        { name: 'Fingerprint Test 1', platform: 'windows' },
+      ],
+    });
+    expect(res.status).toBe(201);
+    expect(res.body[0].fingerprint_seed).toBeTruthy();
+    expect(res.body[0].platform).toBe('windows');
+    expect(['windows', 'macos', 'linux']).toContain(res.body[0].platform);
+
+    const id = res.body[0].id;
+    await request('DELETE', `/api/profiles/${id}`).catch(() => {});
+  });
+});
+
 describe('Proxies', () => {
   let createdProxyId;
 
@@ -334,6 +397,26 @@ describe('Browser', () => {
   it('POST /api/browser/:id/stop returns 409 when already stopped', async () => {
     const res = await request('POST', `/api/browser/${profileId}/stop`);
     expect(res.status).toBe(409);
+  });
+
+  it('POST /api/browser/:id/type returns 404 for unknown profile', async () => {
+    const res = await request('POST', '/api/browser/unknown-id/type', { text: 'hello' });
+    expect(res.status).toBe(404);
+  });
+
+  it('POST /api/browser/:id/type returns 409 when profile not running', async () => {
+    const res = await request('POST', `/api/browser/${profileId}/type`, { text: 'hello' });
+    expect(res.status).toBe(409);
+  });
+
+  it('POST /api/browser/:id/type returns 400 for empty text', async () => {
+    const res = await request('POST', `/api/browser/${profileId}/type`, { text: '' });
+    expect(res.status).toBe(400);
+  });
+
+  it('POST /api/browser/:id/type returns 400 for missing text', async () => {
+    const res = await request('POST', `/api/browser/${profileId}/type`, {});
+    expect(res.status).toBe(400);
   });
 });
 

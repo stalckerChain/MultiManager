@@ -21,6 +21,65 @@ router.get('/:id', (req, res) => {
   res.json(profile);
 });
 
+router.post('/batch', (req, res) => {
+  const db = getDatabase();
+  const queries = createProfileQueries(db);
+
+  const { accounts } = req.body;
+
+  if (!Array.isArray(accounts) || accounts.length === 0) {
+    return res.status(400).json({ error: 'accounts должен быть непустым массивом' });
+  }
+
+  for (let i = 0; i < accounts.length; i++) {
+    if (!accounts[i].name || !accounts[i].platform) {
+      return res.status(400).json({
+        error: `Элемент [${i}] требует name и platform`,
+      });
+    }
+  }
+
+  const insertBatch = db.transaction((items) => {
+    return items.map((acct) => {
+      const fingerprint = generateFingerprint(acct.platform);
+      return queries.create({
+        name: acct.name,
+        platform: acct.platform,
+        proxy_id: acct.proxy_id,
+        extensions: acct.extensions,
+        tags: acct.tags,
+        notes: acct.notes,
+        timezone: acct.timezone,
+        email: acct.email,
+        email_password: acct.email_password,
+        twitter_username: acct.twitter_username,
+        twitter_password: acct.twitter_password,
+        twitter_auth_token: acct.twitter_auth_token,
+        twitter_email: acct.twitter_email,
+        discord_username: acct.discord_username,
+        discord_password: acct.discord_password,
+        discord_token: acct.discord_token,
+        discord_email: acct.discord_email,
+        wallet_evm_address: acct.wallet_evm_address,
+        wallet_sol_address: acct.wallet_sol_address,
+        wallet_password: acct.wallet_password,
+        fingerprint_seed: fingerprint.fingerprint_seed,
+        user_agent: fingerprint.user_agent,
+        screen_resolution: fingerprint.screen_resolution,
+        hardware_cores: fingerprint.hardware_cores,
+        hardware_memory: fingerprint.hardware_memory,
+      });
+    });
+  });
+
+  try {
+    const created = insertBatch(accounts);
+    res.status(201).json(created);
+  } catch (err) {
+    res.status(500).json({ error: 'Ошибка массового импорта', details: err.message });
+  }
+});
+
 router.post('/', (req, res) => {
   const db = getDatabase();
   const queries = createProfileQueries(db);

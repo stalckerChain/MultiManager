@@ -159,6 +159,34 @@ Authorization: Bearer <token>
 
 ---
 
+### POST /api/profiles/batch
+
+批量创建配置文件。所有操作在单个事务中执行（出错时自动回滚）。
+
+**请求体：**
+```json
+{
+  "accounts": [
+    { "name": "Profile 1", "platform": "windows" },
+    { "name": "Profile 2", "platform": "macos" }
+  ]
+}
+```
+
+**每个项目的必填字段：** `name`、`platform`
+
+**响应 (201)：** 创建的配置文件数组
+```json
+[
+  { "id": "...", "name": "Profile 1", "number": 1, ... },
+  { "id": "...", "name": "Profile 2", "number": 2, ... }
+]
+```
+
+**响应 (400)：** `{ "error": "项目 [0] 需要 name 和 platform" }`
+
+---
+
 ## 代理
 
 ### POST /api/proxies
@@ -322,7 +350,8 @@ Authorization: Bearer <token>
   "status": "success",
   "profile_id": "f81d4fae-...",
   "pid": 48210,
-  "ws_endpoint": "ws://127.0.0.1:3000/devtools/browser/f81d4fae-..."
+  "cdp_port": 9331,
+  "ws_endpoint": "http://127.0.0.1:9331"
 }
 ```
 
@@ -400,6 +429,33 @@ Authorization: Bearer <token>
   }
 ]
 ```
+
+---
+
+### POST /api/browser/:id/type
+
+通过 CDP 进行人机化文本输入。模拟真实输入，延迟 50–150 毫秒，3% 的拼写错误并用 Backspace 更正。
+
+**请求体：**
+```json
+{
+  "text": "你好，世界！"
+}
+```
+
+**必填字段：** `text`
+
+**响应 (200)：**
+```json
+{
+  "status": "success"
+}
+```
+
+**响应 (400)：** `{ "error": "text 字段为必填项" }`
+**响应 (404)：** `{ "error": "配置文件未找到" }`
+**响应 (409)：** `{ "error": "配置文件未运行" }`
+**响应 (502)：** `{ "error": "CDP 端口未找到" }`
 
 ---
 
@@ -920,4 +976,4 @@ Authorization: Bearer <token>
 | 409 | 冲突（运行中的配置文件等） |
 | 412 | 代理不可用 |
 | 500 | 服务器内部错误 |
-| 502 | 代理/轮换错误 |
+| 502 | 代理/轮换错误 / CDP 端口未找到 |
