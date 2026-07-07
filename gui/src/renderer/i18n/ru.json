@@ -5,6 +5,7 @@
   "nav": {
     "profiles": "Профили",
     "proxies": "Прокси",
+    "tasks": "Задачи",
     "extensions": "Расширения",
     "settings": "Настройки"
   },
@@ -128,6 +129,67 @@
     "availableProjects": "Доступные проекты",
     "saveAutomation": "Сохранить настройки автоматизации",
     "automationSaved": "Настройки автоматизации сохранены"
+  },
+  "tasks": {
+    "title": "Менеджер задач",
+    "create": "Создать задачу",
+    "edit": "Редактировать задачу",
+    "search": "Поиск задач...",
+    "runNow": "Запустить",
+    "viewExecutions": "Выполнения",
+    "confirmDelete": "Вы уверены, что хотите удалить эту задачу?",
+    "columns": {
+      "name": "Название",
+      "script": "Скрипт",
+      "schedule": "Расписание",
+      "status": "Статус",
+      "lastRun": "Последний запуск",
+      "actions": "Действия"
+    },
+    "scheduleTypes": {
+      "once": "Однократно",
+      "daily": "Ежедневно",
+      "weekly": "Еженедельно",
+      "manual": "Вручную",
+      "archive": "Архив"
+    },
+    "form": {
+      "name": "Название задачи",
+      "namePlaceholder": "Введите название задачи",
+      "scriptName": "Имя скрипта",
+      "scriptNamePlaceholder": "например: concrete, paragraph",
+      "scheduleType": "Тип расписания",
+      "isActive": "Активна",
+      "params": "Параметры (JSON)",
+      "paramsPlaceholder": "{\"referral_code\": \"abc\"}"
+    },
+    "executions": {
+      "title": "Выполнения задачи",
+      "columns": {
+        "profile": "Профиль",
+        "status": "Статус",
+        "exitCode": "Код выхода",
+        "startedAt": "Время запуска",
+        "logFile": "Файл лога"
+      },
+      "status": {
+        "running": "Выполняется",
+        "success": "Успешно",
+        "failed": "Ошибка"
+      },
+      "empty": "Нет выполнений",
+      "noLog": "Нет файла лога"
+    },
+    "status": {
+      "active": "Активна",
+      "inactive": "Неактивна"
+    },
+    "notifications": {
+      "created": "Задача создана",
+      "updated": "Задача обновлена",
+      "deleted": "Задача удалена",
+      "runStarted": "Задача запущена"
+    }
   },
   "common": {
     "start": "Старт",

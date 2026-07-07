@@ -857,14 +857,16 @@ Authorization: Bearer <token>
 ```json
 {
   "name": "我的任务",
-  "script_name": "script.sh",
-  "schedule_type": "interval",
-  "params": "{}",
-  "is_active": 1
+  "script_name": "concrete",
+  "schedule_type": "once",
+  "params": { "referral_code": "abc" },
+  "is_active": true
 }
 ```
 
 **必填字段：** `name`、`script_name`、`schedule_type`
+
+**有效的 schedule_type：** `once`、`daily`、`weekly`、`manual`、`archive`
 
 **响应 (201)：** 已创建的任务
 
@@ -905,16 +907,23 @@ Authorization: Bearer <token>
 
 ### POST /api/tasks/:id/run
 
-手动运行任务。
+手动运行任务。会为每个配置文件创建执行记录。
 
 **响应 (200)：**
 ```json
 {
-  "status": "running",
-  "execution_id": 1
+  "status": "started",
+  "task_id": "uuid",
+  "task_name": "我的任务",
+  "script_name": "concrete",
+  "profiles_count": 5,
+  "executions": [
+    { "executionId": 1, "profileId": "uuid", "profileName": "配置 1", "status": "running", "scriptName": "concrete" }
+  ]
 }
 ```
 
+**响应 (400)：** `{ "error": "任务未激活" }` / `{ "error": "没有可执行任务的配置文件" }`
 **响应 (404)：** `{ "error": "任务未找到" }`
 
 ---

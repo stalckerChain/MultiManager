@@ -91,13 +91,14 @@ MultiManager/
 │           ├── router.js
 │           ├── style.css
 │           ├── i18n/         # en.json, ru.json, zh.json
-│           ├── stores/       # Pinia (app, profiles, proxies, browser, sync)
+│           ├── stores/       # Pinia (app, profiles, proxies, browser, sync, tasks)
 │           ├── views/        # Экраны
 │           │   ├── Profiles.vue
 │           │   ├── Proxies.vue
 │           │   ├── WindowArranger.vue
-│           │   ├── Extensions.vue
-│           │   ├── Settings.vue
+│   │   ├── Extensions.vue
+│   │   ├── Tasks.vue
+│   │   ├── Settings.vue
 │           │   ├── ProfileModal.vue
 │           │   └── CookieImportModal.vue
 │           ├── components/   # Layout, StatusBar, LogPanel, BrowserDownload, AccountsTab, WalletsTab
@@ -105,7 +106,7 @@ MultiManager/
 │           └── api/          # HTTP-клиент к Core
 └── tests/                    # Vitest (524 теста)
     ├── unit/                 # 23 файла: auth, proxy, fingerprint, typing, crypto, tasks, etc.
-    └── integration/          # 4 файла: SQLite WAL, API, lifecycle, proxy
+    └── integration/          # 5 файлов: SQLite WAL, API, lifecycle, proxy, tasks API
 ```
 
 ---

@@ -315,6 +315,136 @@ describe('Proxies', () => {
   });
 });
 
+describe('Tasks', () => {
+  let createdTaskId;
+
+  it('POST /api/tasks creates a task', async () => {
+    const res = await request('POST', '/api/tasks', {
+      name: 'Test Task',
+      script_name: 'concrete',
+      schedule_type: 'once',
+      params: { ref: 'abc' },
+      is_active: true,
+    });
+    expect(res.status).toBe(201);
+    expect(res.body.id).toBeTruthy();
+    expect(res.body.name).toBe('Test Task');
+    expect(res.body.script_name).toBe('concrete');
+    expect(res.body.schedule_type).toBe('once');
+    expect(res.body.is_active).toBe(1);
+    createdTaskId = res.body.id;
+  });
+
+  it('POST /api/tasks returns 400 without required fields', async () => {
+    const res = await request('POST', '/api/tasks', { name: 'No Script' });
+    expect(res.status).toBe(400);
+  });
+
+  it('POST /api/tasks returns 400 with invalid schedule_type', async () => {
+    const res = await request('POST', '/api/tasks', {
+      name: 'Bad',
+      script_name: 'test',
+      schedule_type: 'invalid',
+    });
+    expect(res.status).toBe(400);
+  });
+
+  it('GET /api/tasks returns list', async () => {
+    const res = await request('GET', '/api/tasks');
+    expect(res.status).toBe(200);
+    expect(Array.isArray(res.body)).toBe(true);
+    expect(res.body.length).toBeGreaterThanOrEqual(1);
+  });
+
+  it('GET /api/tasks/:id returns task', async () => {
+    const res = await request('GET', `/api/tasks/${createdTaskId}`);
+    expect(res.status).toBe(200);
+    expect(res.body.id).toBe(createdTaskId);
+    expect(res.body.name).toBe('Test Task');
+  });
+
+  it('GET /api/tasks/:id returns 404 for unknown', async () => {
+    const res = await request('GET', '/api/tasks/nonexistent');
+    expect(res.status).toBe(404);
+  });
+
+  it('PUT /api/tasks/:id updates task', async () => {
+    const res = await request('PUT', `/api/tasks/${createdTaskId}`, {
+      name: 'Updated Task',
+      is_active: false,
+    });
+    expect(res.status).toBe(200);
+    expect(res.body.name).toBe('Updated Task');
+    expect(res.body.is_active).toBe(0);
+  });
+
+  it('GET /api/tasks/:id/executions returns empty array initially', async () => {
+    const res = await request('GET', `/api/tasks/${createdTaskId}/executions`);
+    expect(res.status).toBe(200);
+    expect(Array.isArray(res.body)).toBe(true);
+  });
+
+  it('GET /api/tasks/:id/executions returns 404 for unknown task', async () => {
+    const res = await request('GET', '/api/tasks/nonexistent/executions');
+    expect(res.status).toBe(404);
+  });
+
+  it('DELETE /api/tasks/:id deletes task', async () => {
+    const res = await request('DELETE', `/api/tasks/${createdTaskId}`);
+    expect(res.status).toBe(204);
+    const check = await request('GET', `/api/tasks/${createdTaskId}`);
+    expect(check.status).toBe(404);
+  });
+
+  it('DELETE /api/tasks/:id returns 404 for unknown', async () => {
+    const res = await request('DELETE', '/api/tasks/nonexistent');
+    expect(res.status).toBe(404);
+  });
+
+  it('POST /api/tasks/:id/run returns 404 for unknown task', async () => {
+    const res = await request('POST', '/api/tasks/nonexistent/run');
+    expect(res.status).toBe(404);
+  });
+
+  it('POST /api/tasks/:id/run returns 400 for inactive task', async () => {
+    const create = await request('POST', '/api/tasks', {
+      name: 'Inactive Task',
+      script_name: 'test',
+      schedule_type: 'manual',
+      is_active: false,
+    });
+    const res = await request('POST', `/api/tasks/${create.body.id}/run`);
+    expect(res.status).toBe(400);
+    expect(res.body.error).toBeTruthy();
+    await request('DELETE', `/api/tasks/${create.body.id}`);
+  });
+
+  it('POST /api/tasks/:id/run starts execution with profiles', async () => {
+    const profile = await request('POST', '/api/profiles', {
+      name: 'Run Task Profile',
+      platform: 'windows',
+    });
+    const create = await request('POST', '/api/tasks', {
+      name: 'Run Task',
+      script_name: 'concrete',
+      schedule_type: 'once',
+      is_active: true,
+    });
+    const res = await request('POST', `/api/tasks/${create.body.id}/run`);
+    expect(res.status).toBe(200);
+    expect(res.body.status).toBe('started');
+    expect(res.body.profiles_count).toBeGreaterThanOrEqual(1);
+    expect(res.body.executions.length).toBeGreaterThanOrEqual(1);
+    expect(res.body.executions[0].status).toBe('running');
+
+    const executions = await request('GET', `/api/tasks/${create.body.id}/executions`);
+    expect(executions.body.length).toBeGreaterThanOrEqual(1);
+
+    await request('DELETE', `/api/tasks/${create.body.id}`);
+    await request('DELETE', `/api/profiles/${profile.body.id}`);
+  });
+});
+
 describe('Cookies', () => {
   let profileId;
 

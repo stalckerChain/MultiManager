@@ -844,14 +844,16 @@ Human-like ввод текста через CDP. Имитирует реальн
 ```json
 {
   "name": "Моя задача",
-  "script_name": "script.sh",
-  "schedule_type": "interval",
-  "params": "{}",
-  "is_active": 1
+  "script_name": "concrete",
+  "schedule_type": "once",
+  "params": { "referral_code": "abc" },
+  "is_active": true
 }
 ```
 
 **Обязательные поля:** `name`, `script_name`, `schedule_type`
+
+**Допустимые schedule_type:** `once`, `daily`, `weekly`, `manual`, `archive`
 
 **Ответ (201):** Созданная задача
 
@@ -892,16 +894,23 @@ Human-like ввод текста через CDP. Имитирует реальн
 
 ### POST /api/tasks/:id/run
 
-Запустить задачу вручную.
+Запустить задачу вручную. Создаёт запись выполнения для каждого профиля.
 
 **Ответ (200):**
 ```json
 {
-  "status": "running",
-  "execution_id": 1
+  "status": "started",
+  "task_id": "uuid",
+  "task_name": "Моя задача",
+  "script_name": "concrete",
+  "profiles_count": 5,
+  "executions": [
+    { "executionId": 1, "profileId": "uuid", "profileName": "Profile 1", "status": "running", "scriptName": "concrete" }
+  ]
 }
 ```
 
+**Ответ (400):** `{ "error": "Задача неактивна" }` / `{ "error": "Нет профилей для выполнения задачи" }`
 **Ответ (404):** `{ "error": "Задача не найдена" }`
 
 ---

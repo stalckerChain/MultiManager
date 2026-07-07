@@ -5,6 +5,7 @@
   "nav": {
     "profiles": "Profiles",
     "proxies": "Proxies",
+    "tasks": "Tasks",
     "extensions": "Extensions",
     "settings": "Settings"
   },
@@ -128,6 +129,67 @@
     "availableProjects": "Available Projects",
     "saveAutomation": "Save Automation Settings",
     "automationSaved": "Automation settings saved"
+  },
+  "tasks": {
+    "title": "Tasks Manager",
+    "create": "Create Task",
+    "edit": "Edit Task",
+    "search": "Search tasks...",
+    "runNow": "Run Now",
+    "viewExecutions": "Executions",
+    "confirmDelete": "Are you sure you want to delete this task?",
+    "columns": {
+      "name": "Name",
+      "script": "Script",
+      "schedule": "Schedule",
+      "status": "Status",
+      "lastRun": "Last Run",
+      "actions": "Actions"
+    },
+    "scheduleTypes": {
+      "once": "Once",
+      "daily": "Daily",
+      "weekly": "Weekly",
+      "manual": "Manual",
+      "archive": "Archive"
+    },
+    "form": {
+      "name": "Task Name",
+      "namePlaceholder": "Enter task name",
+      "scriptName": "Script Name",
+      "scriptNamePlaceholder": "e.g. concrete, paragraph",
+      "scheduleType": "Schedule Type",
+      "isActive": "Active",
+      "params": "Parameters (JSON)",
+      "paramsPlaceholder": "{\"referral_code\": \"abc\"}"
+    },
+    "executions": {
+      "title": "Task Executions",
+      "columns": {
+        "profile": "Profile",
+        "status": "Status",
+        "exitCode": "Exit Code",
+        "startedAt": "Started At",
+        "logFile": "Log File"
+      },
+      "status": {
+        "running": "Running",
+        "success": "Success",
+        "failed": "Failed"
+      },
+      "empty": "No executions yet",
+      "noLog": "No log file"
+    },
+    "status": {
+      "active": "Active",
+      "inactive": "Inactive"
+    },
+    "notifications": {
+      "created": "Task created successfully",
+      "updated": "Task updated successfully",
+      "deleted": "Task deleted successfully",
+      "runStarted": "Task started successfully"
+    }
   },
   "common": {
     "start": "Start",

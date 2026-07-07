@@ -824,14 +824,16 @@ Create a task.
 ```json
 {
   "name": "My Task",
-  "script_name": "script.sh",
-  "schedule_type": "interval",
-  "params": "{}",
-  "is_active": 1
+  "script_name": "concrete",
+  "schedule_type": "once",
+  "params": { "referral_code": "abc" },
+  "is_active": true
 }
 ```
 
 **Required Fields:** `name`, `script_name`, `schedule_type`
+
+**Valid schedule_type:** `once`, `daily`, `weekly`, `manual`, `archive`
 
 **Response (201):** Created task
 
@@ -872,16 +874,23 @@ Get task execution history.
 
 ### POST /api/tasks/:id/run
 
-Run task manually.
+Run task manually. Creates an execution record for each profile.
 
 **Response (200):**
 ```json
 {
-  "status": "running",
-  "execution_id": 1
+  "status": "started",
+  "task_id": "uuid",
+  "task_name": "My Task",
+  "script_name": "concrete",
+  "profiles_count": 5,
+  "executions": [
+    { "executionId": 1, "profileId": "uuid", "profileName": "Profile 1", "status": "running", "scriptName": "concrete" }
+  ]
 }
 ```
 
+**Response (400):** `{ "error": "Task is not active" }` / `{ "error": "No profiles to run the task" }`
 **Response (404):** `{ "error": "Task not found" }`
 
 ---

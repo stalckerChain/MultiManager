@@ -287,11 +287,12 @@ Python: `connect_over_cdp("http://127.0.0.1:9331")`.
 - Панель разработчика: бегущая строка core.log. ✅ `gui/src/renderer/components/LogPanel.vue`
 - Статус-бар: статус сервера, порт, копирование AUTH_TOKEN. ✅ `gui/src/renderer/components/StatusBar.vue`
 
-### 9.7. Экран «Tasks Manager» (Планировщик) ❌ НЕ РЕАЛИЗОВАНО (Roadmap Ф5)
-- Таблица задач: name, script_name, schedule_type, is_active, last_run.
-- История executions (task_executions): статус, exit_code, время, ссылка на лог.
-- Кнопка «Run now» → `POST /api/tasks/:id/run`.
-- CRUD задач (создание/редактирование с выбором script_name из списка доступных проектов stAuto0).
+### 9.7. Экран «Tasks Manager» (Планировщик) ✅ РЕАЛИЗОВАНО (Roadmap Ф5)
+- Таблица задач: name, script_name, schedule_type, is_active, last_run. ✅ `gui/src/renderer/views/Tasks.vue`
+- История executions (task_executions): статус, exit_code, время, ссылка на лог. ✅ `gui/src/renderer/views/Tasks.vue`
+- Кнопка «Run now» → `POST /api/tasks/:id/run`. ✅ `gui/src/renderer/views/Tasks.vue`
+- CRUD задач (создание/редактирование с выбором script_name). ✅ `gui/src/renderer/views/Tasks.vue`
+- Pinia store: `stores/tasks.js` c CRUD + run + getExecutions. ✅ `gui/src/renderer/stores/tasks.js`
 
 ### 9.8. Встроенный терминал (xterm.js + node-pty) ❌ НЕ РЕАЛИЗОВАНО (Roadmap Ф6)
 > **Расхождение с TS_ADDON §7.** Аудит: `xterm.js` и `node-pty` отсутствуют в `gui/package.json` dependencies.
@@ -326,7 +327,7 @@ Python: `connect_over_cdp("http://127.0.0.1:9331")`.
 | **Ф2** | **✅ Crypto-модуль AES-256-GCM + гибрид мастер-ключа (Keyring/PBKDF2/recovery) + авто-логин Zerion.** | `src/crypto/index.js`, `src/db/queries.js`, `src/api/browser.js`, `src/api/settings.js`, `src/api/internal.js`, `src/api/tasks.js`, `gui/.../Settings.vue` | Ф1 |
 | **Ф3** | **✅ Backup Hot Backup + Rolling 7д.** | `src/backup/index.js`, `src/index.js`, `tests/unit/backup.test.js` | — |
 | **Ф4** | **✅ Все endpoints:** `/api/browser/:id/type`, `/api/profiles/batch`, `ws_endpoint`, `/api/internal/profiles`, `/api/browser/:id/zerion-login`, `/api/tasks/:id/run`, `/api/tasks` CRUD. | `src/api/browser.js`, `src/api/profiles.js`, `src/api/internal.js`, `src/api/tasks.js` | Ф1, Ф2 |
-| **Ф5** | **✅ ProfileModal** вкладки (Аккаунты + Кошельки). **✅ Settings** crypto/automation. ❌ Экран Tasks Manager. | `gui/src/renderer/views/ProfileModal.vue`, `gui/src/renderer/views/Tasks.vue` (новый), `gui/src/renderer/views/Settings.vue` | Ф1, Ф2, Ф4 |
+| **Ф5** | **✅ ProfileModal** вкладки (Аккаунты + Кошельки). **✅ Settings** crypto/automation. **✅ Экран Tasks Manager.** | `gui/src/renderer/views/ProfileModal.vue`, `gui/src/renderer/views/Tasks.vue`, `gui/src/renderer/views/Settings.vue` | Ф1, Ф2, Ф4 |
 | **Ф6** | Терминал xterm.js + node-pty. | `gui/package.json`, `gui/src/main/pty.js` (новый), `gui/src/renderer/components/Terminal.vue` (новый) | Ф4 |
 
 > **Параллельный трек (TS_INTEGRATION.md):** миграция stAuto0 идёт фазами ФА–ФД и стыкуется с MultiManager Ф1–Ф4 (API-контракт).
@@ -349,7 +350,7 @@ Python: `connect_over_cdp("http://127.0.0.1:9331")`.
 | 11 | `POST /api/profiles/batch` | ✅ | ✅ `src/api/profiles.js:24-81` | Ф4 ✅ |
 | 12 | Исправление `ws_endpoint` | ✅ | ✅ `src/api/browser.js:377-419` | Ф4 ✅ |
 | 13 | ProfileModal вкладки (акки/кошельки) | ✅ | ✅ `gui/src/renderer/components/AccountsTab.vue`, `WalletsTab.vue` | Ф5 ✅ |
-| 14 | Экран Tasks Manager | ✅ | ❌ (API ✅ `src/api/tasks.js`, GUI ❌) | Ф5 |
+| 14 | Экран Tasks Manager | ✅ | ✅ `gui/src/renderer/views/Tasks.vue`, `gui/src/renderer/stores/tasks.js` | Ф5 ✅ |
 | 15 | Встроенный терминал | ✅ | ❌ (нет deps) | Ф6 |
 | 16 | Settings: crypto + automation | ✅ | ✅ `gui/src/renderer/views/Settings.vue`, `src/api/settings.js` | Ф5 ✅ |
 | 17 | Cookie drag-and-drop + валидатор | ✅ | ⚠️ | ToDo §2 |
