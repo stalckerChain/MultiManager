@@ -107,21 +107,9 @@ MultiManager/
 │           │   └── WalletsTab.vue
 │           ├── composables/  # Vue Composables
 │           └── api/          # Core 请求的 HTTP 客户端
-└── tests/                    # 测试基础设施
-    ├── unit/                 # 模块单元测试（nock 模拟网络）
-    │   ├── auth.test.js
-    │   ├── cookie.test.js
-    │   ├── fingerprint.test.js
-    │   ├── fingerprint-edge.test.js
-    │   ├── proxy.test.js
-    │   ├── proxy-checker.test.js
-    │   ├── typing.test.js
-    │   └── multi-control.test.js
-    └── integration/          # 集成测试（SQLite WAL、API、CloakBrowser）
-        ├── database.test.js
-        ├── wal-stress.test.js
-        ├── api-real.test.js
-        └── profile-launch.test.js
+└── tests/                    # Vitest（480+ 测试）
+    ├── unit/                 # 20 个文件：auth、proxy、fingerprint、typing、multi-control 等
+    └── integration/          # 4 个文件：SQLite WAL、API、生命周期、代理
 ```
 
 ---
@@ -268,7 +256,7 @@ requests.post(f"{BASE}/api/browser/{profile['id']}/stop", headers=HEADERS)
 
 ### 系统目录结构：
 
-- `app.db` — WAL 模式的 SQLite 数据库（配置、代理、指纹、Cookie）。
+- `app.db` — WAL 模式的 SQLite 数据库。配置文件（30 列）、代理、Cookie、任务（tasks/task_executions）。
 - `profiles_data/` — 隔离的 Chromium 会话文件夹（每个账户的 `BrowserData/`：Cookies、LocalStorage、Cache）。
 - `extensions/` — 已安装的 Chrome 扩展。
 - `logs/core.log` — 通用系统日志（Pino JSON）。
@@ -278,7 +266,7 @@ requests.post(f"{BASE}/api/browser/{profile['id']}/stop", headers=HEADERS)
 
 ## 测试
 
-项目包含 12 个基于 **Vitest** 的测试文件：
+项目包含 24 个测试文件（480+ 测试）基于 **Vitest**：
 
 | 测试 | 类型 | 描述 |
 |------|------|------|
@@ -290,6 +278,15 @@ requests.post(f"{BASE}/api/browser/{profile['id']}/stop", headers=HEADERS)
 | `proxy-checker.test.js` | 单元 | 通过 ipify 检查代理 |
 | `typing.test.js` | 单元 | 类人输入模拟 |
 | `multi-control.test.js` | 单元 | Multi-control 逻辑 |
+| `multi-control-api.test.js` | 单元 | Multi-control API 路由 |
+| `window-arranger.test.js` | 单元 | 窗口排列逻辑 |
+| `window-filter.test.js` | 单元 | 窗口过滤工具 |
+| `extensions.test.js` | 单元 | 扩展管理器测试 |
+| `core-manager.test.js` | 单元 | 核心管理器生命周期 |
+| `browser-shutdown.test.js` | 单元 | 浏览器关闭逻辑 |
+| `app-store.test.js` | 单元 | 应用商店测试 |
+| `api-client.test.js` | 单元 | API 客户端测试 |
+| `race-condition.test.js` | 单元 | 竞态条件场景 |
 | `database.test.js` | 集成 | SQLite CRUD 操作 |
 | `wal-stress.test.js` | 集成 | WAL 模式压力测试 |
 | `api-real.test.js` | 集成 | 完整 REST API 周期 |

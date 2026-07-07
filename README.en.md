@@ -107,21 +107,9 @@ MultiManager/
 │           │   └── WalletsTab.vue
 │           ├── composables/  # Vue Composables
 │           └── api/          # HTTP client for Core requests
-└── tests/                    # Testing infrastructure
-    ├── unit/                 # Module unit tests (nock for network mocks)
-    │   ├── auth.test.js
-    │   ├── cookie.test.js
-    │   ├── fingerprint.test.js
-    │   ├── fingerprint-edge.test.js
-    │   ├── proxy.test.js
-    │   ├── proxy-checker.test.js
-    │   ├── typing.test.js
-    │   └── multi-control.test.js
-    └── integration/          # Integration tests (SQLite WAL, API, CloakBrowser)
-        ├── database.test.js
-        ├── wal-stress.test.js
-        ├── api-real.test.js
-        └── profile-launch.test.js
+└── tests/                    # Vitest (480+ tests)
+    ├── unit/                 # 20 files: auth, proxy, fingerprint, typing, multi-control, etc.
+    └── integration/          # 4 files: SQLite WAL, API, lifecycle, proxy
 ```
 
 ---
@@ -268,7 +256,7 @@ All isolated user data is stored at:
 
 ### System Directory Structure:
 
-- `app.db` — SQLite database in WAL mode (Configurations, Proxies, Fingerprints, Cookies).
+- `app.db` — SQLite database in WAL mode. Profiles (30 columns), proxies, cookies, tasks (tasks/task_executions).
 - `profiles_data/` — Isolated Chromium session folders (`BrowserData/` for each account: Cookies, LocalStorage, Cache).
 - `extensions/` — Installed Chrome extensions.
 - `logs/core.log` — General system logs (Pino JSON).
@@ -278,7 +266,7 @@ All isolated user data is stored at:
 
 ## Testing
 
-The project includes 12 test files based on **Vitest**:
+The project includes 24 test files (480+ tests) based on **Vitest**:
 
 | Test | Type | Description |
 |------|------|-------------|
@@ -290,6 +278,15 @@ The project includes 12 test files based on **Vitest**:
 | `proxy-checker.test.js` | Unit | Proxy checking via ipify |
 | `typing.test.js` | Unit | Human-like input emulation |
 | `multi-control.test.js` | Unit | Multi-control logic |
+| `multi-control-api.test.js` | Unit | Multi-control API routes |
+| `window-arranger.test.js` | Unit | Window arranger logic |
+| `window-filter.test.js` | Unit | Window filter utilities |
+| `extensions.test.js` | Unit | Extension manager tests |
+| `core-manager.test.js` | Unit | Core manager lifecycle |
+| `browser-shutdown.test.js` | Unit | Browser shutdown logic |
+| `app-store.test.js` | Unit | App store tests |
+| `api-client.test.js` | Unit | API client tests |
+| `race-condition.test.js` | Unit | Race condition scenarios |
 | `database.test.js` | Integration | SQLite CRUD operations |
 | `wal-stress.test.js` | Integration | WAL-mode stress test |
 | `api-real.test.js` | Integration | Full REST API cycle |
