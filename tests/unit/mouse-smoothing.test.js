@@ -103,6 +103,7 @@ describe('MouseSmoother', () => {
     const tsSmoother = new MouseSmoother({
       dispatch: (x, y) => timestamps.push(Date.now()),
       stepInterval: 16,
+      useTimestamps: false,
       pathFn: pathSpy,
     });
     tsSmoother.setCurrent(0, 0);

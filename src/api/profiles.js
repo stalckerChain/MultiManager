@@ -25,7 +25,7 @@ router.post('/', (req, res) => {
   const db = getDatabase();
   const queries = createProfileQueries(db);
   
-  const { name, proxy_id, platform, extensions, tags, notes } = req.body;
+  const { name, proxy_id, platform, extensions, tags, notes, timezone, email, email_password, twitter_username, twitter_password, twitter_auth_token, twitter_email, discord_username, discord_password, discord_token, discord_email, wallet_evm_address, wallet_sol_address, wallet_password } = req.body;
   
   if (!name || !platform) {
     return res.status(400).json({ error: 'Обязательные поля: name, platform' });
@@ -45,6 +45,20 @@ router.post('/', (req, res) => {
     extensions,
     tags,
     notes,
+    timezone,
+    email,
+    email_password,
+    twitter_username,
+    twitter_password,
+    twitter_auth_token,
+    twitter_email,
+    discord_username,
+    discord_password,
+    discord_token,
+    discord_email,
+    wallet_evm_address,
+    wallet_sol_address,
+    wallet_password,
   });
 
   res.status(201).json(profile);
@@ -59,42 +73,40 @@ router.put('/:id', (req, res) => {
     return res.status(404).json({ error: 'Профиль не найден' });
   }
 
-  const { name, proxy_id, platform, extensions, tags, notes } = req.body;
+  const { name, proxy_id, platform, extensions, tags, notes, timezone, email, email_password, twitter_username, twitter_password, twitter_auth_token, twitter_email, discord_username, discord_password, discord_token, discord_email, wallet_evm_address, wallet_sol_address, wallet_password } = req.body;
   
   const fingerprint = platform && platform !== profile.platform
     ? generateFingerprint(platform)
     : null;
 
-  db.prepare(`
-    UPDATE profiles 
-    SET name = COALESCE(?, name),
-        proxy_id = ?,
-        platform = COALESCE(?, platform),
-        user_agent = COALESCE(?, user_agent),
-        screen_resolution = COALESCE(?, screen_resolution),
-        hardware_cores = COALESCE(?, hardware_cores),
-        hardware_memory = COALESCE(?, hardware_memory),
-        fingerprint_seed = COALESCE(?, fingerprint_seed),
-        extensions = COALESCE(?, extensions),
-        tags = COALESCE(?, tags),
-        notes = COALESCE(?, notes)
-    WHERE id = ?
-  `).run(
-    name || null,
-    proxy_id !== undefined ? proxy_id : profile.proxy_id,
-    platform || null,
-    fingerprint ? fingerprint.user_agent : null,
-    fingerprint ? fingerprint.screen_resolution : null,
-    fingerprint ? fingerprint.hardware_cores : null,
-    fingerprint ? fingerprint.hardware_memory : null,
-    fingerprint ? fingerprint.fingerprint_seed : null,
-    extensions ? JSON.stringify(extensions) : null,
-    tags ? JSON.stringify(tags) : null,
-    notes || null,
-    req.params.id
-  );
+  const updated = queries.update(req.params.id, {
+    name,
+    proxy_id: proxy_id !== undefined ? proxy_id : profile.proxy_id,
+    platform,
+    user_agent: fingerprint ? fingerprint.user_agent : null,
+    screen_resolution: fingerprint ? fingerprint.screen_resolution : null,
+    hardware_cores: fingerprint ? fingerprint.hardware_cores : null,
+    hardware_memory: fingerprint ? fingerprint.hardware_memory : null,
+    fingerprint_seed: fingerprint ? fingerprint.fingerprint_seed : null,
+    extensions,
+    tags,
+    notes,
+    timezone,
+    email,
+    email_password,
+    twitter_username,
+    twitter_password,
+    twitter_auth_token,
+    twitter_email,
+    discord_username,
+    discord_password,
+    discord_token,
+    discord_email,
+    wallet_evm_address,
+    wallet_sol_address,
+    wallet_password,
+  });
 
-  const updated = queries.getById(req.params.id);
   res.json(updated);
 });
 

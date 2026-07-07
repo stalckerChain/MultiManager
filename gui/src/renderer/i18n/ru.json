@@ -33,6 +33,8 @@
     "modal": {
       "basic": "Основные",
       "proxy": "Прокси",
+      "accounts": "Аккаунты",
+      "wallets": "Кошельки",
       "advanced": "Дополнительно",
       "name": "Имя профиля",
       "tags": "Теги",
@@ -43,7 +45,21 @@
       "extensions": "Расширения",
       "notes": "Заметки",
       "save": "Сохранить",
-      "cancel": "Отмена"
+      "cancel": "Отмена",
+      "timezone": "Часовой пояс",
+      "email": "Email",
+      "emailPassword": "Пароль почты",
+      "twitterUsername": "X/Twitter Логин",
+      "twitterPassword": "X/Twitter Пароль",
+      "twitterAuthToken": "X/Twitter Auth Token",
+      "twitterEmail": "X/Twitter Email",
+      "discordUsername": "Discord Логин",
+      "discordPassword": "Discord Пароль",
+      "discordToken": "Discord Токен",
+      "discordEmail": "Discord Email",
+      "walletEvmAddress": "EVM Адрес",
+      "walletSolAddress": "Solana Адрес",
+      "walletPassword": "Пароль кошелька"
     }
   },
   "proxies": {

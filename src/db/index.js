@@ -2,7 +2,7 @@ const Database = require('better-sqlite3');
 const path = require('path');
 const fs = require('fs');
 const { logger } = require('../logger');
-const { createTables } = require('./schema');
+const { createTables, migrateTables } = require('./schema');
 const { createProfileQueries, createProxyQueries, createCookieQueries, createLogQueries } = require('./queries');
 
 let db = null;
@@ -36,6 +36,7 @@ function initDatabase() {
   db.pragma('foreign_keys = ON');
 
   createTables(db);
+  migrateTables(db);
 
   logger.info(`База данных инициализирована: ${dbPath}`);
   

@@ -337,38 +337,49 @@ class MultiController {
     const totalX = params.deltaX || 0;
     const steps = Math.max(1, Math.ceil(Math.max(Math.abs(totalY), Math.abs(totalX)) / SCROLL_STEP_PX));
 
+    const promises = [];
     for (const [id] of this.slaves) {
       if (this.smoothers.has(id)) {
-        this._runScrollSequence(id, steps, totalX, totalY);
+        promises.push(this._runScrollSequence(id, steps, totalX, totalY));
       }
     }
+    await Promise.all(promises);
   }
 
   _runScrollSequence(slaveId, steps, totalX, totalY) {
-    let i = 0;
-    const stepX = totalX / steps;
-    const stepY = totalY / steps;
-    const fire = () => {
-      if (i >= steps || !this.active || !this.slaves.has(slaveId)) return;
-      i++;
-      const isLast = i === steps;
-      const dx = isLast ? totalX - stepX * (steps - 1) : stepX;
-      const dy = isLast ? totalY - stepY * (steps - 1) : stepY;
-      const session = this._getSlaveSession(slaveId);
-      const wheelParams = { x: 0, y: 0, deltaX: dx, deltaY: dy };
-      if (session) {
-        this.cdp.dispatchMouseEventToSession(slaveId, session.sessionId, 'mouseWheel', wheelParams);
-      } else {
-        this.cdp.dispatchMouseEvent(slaveId, 'mouseWheel', wheelParams);
-      }
-      const slaveData = this.slaves.get(slaveId);
-      if (slaveData && slaveData.scroll) {
-        slaveData.scroll.scrollX = (slaveData.scroll.scrollX || 0) + dx;
-        slaveData.scroll.scrollY = (slaveData.scroll.scrollY || 0) + dy;
-      }
-      if (!isLast) setTimeout(fire, SCROLL_TICK_MS);
-    };
-    fire();
+    return new Promise((resolve) => {
+      let i = 0;
+      const stepX = totalX / steps;
+      const stepY = totalY / steps;
+      const fire = () => {
+        if (i >= steps || !this.active || !this.slaves.has(slaveId)) {
+          resolve();
+          return;
+        }
+        i++;
+        const isLast = i === steps;
+        const dx = isLast ? totalX - stepX * (steps - 1) : stepX;
+        const dy = isLast ? totalY - stepY * (steps - 1) : stepY;
+        const session = this._getSlaveSession(slaveId);
+        const wheelParams = { x: 0, y: 0, deltaX: dx, deltaY: dy };
+        if (session) {
+          this.cdp.dispatchMouseEventToSession(slaveId, session.sessionId, 'mouseWheel', wheelParams);
+        } else {
+          this.cdp.dispatchMouseEvent(slaveId, 'mouseWheel', wheelParams);
+        }
+        const slaveData = this.slaves.get(slaveId);
+        if (slaveData && slaveData.scroll) {
+          slaveData.scroll.scrollX = (slaveData.scroll.scrollX || 0) + dx;
+          slaveData.scroll.scrollY = (slaveData.scroll.scrollY || 0) + dy;
+        }
+        if (isLast) {
+          resolve();
+        } else {
+          setTimeout(fire, SCROLL_TICK_MS);
+        }
+      };
+      fire();
+    });
   }
 
   _dispatchSlaveMove(slaveId, x, y) {

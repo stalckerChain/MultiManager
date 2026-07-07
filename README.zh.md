@@ -102,7 +102,9 @@ MultiManager/
 │           ├── components/   # 可复用组件
 │           │   ├── Layout.vue
 │           │   ├── StatusBar.vue
-│           │   └── LogPanel.vue
+│           │   ├── LogPanel.vue
+│           │   ├── AccountsTab.vue
+│           │   └── WalletsTab.vue
 │           ├── composables/  # Vue Composables
 │           └── api/          # Core 请求的 HTTP 客户端
 └── tests/                    # 测试基础设施

@@ -1,3 +1,20 @@
+const NEW_PROFILE_COLUMNS = [
+  'timezone',
+  'email',
+  'email_password',
+  'twitter_username',
+  'twitter_password',
+  'twitter_auth_token',
+  'twitter_email',
+  'discord_username',
+  'discord_password',
+  'discord_token',
+  'discord_email',
+  'wallet_evm_address',
+  'wallet_sol_address',
+  'wallet_password',
+];
+
 function createTables(db) {
   db.exec(`
     CREATE TABLE IF NOT EXISTS profiles (
@@ -16,6 +33,20 @@ function createTables(db) {
       notes TEXT DEFAULT '',
       status TEXT DEFAULT 'stopped' CHECK(status IN ('stopped', 'starting', 'running')),
       pid INTEGER,
+      timezone TEXT DEFAULT 'Asia/Bishkek',
+      email TEXT,
+      email_password TEXT,
+      twitter_username TEXT,
+      twitter_password TEXT,
+      twitter_auth_token TEXT,
+      twitter_email TEXT,
+      discord_username TEXT,
+      discord_password TEXT,
+      discord_token TEXT,
+      discord_email TEXT,
+      wallet_evm_address TEXT,
+      wallet_sol_address TEXT,
+      wallet_password TEXT DEFAULT 'asdfj*KK',
       created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
       updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
       FOREIGN KEY (proxy_id) REFERENCES proxies(id) ON DELETE SET NULL
@@ -67,12 +98,40 @@ function createTables(db) {
       updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
     );
 
+    CREATE TABLE IF NOT EXISTS tasks (
+      id TEXT PRIMARY KEY,
+      name TEXT NOT NULL,
+      script_name TEXT NOT NULL,
+      schedule_type TEXT NOT NULL CHECK(schedule_type IN ('once', 'daily', 'weekly', 'manual', 'archive')),
+      cron_expression TEXT,
+      params TEXT DEFAULT '{}',
+      is_active INTEGER DEFAULT 1,
+      created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+      updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
+    );
+
+    CREATE TABLE IF NOT EXISTS task_executions (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      task_id TEXT NOT NULL,
+      profile_id TEXT NOT NULL,
+      status TEXT NOT NULL CHECK(status IN ('success', 'failed', 'running')),
+      exit_code INTEGER,
+      last_run_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+      log_file_path TEXT,
+      FOREIGN KEY (task_id) REFERENCES tasks(id) ON DELETE CASCADE,
+      FOREIGN KEY (profile_id) REFERENCES profiles(id) ON DELETE CASCADE
+    );
+
     CREATE INDEX IF NOT EXISTS idx_profiles_status ON profiles(status);
     CREATE INDEX IF NOT EXISTS idx_profiles_proxy_id ON profiles(proxy_id);
     CREATE INDEX IF NOT EXISTS idx_proxies_host_port ON proxies(host, port);
     CREATE INDEX IF NOT EXISTS idx_cookies_profile_id ON cookies(profile_id);
     CREATE INDEX IF NOT EXISTS idx_profile_logs_profile_id ON profile_logs(profile_id);
     CREATE INDEX IF NOT EXISTS idx_profile_logs_created_at ON profile_logs(created_at);
+    CREATE INDEX IF NOT EXISTS idx_tasks_is_active ON tasks(is_active);
+    CREATE INDEX IF NOT EXISTS idx_tasks_schedule_type ON tasks(schedule_type);
+    CREATE INDEX IF NOT EXISTS idx_task_executions_task_id ON task_executions(task_id);
+    CREATE INDEX IF NOT EXISTS idx_task_executions_profile_id ON task_executions(profile_id);
 
     CREATE TRIGGER IF NOT EXISTS update_profiles_timestamp
     AFTER UPDATE ON profiles
@@ -91,7 +150,39 @@ function createTables(db) {
     BEGIN
       UPDATE system_config SET updated_at = CURRENT_TIMESTAMP WHERE key = NEW.key;
     END;
+
+    CREATE TRIGGER IF NOT EXISTS update_tasks_timestamp
+    AFTER UPDATE ON tasks
+    BEGIN
+      UPDATE tasks SET updated_at = CURRENT_TIMESTAMP WHERE id = NEW.id;
+    END;
   `);
 }
 
-module.exports = { createTables };
+function migrateTables(db) {
+  const existing = db.pragma('table_info(profiles)').map(r => r.name);
+  const missing = NEW_PROFILE_COLUMNS.filter(c => !existing.includes(c));
+
+  if (missing.length === 0) return;
+
+  const tz = 'Asia/Bishkek';
+  const walletPw = 'asdfj*KK';
+
+  const mig = db.transaction(() => {
+    for (const col of missing) {
+      let sql;
+      if (col === 'timezone') {
+        sql = `ALTER TABLE profiles ADD COLUMN timezone TEXT DEFAULT '${tz}'`;
+      } else if (col === 'wallet_password') {
+        sql = `ALTER TABLE profiles ADD COLUMN wallet_password TEXT DEFAULT '${walletPw}'`;
+      } else {
+        sql = `ALTER TABLE profiles ADD COLUMN ${col} TEXT`;
+      }
+      db.exec(sql);
+    }
+  });
+
+  mig();
+}
+
+module.exports = { createTables, migrateTables };

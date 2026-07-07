@@ -247,7 +247,6 @@ describe('MultiController', () => {
       await controller.addSlave('slave-1');
 
       await controller.scrollTo({ deltaY: 200 });
-      await new Promise(r => setTimeout(r, 120));
 
       const wheelCalls = mockCdp.dispatchMouseEvent.mock.calls.filter(c => c[1] === 'mouseWheel');
       expect(wheelCalls.length).toBeGreaterThanOrEqual(2);

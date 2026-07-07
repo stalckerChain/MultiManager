@@ -117,7 +117,7 @@
 
 | # | Задача | Сложность | Фаза | Статус |
 |---|--------|-----------|------|--------|
-| 7.1 | Расширение БД: новые колонки `profiles` (timezone, email, Twitter, Discord, Web3), таблицы `tasks`/`task_executions` | Средняя | MultiManager Ф1 | ❌ |
+| 7.1 | Расширение БД: новые колонки `profiles` (timezone, email, Twitter, Discord, Web3), таблицы `tasks`/`task_executions` | Средняя | MultiManager Ф1 | ✅ |
 | 7.2 | Crypto-модуль AES-256-GCM + гибрид мастер-ключа (OS Keyring / PBKDF2 / recovery-key) | Большая | MultiManager Ф2 | ❌ |
 | 7.3 | Авто-логин Zerion по CDP (перенос из Python `Core/browser.py::login_zerion` в Node.js) | Средняя | MultiManager Ф2/Ф4 | ❌ |
 | 7.4 | Hot Backup + Rolling Window 7д (`db.backup()` при холодном старте) | Малая | MultiManager Ф3 | ❌ |
@@ -127,7 +127,7 @@
 | 7.8 | Endpoint `POST /api/tasks/:id/run` — триггер планировщика (spawn Python, exit code → task_executions) | Средняя | MultiManager Ф4 | ❌ |
 | 7.9 | Endpoint `POST /api/profiles/batch` — массовый импорт для Wallet Factory | Малая | MultiManager Ф4 | ❌ |
 | 7.10 | Исправление `ws_endpoint` — реальный CDP-порт вместо заглушки `ws://127.0.0.1:3000/...` | Малая | MultiManager Ф4 | ❌ |
-| 7.11 | GUI: новые вкладки ProfileModal (Аккаунты, Кошельки, Timezone) | Средняя | MultiManager Ф5 | ❌ |
+| 7.11 | GUI: новые вкладки ProfileModal (Аккаунты, Кошельки, Timezone) | Средняя | MultiManager Ф5 | ✅ |
 | 7.12 | GUI: экран Tasks Manager (таблица задач + executions, кнопка Run now) | Средняя | MultiManager Ф5 | ❌ |
 | 7.13 | GUI: Settings — разделы Безопасность (crypto) + Автоматизация (путь stAuto0, Python) | Малая | MultiManager Ф5 | ❌ |
 | 7.14 | GUI: Встроенный терминал xterm.js + node-pty (tail логов задач) | Большая | MultiManager Ф6 | ❌ |

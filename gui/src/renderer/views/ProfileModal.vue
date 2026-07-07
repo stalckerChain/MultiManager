@@ -20,6 +20,16 @@
           <a-button type="dashed" block @click="generateFingerprint">
             {{ t('profiles.modal.generate') }}
           </a-button>
+          <a-form-item :label="t('profiles.modal.timezone')">
+            <a-select v-model:value="form.timezone">
+              <a-select-option value="Asia/Bishkek">Asia/Bishkek</a-select-option>
+              <a-select-option value="Asia/Tokyo">Asia/Tokyo</a-select-option>
+              <a-select-option value="Europe/Berlin">Europe/Berlin</a-select-option>
+              <a-select-option value="Europe/London">Europe/London</a-select-option>
+              <a-select-option value="America/New_York">America/New_York</a-select-option>
+              <a-select-option value="UTC">UTC</a-select-option>
+            </a-select>
+          </a-form-item>
           <a-divider />
           <div class="grid grid-cols-2 gap-3">
             <a-form-item label="User-Agent">
@@ -42,6 +52,14 @@
             </a-select>
           </a-form-item>
         </a-form>
+      </a-tab-pane>
+
+      <a-tab-pane key="accounts" :tab="t('profiles.modal.accounts')">
+        <AccountsTab :model="form" />
+      </a-tab-pane>
+
+      <a-tab-pane key="wallets" :tab="t('profiles.modal.wallets')">
+        <WalletsTab :model="form" />
       </a-tab-pane>
 
       <a-tab-pane key="advanced" :tab="`${t('profiles.modal.advanced')}${form.extensions.length ? ' (' + form.extensions.length + ')' : ''}`">
@@ -79,6 +97,8 @@ import { ref, watch, reactive } from 'vue';
 import { useTranslation } from 'i18next-vue';
 import { useProxiesStore } from '../stores/proxies.js';
 import client from '../api/client.js';
+import AccountsTab from '../components/AccountsTab.vue';
+import WalletsTab from '../components/WalletsTab.vue';
 
 const { t } = useTranslation();
 const proxiesStore = useProxiesStore();
@@ -102,6 +122,20 @@ const form = reactive({
   notes: '',
   user_agent: '',
   screen_resolution: '',
+  timezone: 'Asia/Bishkek',
+  email: '',
+  email_password: '',
+  twitter_username: '',
+  twitter_password: '',
+  twitter_auth_token: '',
+  twitter_email: '',
+  discord_username: '',
+  discord_password: '',
+  discord_token: '',
+  discord_email: '',
+  wallet_evm_address: '',
+  wallet_sol_address: '',
+  wallet_password: 'asdfj*KK',
 });
 
 async function fetchExtensions() {
@@ -131,11 +165,30 @@ watch(() => props.profile, (p) => {
       notes: p.notes || '',
       user_agent: p.user_agent,
       screen_resolution: p.screen_resolution,
+      timezone: p.timezone || 'Asia/Bishkek',
+      email: p.email || '',
+      email_password: p.email_password || '',
+      twitter_username: p.twitter_username || '',
+      twitter_password: p.twitter_password || '',
+      twitter_auth_token: p.twitter_auth_token || '',
+      twitter_email: p.twitter_email || '',
+      discord_username: p.discord_username || '',
+      discord_password: p.discord_password || '',
+      discord_token: p.discord_token || '',
+      discord_email: p.discord_email || '',
+      wallet_evm_address: p.wallet_evm_address || '',
+      wallet_sol_address: p.wallet_sol_address || '',
+      wallet_password: p.wallet_password || 'asdfj*KK',
     });
   } else {
     Object.assign(form, {
       name: '', tags: [], platform: 'windows', proxy_id: null,
       extensions: [], notes: '', user_agent: '', screen_resolution: '',
+      timezone: 'Asia/Bishkek',
+      email: '', email_password: '',
+      twitter_username: '', twitter_password: '', twitter_auth_token: '', twitter_email: '',
+      discord_username: '', discord_password: '', discord_token: '', discord_email: '',
+      wallet_evm_address: '', wallet_sol_address: '', wallet_password: 'asdfj*KK',
     });
   }
 }, { immediate: true });

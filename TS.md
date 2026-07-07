@@ -53,33 +53,33 @@
 | `profile_logs` | Логи профилей |
 | `system_config` | Системные настройки (key-value) |
 
-**`profiles` (16 колонок, всё ✅):** `id` (UUIDv4 PK), `number`, `name`, `proxy_id` FK, `fingerprint_seed`, `platform`, `user_agent`, `screen_resolution`, `hardware_cores`, `hardware_memory`, `extensions` (JSON), `tags` (JSON), `notes`, `status` (stopped|starting|running), `pid`, `created_at`, `updated_at`.
+**`profiles` (30 колонок, всё ✅):** `id` (UUIDv4 PK), `number`, `name`, `proxy_id` FK, `fingerprint_seed`, `platform`, `user_agent`, `screen_resolution`, `hardware_cores`, `hardware_memory`, `extensions` (JSON), `tags` (JSON), `notes`, `status` (stopped|starting|running), `pid`, `timezone`, `email`, `email_password`, `twitter_username`, `twitter_password`, `twitter_auth_token`, `twitter_email`, `discord_username`, `discord_password`, `discord_token`, `discord_email`, `wallet_evm_address`, `wallet_sol_address`, `wallet_password`, `created_at`, `updated_at`.
 
-### 3.2. Расширение схемы v1.1.0 ❌ НЕ РЕАЛИЗОВАНО (Roadmap Ф1)
+### 3.2. Расширение схемы v1.1.0 ✅ РЕАЛИЗОВАНО (Roadmap Ф1)
 
 **Новые колонки таблицы `profiles`:**
 | Колонка | Тип | Назначение |
 |---------|-----|-----------|
 | `timezone` | TEXT DEFAULT 'Asia/Bishkek' | Прокидывается через CDP `Emulation.setTimezoneOverride` при старте |
 | `email` | TEXT | Email аккаунта |
-| `email_password` | TEXT | Пароль почты (AES-256-GCM, см. §4.X) |
-| `twitter_username` | TEXT NOT NULL (если есть X-блок) | Логин X/Twitter |
-| `twitter_password` | TEXT | Пароль X (AES) |
-| `twitter_auth_token` | TEXT | Auth token X (AES) |
+| `email_password` | TEXT | Пароль почты (см. ToDo.md §7.2 — шифрование) |
+| `twitter_username` | TEXT | Логин X/Twitter |
+| `twitter_password` | TEXT | Пароль X (см. ToDo.md §7.2) |
+| `twitter_auth_token` | TEXT | Auth token X (см. ToDo.md §7.2) |
 | `twitter_email` | TEXT | Email X |
 | `discord_username` | TEXT | Логин Discord |
-| `discord_password` | TEXT | Пароль Discord (AES) |
-| `discord_token` | TEXT | Token Discord (AES) |
+| `discord_password` | TEXT | Пароль Discord (см. ToDo.md §7.2) |
+| `discord_token` | TEXT | Token Discord (см. ToDo.md §7.2) |
 | `discord_email` | TEXT | Email Discord |
 | `wallet_evm_address` | TEXT | EVM-адрес (публичный) |
 | `wallet_sol_address` | TEXT | Solana-адрес (публичный) |
-| `wallet_password` | TEXT | Пароль расширения Zerion (AES, default 'asdfj*KK') |
+| `wallet_password` | TEXT | Пароль расширения Zerion, default 'asdfj*KK' (см. ToDo.md §7.2) |
 
 > **🛑 КРИТИЧНОЕ РЕШЕНИЕ:** приватных ключей (`wallet_evm_private`, `wallet_sol_private`) **В СХЕМЕ НЕТ**. Сид-фразы хранятся только во временном файле `config/auto_sids.py` и уничтожаются после инициализации (см. TS_INTEGRATION.md §5). Recovery кошелька по базе невозможен по дизайну — это сознательный параноидальный выбор.
 
-**Миграция:** через `ALTER TABLE ADD COLUMN` (SQLite безопасно добавляет колонки с дефолтами к существующим БД без потери данных). Новая версия `src/db/schema.js` должна содержать и CREATE для свежих БД, и блок миграций `ALTER ... WHERE NOT EXISTS`.
+**Миграция:** через `ALTER TABLE ADD COLUMN` — реализована в `src/db/schema.js:migrateTables()`. При инициализации БД проверяет `PRAGMA table_info` и добавляет недостающие колонки.
 
-### 3.3. Новые таблицы планировщика ❌ НЕ РЕАЛИЗОВАНО (Roadmap Ф1)
+### 3.3. Новые таблицы планировщика ✅ РЕАЛИЗОВАНО (Roadmap Ф1)
 
 **`tasks`** — задачи/квесты:
 | Колонка | Тип | Назначение |
@@ -272,12 +272,11 @@ Python: `connect_over_cdp("http://127.0.0.1:9331")`. Таймаут ожидан
 - Таблица профилей: №, имя+теги, прокси, отпечаток, статус, СТАРТ/СТОП, контекстное меню. WebSocket-обновление статусов.
 - Модалка редактирования с вкладками «Основные»/«Прокси»/«Дополнительно».
 
-**К реализации ❌ (Roadmap Ф5):**
+**Реализовано ✅ (Roadmap Ф5):**
 - **Новые вкладки в ProfileModal:**
   - «Аккаунты»: `email`, `email_password`, блоки X/Twitter и Discord (4+4 поля). Пароли маскируются, есть кнопка «показать/скрыть».
-  - «Кошельки»: `wallet_evm_address`, `wallet_sol_address` (read-only, генерируются Wallet Factory), `wallet_password` (с возможностью смены).
-  - Поле `timezone` (select из common tz).
-- Эти поля пишутся через `PUT /api/profiles/:id` и шифруются на бэке (§4.11).
+  - «Кошельки»: `wallet_evm_address`, `wallet_sol_address` (read-only, копируемые), `wallet_password` (с возможностью смены).
+  - Поле `timezone` (select из common tz: Asia/Bishkek, Asia/Tokyo, Europe/Berlin, Europe/London, America/New_York, UTC).
 
 ### 9.2. Window Arranger ⚠️ ЧАСТИЧНО (см. §4.7)
 ### 9.3. Экран «Менеджер прокси» ✅ РЕАЛИЗОВАНО (`gui/src/renderer/views/Proxies.vue`)
@@ -324,11 +323,11 @@ Python: `connect_over_cdp("http://127.0.0.1:9331")`. Таймаут ожидан
 
 | Фаза | Задача | Файлы | Зависимости |
 |------|--------|-------|-------------|
-| **Ф1** | Расширение БД: `timezone`, новые колонки `profiles`, таблицы `tasks`/`task_executions`. Миграция `ALTER TABLE`. | `src/db/schema.js`, `src/db/queries.js` | — |
-| **Ф2** | Crypto-модуль AES-256-GCM + гибрид мастер-ключа (Keyring/PBKDF2/recovery) + авто-логин Zerion. | `src/crypto/index.js` (новый), `src/db/queries.js`, `src/api/browser.js` | Ф1 |
-| **Ф3** | Backup Hot Backup + Rolling 7д. | `src/backup/index.js` (новый), `src/index.js` | — |
-| **Ф4** | Endpoints: `/api/internal/profiles`, `/api/browser/:id/type`, `/api/browser/:id/zerion-login`, `/api/tasks/:id/run`, `/api/profiles/batch`. Исправление `ws_endpoint` (реальный CDP-порт). | `src/api/internal.js` (новый), `src/api/browser.js`, `src/api/tasks.js` (новый), `src/core/app.js` | Ф1, Ф2 |
-| **Ф5** | GUI: новые вкладки ProfileModal, экран Tasks Manager, Settings crypto/automation. | `gui/src/renderer/views/ProfileModal.vue`, `gui/src/renderer/views/Tasks.vue` (новый), `gui/src/renderer/views/Settings.vue` | Ф1, Ф2, Ф4 |
+| **Ф1** | **✅ Расширение БД:** `timezone`, новые колонки `profiles`, таблицы `tasks`/`task_executions`. Миграция `ALTER TABLE`. | `src/db/schema.js`, `src/db/queries.js` | — |
+| **Ф2** | ❌ Crypto-модуль AES-256-GCM + гибрид мастер-ключа (Keyring/PBKDF2/recovery) + авто-логин Zerion. | `src/crypto/index.js` (новый), `src/db/queries.js`, `src/api/browser.js` | Ф1 |
+| **Ф3** | ❌ Backup Hot Backup + Rolling 7д. | `src/backup/index.js` (новый), `src/index.js` | — |
+| **Ф4** | ❌ Endpoints: `/api/internal/profiles`, `/api/browser/:id/type`, `/api/browser/:id/zerion-login`, `/api/tasks/:id/run`, `/api/profiles/batch`. Исправление `ws_endpoint` (реальный CDP-порт). | `src/api/internal.js` (новый), `src/api/browser.js`, `src/api/tasks.js` (новый), `src/core/app.js` | Ф1, Ф2 |
+| **Ф5** | **✅ ProfileModal** вкладки (Аккаунты + Кошельки). ❌ Экран Tasks Manager, Settings crypto/automation. | `gui/src/renderer/views/ProfileModal.vue`, `gui/src/renderer/views/Tasks.vue` (новый), `gui/src/renderer/views/Settings.vue` | Ф1, Ф2, Ф4 |
 | **Ф6** | Терминал xterm.js + node-pty. | `gui/package.json`, `gui/src/main/pty.js` (новый), `gui/src/renderer/components/Terminal.vue` (новый) | Ф4 |
 
 > **Параллельный трек (TS_INTEGRATION.md):** миграция stAuto0 идёт фазами ФА–ФД и стыкуется с MultiManager Ф1–Ф4 (API-контракт).
@@ -338,10 +337,10 @@ Python: `connect_over_cdp("http://127.0.0.1:9331")`. Таймаут ожидан
 
 | # | Фича | В ТЗ | В коде | Приоритет |
 |---|------|------|--------|-----------|
-| 1 | БД: 16 колонок profiles | ✅ | ✅ `schema.js` | — |
-| 2 | БД: новые колонки v1.1.0 | ✅ | ❌ | Ф1 |
-| 3 | БД: таблицы tasks/task_executions | ✅ | ❌ | Ф1 |
-| 4 | Timezone в профиле | ✅ | ❌ | Ф1 |
+| 1 | БД: 30 колонок profiles | ✅ | ✅ `schema.js` | — |
+| 2 | БД: новые колонки v1.1.0 | ✅ | ✅ `schema.js:50-63` | Ф1 ✅ |
+| 3 | БД: таблицы tasks/task_executions | ✅ | ✅ `schema.js:79-100` | Ф1 ✅ |
+| 4 | Timezone в профиле | ✅ | ✅ `schema.js:47` | Ф1 ✅ |
 | 5 | Шифрование AES-256-GCM | ✅ | ❌ (только token-gen) | Ф2 |
 | 6 | Hot Backup + Rolling | ✅ | ❌ | Ф3 |
 | 7 | `/api/internal/profiles?range=` | ✅ | ❌ | Ф4 |
@@ -350,7 +349,7 @@ Python: `connect_over_cdp("http://127.0.0.1:9331")`. Таймаут ожидан
 | 10 | `POST /api/tasks/:id/run` | ✅ | ❌ | Ф4 |
 | 11 | `POST /api/profiles/batch` | ✅ | ❌ | Ф4 |
 | 12 | Исправление `ws_endpoint` | ✅ | ❌ (заглушка) | Ф4 |
-| 13 | ProfileModal вкладки (акки/кошельки) | ✅ | ❌ | Ф5 |
+| 13 | ProfileModal вкладки (акки/кошельки) | ✅ | ✅ `gui/src/renderer/components/AccountsTab.vue`, `WalletsTab.vue` | Ф5 ✅ |
 | 14 | Экран Tasks Manager | ✅ | ❌ | Ф5 |
 | 15 | Встроенный терминал | ✅ | ❌ (нет deps) | Ф6 |
 | 16 | Settings: crypto + automation | ✅ | ⚠️ (базовый Settings) | Ф5 |

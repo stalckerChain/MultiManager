@@ -102,7 +102,9 @@ MultiManager/
 │           ├── components/   # Reusable components
 │           │   ├── Layout.vue
 │           │   ├── StatusBar.vue
-│           │   └── LogPanel.vue
+│           │   ├── LogPanel.vue
+│           │   ├── AccountsTab.vue
+│           │   └── WalletsTab.vue
 │           ├── composables/  # Vue Composables
 │           └── api/          # HTTP client for Core requests
 └── tests/                    # Testing infrastructure

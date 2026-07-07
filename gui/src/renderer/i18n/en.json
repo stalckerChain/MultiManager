@@ -33,6 +33,8 @@
     "modal": {
       "basic": "Basic",
       "proxy": "Proxy",
+      "accounts": "Accounts",
+      "wallets": "Wallets",
       "advanced": "Advanced",
       "name": "Profile Name",
       "tags": "Tags",
@@ -43,7 +45,21 @@
       "extensions": "Extensions",
       "notes": "Notes",
       "save": "Save",
-      "cancel": "Cancel"
+      "cancel": "Cancel",
+      "timezone": "Timezone",
+      "email": "Email",
+      "emailPassword": "Email Password",
+      "twitterUsername": "X/Twitter Username",
+      "twitterPassword": "X/Twitter Password",
+      "twitterAuthToken": "X/Twitter Auth Token",
+      "twitterEmail": "X/Twitter Email",
+      "discordUsername": "Discord Username",
+      "discordPassword": "Discord Password",
+      "discordToken": "Discord Token",
+      "discordEmail": "Discord Email",
+      "walletEvmAddress": "EVM Address",
+      "walletSolAddress": "Solana Address",
+      "walletPassword": "Wallet Password"
     }
   },
   "proxies": {

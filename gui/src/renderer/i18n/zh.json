@@ -33,6 +33,8 @@
     "modal": {
       "basic": "基本",
       "proxy": "代理",
+      "accounts": "账户",
+      "wallets": "钱包",
       "advanced": "高级",
       "name": "配置名称",
       "tags": "标签",
@@ -43,7 +45,21 @@
       "extensions": "扩展",
       "notes": "备注",
       "save": "保存",
-      "cancel": "取消"
+      "cancel": "取消",
+      "timezone": "时区",
+      "email": "邮箱",
+      "emailPassword": "邮箱密码",
+      "twitterUsername": "X/Twitter 用户名",
+      "twitterPassword": "X/Twitter 密码",
+      "twitterAuthToken": "X/Twitter 令牌",
+      "twitterEmail": "X/Twitter 邮箱",
+      "discordUsername": "Discord 用户名",
+      "discordPassword": "Discord 密码",
+      "discordToken": "Discord 令牌",
+      "discordEmail": "Discord 邮箱",
+      "walletEvmAddress": "EVM 地址",
+      "walletSolAddress": "Solana 地址",
+      "walletPassword": "钱包密码"
     }
   },
   "proxies": {
