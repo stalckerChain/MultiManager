@@ -459,6 +459,30 @@ Human-like text input via CDP. Simulates real typing with 50–150 ms delays and
 
 ---
 
+### POST /api/browser/:id/zerion-login
+
+Auto-login to Zerion extension (extension ID: `klghhnkeealcohjjanjjdaeeggmfmlpl`).
+
+**Request Body:**
+```json
+{
+  "password": "zerion_password"
+}
+```
+
+**Response (200):**
+```json
+{
+  "status": "success"
+}
+```
+
+**Response (404):** `{ "error": "Profile not found" }`
+**Response (409):** `{ "error": "Profile is not running" }`
+**Response (502):** `{ "error": "CDP port not found" }`
+
+---
+
 ## Multi-Control (Window Sync) — v0.13.0
 
 Broadcasts actions from master window to all slave windows via CDP (Chrome DevTools Protocol).
@@ -653,6 +677,20 @@ Focus all multi-control windows (slaves first, then master).
 
 ---
 
+## Internal API
+
+### GET /api/internal/profiles?range=001-010
+
+Get profiles by number range. Returns decrypted secrets.
+
+**Parameters:** `range` — number range in `NNN-NNN` format
+
+**Response (200):** Array of profiles with decrypted secrets
+
+**Response (400):** `{ "error": "Invalid range format: 001-010" }`
+
+---
+
 ## Extensions
 
 ### GET /api/extensions
@@ -765,6 +803,86 @@ If the archive has a single root directory, it is stripped automatically.
 Supports CRX v2 and CRX v3 formats.
 
 **Response (201):** Installed extension
+
+---
+
+## Tasks
+
+### GET /api/tasks
+
+Get list of all tasks.
+
+**Response (200):** Array of tasks
+
+---
+
+### POST /api/tasks
+
+Create a task.
+
+**Request Body:**
+```json
+{
+  "name": "My Task",
+  "script_name": "script.sh",
+  "schedule_type": "interval",
+  "params": "{}",
+  "is_active": 1
+}
+```
+
+**Required Fields:** `name`, `script_name`, `schedule_type`
+
+**Response (201):** Created task
+
+---
+
+### GET /api/tasks/:id
+
+Get task by ID.
+
+**Response (200):** Task
+**Response (404):** `{ "error": "Task not found" }`
+
+---
+
+### PUT /api/tasks/:id
+
+Update task.
+
+**Response (200):** Updated task
+
+---
+
+### DELETE /api/tasks/:id
+
+Delete task.
+
+**Response (204):** Deleted successfully
+
+---
+
+### GET /api/tasks/:id/executions
+
+Get task execution history.
+
+**Response (200):** Array of executions
+
+---
+
+### POST /api/tasks/:id/run
+
+Run task manually.
+
+**Response (200):**
+```json
+{
+  "status": "running",
+  "execution_id": 1
+}
+```
+
+**Response (404):** `{ "error": "Task not found" }`
 
 ---
 
@@ -972,6 +1090,116 @@ Generate a random fingerprint for the specified platform. Does not create a prof
   "fingerprint_seed": "a1b2c3d4-..."
 }
 ```
+
+---
+
+## Settings
+
+### GET /api/settings/crypto-status
+
+Get crypto module status (AES-256-GCM encryption for profile secret fields).
+
+**Response (200):**
+```json
+{
+  "initialized": true,
+  "hasMasterKey": true,
+  "keySource": "keytar",
+  "passwordMode": false,
+  "encryptedFields": ["email_password", "twitter_password", "twitter_auth_token", "discord_password", "discord_token", "wallet_password"]
+}
+```
+
+---
+
+### POST /api/settings/set-master-password
+
+Set master password (enables passwordMode). Minimum 8 characters.
+
+**Request Body:**
+```json
+{
+  "password": "my_strong_password"
+}
+```
+
+**Response (200):**
+```json
+{
+  "status": "success",
+  "passwordMode": true
+}
+```
+
+**Response (400):** `{ "error": "Password must be at least 8 characters" }`
+
+---
+
+### POST /api/settings/change-master-password
+
+Change master password.
+
+**Request Body:**
+```json
+{
+  "old_password": "old_password",
+  "new_password": "new_password"
+}
+```
+
+**Response (200):**
+```json
+{
+  "status": "success"
+}
+```
+
+**Response (400):** `{ "error": "Invalid old password" }`
+
+---
+
+### GET /api/settings/recovery-key
+
+Get recovery key (requires master password).
+
+**Response (200):**
+```json
+{
+  "recoveryKey": "recovery-key-here"
+}
+```
+
+**Response (400):** `{ "error": "Crypto module not initialized" }`
+
+---
+
+### GET /api/settings/automation
+
+Get automation settings (scripts and projects directory paths).
+
+**Response (200):**
+```json
+{
+  "scripts_dir": "",
+  "projects_dir": ""
+}
+```
+
+---
+
+### PUT /api/settings/automation
+
+Update automation settings.
+
+**Request Body:**
+```json
+{
+  "scripts_dir": "/path/to/scripts",
+  "projects_dir": "/path/to/projects"
+}
+```
+
+**Response (200):** Updated settings
 
 ---
 

@@ -52,6 +52,8 @@ Stores anti-detect browser profiles.
 **Migration (v1.0.0 → v1.1.0):**
 On DB initialization, `migrateTables()` checks for new columns via `PRAGMA table_info` and adds missing ones via `ALTER TABLE ADD COLUMN`. Migrated columns: `timezone`, `email`, `email_password`, `twitter_username`, `twitter_password`, `twitter_auth_token`, `twitter_email`, `discord_username`, `discord_password`, `discord_token`, `discord_email`, `wallet_evm_address`, `wallet_sol_address`, `wallet_password`.
 
+**Encryption (v1.2.0):** Fields `email_password`, `twitter_password`, `twitter_auth_token`, `discord_password`, `discord_token`, `wallet_password` are automatically encrypted with AES-256-GCM when the crypto module is enabled. Format: `aes-256-gcm:<iv>:<ciphertext>:<tag>`. Master key is stored in the OS keychain (keytar) with fallback to `system_config`.
+
 ---
 
 ### tasks

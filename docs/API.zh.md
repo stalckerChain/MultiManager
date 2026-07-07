@@ -459,6 +459,30 @@ Authorization: Bearer <token>
 
 ---
 
+### POST /api/browser/:id/zerion-login
+
+自动登录 Zerion 扩展（扩展 ID：`klghhnkeealcohjjanjjdaeeggmfmlpl`）。
+
+**请求体：**
+```json
+{
+  "password": "zerion_password"
+}
+```
+
+**响应 (200)：**
+```json
+{
+  "status": "success"
+}
+```
+
+**响应 (404)：** `{ "error": "配置文件未找到" }`
+**响应 (409)：** `{ "error": "配置文件未运行" }`
+**响应 (502)：** `{ "error": "CDP 端口未找到" }`
+
+---
+
 ## Multi-Control（窗口同步）— v0.13.0
 
 通过 CDP（Chrome DevTools Protocol）将主窗口的操作广播到所有从窗口。
@@ -651,6 +675,20 @@ Authorization: Bearer <token>
 }
 ```
 
+## Internal API
+
+### GET /api/internal/profiles?range=001-010
+
+按编号范围获取配置文件。返回解密后的密钥。
+
+**参数：** `range` — 编号范围，格式为 `NNN-NNN`
+
+**响应 (200)：** 包含解密密钥的配置文件数组
+
+**响应 (400)：** `{ "error": "范围格式无效：001-010" }`
+
+---
+
 ## 扩展
 
 ### GET /api/extensions
@@ -798,6 +836,86 @@ Authorization: Bearer <token>
   }
 ]
 ```
+
+---
+
+## 任务
+
+### GET /api/tasks
+
+获取所有任务列表。
+
+**响应 (200)：** 任务数组
+
+---
+
+### POST /api/tasks
+
+创建任务。
+
+**请求体：**
+```json
+{
+  "name": "我的任务",
+  "script_name": "script.sh",
+  "schedule_type": "interval",
+  "params": "{}",
+  "is_active": 1
+}
+```
+
+**必填字段：** `name`、`script_name`、`schedule_type`
+
+**响应 (201)：** 已创建的任务
+
+---
+
+### GET /api/tasks/:id
+
+按 ID 获取任务。
+
+**响应 (200)：** 任务
+**响应 (404)：** `{ "error": "任务未找到" }`
+
+---
+
+### PUT /api/tasks/:id
+
+更新任务。
+
+**响应 (200)：** 更新后的任务
+
+---
+
+### DELETE /api/tasks/:id
+
+删除任务。
+
+**响应 (204)：** 删除成功
+
+---
+
+### GET /api/tasks/:id/executions
+
+获取任务执行历史。
+
+**响应 (200)：** 执行记录数组
+
+---
+
+### POST /api/tasks/:id/run
+
+手动运行任务。
+
+**响应 (200)：**
+```json
+{
+  "status": "running",
+  "execution_id": 1
+}
+```
+
+**响应 (404)：** `{ "error": "任务未找到" }`
 
 ---
 
@@ -950,6 +1068,116 @@ Authorization: Bearer <token>
   "fingerprint_seed": "a1b2c3d4-..."
 }
 ```
+
+---
+
+## 设置
+
+### GET /api/settings/crypto-status
+
+获取加密模块状态（针对配置文件密钥字段的 AES-256-GCM 加密）。
+
+**响应 (200)：**
+```json
+{
+  "initialized": true,
+  "hasMasterKey": true,
+  "keySource": "keytar",
+  "passwordMode": false,
+  "encryptedFields": ["email_password", "twitter_password", "twitter_auth_token", "discord_password", "discord_token", "wallet_password"]
+}
+```
+
+---
+
+### POST /api/settings/set-master-password
+
+设置主密码（启用 passwordMode）。至少 8 个字符。
+
+**请求体：**
+```json
+{
+  "password": "my_strong_password"
+}
+```
+
+**响应 (200)：**
+```json
+{
+  "status": "success",
+  "passwordMode": true
+}
+```
+
+**响应 (400)：** `{ "error": "密码至少需要 8 个字符" }`
+
+---
+
+### POST /api/settings/change-master-password
+
+更改主密码。
+
+**请求体：**
+```json
+{
+  "old_password": "old_password",
+  "new_password": "new_password"
+}
+```
+
+**响应 (200)：**
+```json
+{
+  "status": "success"
+}
+```
+
+**响应 (400)：** `{ "error": "旧密码错误" }`
+
+---
+
+### GET /api/settings/recovery-key
+
+获取恢复密钥（需要主密码）。
+
+**响应 (200)：**
+```json
+{
+  "recoveryKey": "recovery-key-here"
+}
+```
+
+**响应 (400)：** `{ "error": "加密模块未初始化" }`
+
+---
+
+### GET /api/settings/automation
+
+获取自动化设置（脚本和项目目录路径）。
+
+**响应 (200)：**
+```json
+{
+  "scripts_dir": "",
+  "projects_dir": ""
+}
+```
+
+---
+
+### PUT /api/settings/automation
+
+更新自动化设置。
+
+**请求体：**
+```json
+{
+  "scripts_dir": "/path/to/scripts",
+  "projects_dir": "/path/to/projects"
+}
+```
+
+**响应 (200)：** 更新后的设置
 
 ---
 

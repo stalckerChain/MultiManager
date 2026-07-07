@@ -1,8 +1,9 @@
 const http = require('http');
 const { app, setupWebSocket } = require('./core/app');
 const { logger } = require('./logger');
-const { initDatabase } = require('./db');
+const { initDatabase, getDatabase } = require('./db');
 const { setToken } = require('./api/auth');
+const { initMasterKey, hasMasterKey } = require('./crypto');
 const crypto = require('crypto');
 
 const args = process.argv.slice(2);
@@ -14,7 +15,15 @@ const port = portArg ? parseInt(portArg.split('=')[1], 10) : (process.env.PORT |
 setToken(token);
 initDatabase();
 
-const db = require('./db').getDatabase();
+const db = getDatabase();
+initMasterKey(db).then(() => {
+  if (hasMasterKey()) {
+    logger.info('Master-ключ инициализирован');
+  } else {
+    logger.warn('Master-ключ не инициализирован — режим ожидания пароля');
+  }
+});
+
 const staleProfiles = db.prepare("SELECT id FROM profiles WHERE status IN ('running', 'starting')").all();
 if (staleProfiles.length > 0) {
   db.prepare("UPDATE profiles SET status = 'stopped', pid = NULL WHERE status IN ('running', 'starting')").run();

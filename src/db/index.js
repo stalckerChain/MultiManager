@@ -3,7 +3,7 @@ const path = require('path');
 const fs = require('fs');
 const { logger } = require('../logger');
 const { createTables, migrateTables } = require('./schema');
-const { createProfileQueries, createProxyQueries, createCookieQueries, createLogQueries } = require('./queries');
+const { createProfileQueries, createProxyQueries, createCookieQueries, createLogQueries, createTaskQueries, createSystemConfigQueries } = require('./queries');
 
 let db = null;
 
@@ -67,4 +67,6 @@ module.exports = {
   createProxyQueries,
   createCookieQueries,
   createLogQueries,
+  createTaskQueries,
+  createSystemConfigQueries,
 };

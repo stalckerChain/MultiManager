@@ -1,4 +1,5 @@
 const { v4: uuidv4 } = require('uuid');
+const { encrypt, decrypt, decryptRow, decryptRows, SECRET_FIELDS, hasMasterKey, getMasterKey } = require('../crypto');
 
 function createProfileQueries(db) {
   const insert = db.prepare(`
@@ -44,52 +45,77 @@ function createProfileQueries(db) {
     WHERE id = ?
   `);
 
+  const mk = () => hasMasterKey() ? getMasterKey() : null;
+
+  function encryptFields(data) {
+    const key = mk();
+    if (!key) return data;
+    const out = { ...data };
+    for (const field of SECRET_FIELDS) {
+      if (out[field] !== undefined && out[field] !== null) {
+        out[field] = encrypt(String(out[field]), key);
+      }
+    }
+    return out;
+  }
+
+  function decryptRowSafe(row) {
+    if (!hasMasterKey() || !row) return row;
+    return decryptRow(row);
+  }
+
+  function decryptRowsSafe(rows) {
+    if (!hasMasterKey() || !rows) return rows;
+    return rows.map(r => decryptRow(r));
+  }
+
   return {
     create(data) {
       const id = uuidv4();
       const num = count.get().count + 1;
+      const enc = encryptFields(data);
       insert.run(
         id,
         num,
-        data.name,
-        data.proxy_id || null,
-        data.fingerprint_seed,
-        data.platform,
-        data.user_agent,
-        data.screen_resolution,
-        data.hardware_cores,
-        data.hardware_memory,
-        JSON.stringify(data.extensions || []),
-        JSON.stringify(data.tags || []),
-        data.notes || '',
-        data.timezone || 'Asia/Bishkek',
-        data.email || null,
-        data.email_password || null,
-        data.twitter_username || null,
-        data.twitter_password || null,
-        data.twitter_auth_token || null,
-        data.twitter_email || null,
-        data.discord_username || null,
-        data.discord_password || null,
-        data.discord_token || null,
-        data.discord_email || null,
-        data.wallet_evm_address || null,
-        data.wallet_sol_address || null,
-        data.wallet_password || 'asdfj*KK'
+        enc.name,
+        enc.proxy_id || null,
+        enc.fingerprint_seed,
+        enc.platform,
+        enc.user_agent,
+        enc.screen_resolution,
+        enc.hardware_cores,
+        enc.hardware_memory,
+        JSON.stringify(enc.extensions || []),
+        JSON.stringify(enc.tags || []),
+        enc.notes || '',
+        enc.timezone || 'Asia/Bishkek',
+        enc.email || null,
+        enc.email_password || null,
+        enc.twitter_username || null,
+        enc.twitter_password || null,
+        enc.twitter_auth_token || null,
+        enc.twitter_email || null,
+        enc.discord_username || null,
+        enc.discord_password || null,
+        enc.discord_token || null,
+        enc.discord_email || null,
+        enc.wallet_evm_address || null,
+        enc.wallet_sol_address || null,
+        enc.wallet_password || 'asdfj*KK'
       );
-      return getById.get(id);
+      return decryptRowSafe(getById.get(id));
     },
 
     getById(id) {
-      return getById.get(id);
+      return decryptRowSafe(getById.get(id));
     },
 
     getAll() {
-      return getAll.all();
+      return decryptRowsSafe(getAll.all());
     },
 
     getByStatus(status) {
-      return getByStatus.all(status);
+      return decryptRowsSafe(getByStatus.all(status));
     },
 
     updateStatus(id, status) {
@@ -107,35 +133,36 @@ function createProfileQueries(db) {
     },
 
     update(id, data) {
+      const enc = encryptFields(data);
       update.run(
-        data.name || null,
-        data.proxy_id !== undefined ? data.proxy_id : null,
-        data.platform || null,
-        data.user_agent || null,
-        data.screen_resolution || null,
-        data.hardware_cores || null,
-        data.hardware_memory || null,
-        data.fingerprint_seed || null,
-        data.extensions ? JSON.stringify(data.extensions) : null,
-        data.tags ? JSON.stringify(data.tags) : null,
-        data.notes || null,
-        data.timezone || null,
-        data.email !== undefined ? data.email : null,
-        data.email_password !== undefined ? data.email_password : null,
-        data.twitter_username !== undefined ? data.twitter_username : null,
-        data.twitter_password !== undefined ? data.twitter_password : null,
-        data.twitter_auth_token !== undefined ? data.twitter_auth_token : null,
-        data.twitter_email !== undefined ? data.twitter_email : null,
-        data.discord_username !== undefined ? data.discord_username : null,
-        data.discord_password !== undefined ? data.discord_password : null,
-        data.discord_token !== undefined ? data.discord_token : null,
-        data.discord_email !== undefined ? data.discord_email : null,
-        data.wallet_evm_address !== undefined ? data.wallet_evm_address : null,
-        data.wallet_sol_address !== undefined ? data.wallet_sol_address : null,
-        data.wallet_password !== undefined ? data.wallet_password : null,
+        enc.name || null,
+        enc.proxy_id !== undefined ? enc.proxy_id : null,
+        enc.platform || null,
+        enc.user_agent || null,
+        enc.screen_resolution || null,
+        enc.hardware_cores || null,
+        enc.hardware_memory || null,
+        enc.fingerprint_seed || null,
+        enc.extensions ? JSON.stringify(enc.extensions) : null,
+        enc.tags ? JSON.stringify(enc.tags) : null,
+        enc.notes || null,
+        enc.timezone || null,
+        enc.email !== undefined ? enc.email : null,
+        enc.email_password !== undefined ? enc.email_password : null,
+        enc.twitter_username !== undefined ? enc.twitter_username : null,
+        enc.twitter_password !== undefined ? enc.twitter_password : null,
+        enc.twitter_auth_token !== undefined ? enc.twitter_auth_token : null,
+        enc.twitter_email !== undefined ? enc.twitter_email : null,
+        enc.discord_username !== undefined ? enc.discord_username : null,
+        enc.discord_password !== undefined ? enc.discord_password : null,
+        enc.discord_token !== undefined ? enc.discord_token : null,
+        enc.discord_email !== undefined ? enc.discord_email : null,
+        enc.wallet_evm_address !== undefined ? enc.wallet_evm_address : null,
+        enc.wallet_sol_address !== undefined ? enc.wallet_sol_address : null,
+        enc.wallet_password !== undefined ? enc.wallet_password : null,
         id
       );
-      return getById.get(id);
+      return decryptRowSafe(getById.get(id));
     },
   };
 }
@@ -249,4 +276,128 @@ function createLogQueries(db) {
   };
 }
 
-module.exports = { createProfileQueries, createProxyQueries, createCookieQueries, createLogQueries };
+function createTaskQueries(db) {
+  const insert = db.prepare(`
+    INSERT INTO tasks (id, name, script_name, schedule_type, cron_expression, params, is_active)
+    VALUES (?, ?, ?, ?, ?, ?, ?)
+  `);
+
+  const getById = db.prepare('SELECT * FROM tasks WHERE id = ?');
+  const getAll = db.prepare('SELECT * FROM tasks ORDER BY created_at DESC');
+  const getActive = db.prepare('SELECT * FROM tasks WHERE is_active = 1 ORDER BY created_at DESC');
+
+  const update = db.prepare(`
+    UPDATE tasks SET
+      name = COALESCE(?, name),
+      script_name = COALESCE(?, script_name),
+      schedule_type = COALESCE(?, schedule_type),
+      cron_expression = ?,
+      params = COALESCE(?, params),
+      is_active = COALESCE(?, is_active),
+      updated_at = CURRENT_TIMESTAMP
+    WHERE id = ?
+  `);
+
+  const deleteById = db.prepare('DELETE FROM tasks WHERE id = ?');
+
+  const insertExecution = db.prepare(`
+    INSERT INTO task_executions (task_id, profile_id, status, exit_code, last_run_at, log_file_path)
+    VALUES (?, ?, ?, ?, CURRENT_TIMESTAMP, ?)
+  `);
+
+  const getExecutionsByTaskId = db.prepare(
+    'SELECT * FROM task_executions WHERE task_id = ? ORDER BY last_run_at DESC'
+  );
+
+  const updateExecutionStatus = db.prepare(`
+    UPDATE task_executions SET status = ?, exit_code = ? WHERE id = ?
+  `);
+
+  return {
+    create(data) {
+      if (!data.name || !data.script_name || !data.schedule_type) {
+        throw new Error('name, script_name и schedule_type обязательны');
+      }
+      const id = uuidv4();
+      insert.run(
+        id, data.name, data.script_name, data.schedule_type,
+        data.cron_expression || null,
+        JSON.stringify(data.params || {}),
+        data.is_active !== undefined ? (data.is_active ? 1 : 0) : 1
+      );
+      return getById.get(id);
+    },
+
+    getById(id) {
+      return getById.get(id);
+    },
+
+    getAll() {
+      return getAll.all();
+    },
+
+    getActive() {
+      return getActive.all();
+    },
+
+    update(id, data) {
+      update.run(
+        data.name || null,
+        data.script_name || null,
+        data.schedule_type || null,
+        data.cron_expression !== undefined ? data.cron_expression : null,
+        data.params ? JSON.stringify(data.params) : null,
+        data.is_active !== undefined ? (data.is_active ? 1 : 0) : null,
+        id
+      );
+      return getById.get(id);
+    },
+
+    delete(id) {
+      return deleteById.run(id);
+    },
+
+    createExecution(taskId, profileId, status = 'running', logFilePath = null) {
+      const result = insertExecution.run(taskId, profileId, status, null, logFilePath);
+      return result.lastInsertRowid;
+    },
+
+    getExecutions(taskId) {
+      return getExecutionsByTaskId.all(taskId);
+    },
+
+    updateExecutionStatus(id, status, exitCode = null) {
+      updateExecutionStatus.run(status, exitCode, id);
+    },
+  };
+}
+
+function createSystemConfigQueries(db) {
+  const get = db.prepare('SELECT value FROM system_config WHERE key = ?');
+  const set = db.prepare('INSERT OR REPLACE INTO system_config (key, value, updated_at) VALUES (?, ?, CURRENT_TIMESTAMP)');
+  const del = db.prepare('DELETE FROM system_config WHERE key = ?');
+
+  return {
+    get(key) {
+      const row = get.get(key);
+      return row ? row.value : null;
+    },
+
+    set(key, value) {
+      set.run(key, String(value));
+    },
+
+    delete(key) {
+      del.run(key);
+    },
+  };
+}
+
+module.exports = {
+  createProfileQueries,
+  createProxyQueries,
+  createCookieQueries,
+  createLogQueries,
+  createTaskQueries,
+  createSystemConfigQueries,
+};

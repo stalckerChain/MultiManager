@@ -459,6 +459,30 @@ Human-like ввод текста через CDP. Имитирует реальн
 
 ---
 
+### POST /api/browser/:id/zerion-login
+
+Автоматическая авторизация в Zerion (ID расширения: `klghhnkeealcohjjanjjdaeeggmfmlpl`).
+
+**Тело запроса:**
+```json
+{
+  "password": "zerion_password"
+}
+```
+
+**Ответ (200):**
+```json
+{
+  "status": "success"
+}
+```
+
+**Ответ (404):** `{ "error": "Профиль не найден" }`
+**Ответ (409):** `{ "error": "Профиль не запущен" }`
+**Ответ (502):** `{ "error": "CDP порт не найден" }`
+
+---
+
 ## Multi-Control (Синхронизация окон) — v0.13.0
 
 Система синхронизации ввода из master окна во все slave окна через CDP (Chrome DevTools Protocol).
@@ -673,6 +697,20 @@ Human-like ввод текста через CDP. Имитирует реальн
 
 ---
 
+## Internal API
+
+### GET /api/internal/profiles?range=001-010
+
+Получить профили по диапазону номеров. Возвращает секреты в расшифрованном виде.
+
+**Параметры:** `range` — диапазон номеров в формате `NNN-NNN`
+
+**Ответ (200):** Массив профилей с расшифрованными секретами
+
+**Ответ (400):** `{ "error": "Неверный формат range: 001-010" }`
+
+---
+
 ## Расширения
 
 ### GET /api/extensions
@@ -785,6 +823,86 @@ Human-like ввод текста через CDP. Имитирует реальн
 Поддерживаются форматы CRX v2 и CRX v3.
 
 **Ответ (201):** Установленное расширение
+
+---
+
+## Задачи
+
+### GET /api/tasks
+
+Получить список всех задач.
+
+**Ответ (200):** Массив задач
+
+---
+
+### POST /api/tasks
+
+Создать задачу.
+
+**Тело запроса:**
+```json
+{
+  "name": "Моя задача",
+  "script_name": "script.sh",
+  "schedule_type": "interval",
+  "params": "{}",
+  "is_active": 1
+}
+```
+
+**Обязательные поля:** `name`, `script_name`, `schedule_type`
+
+**Ответ (201):** Созданная задача
+
+---
+
+### GET /api/tasks/:id
+
+Получить задачу по ID.
+
+**Ответ (200):** Задача
+**Ответ (404):** `{ "error": "Задача не найдена" }`
+
+---
+
+### PUT /api/tasks/:id
+
+Обновить задачу.
+
+**Ответ (200):** Обновленная задача
+
+---
+
+### DELETE /api/tasks/:id
+
+Удалить задачу.
+
+**Ответ (204):** Успешное удаление
+
+---
+
+### GET /api/tasks/:id/executions
+
+Получить историю запусков задачи.
+
+**Ответ (200):** Массив запусков
+
+---
+
+### POST /api/tasks/:id/run
+
+Запустить задачу вручную.
+
+**Ответ (200):**
+```json
+{
+  "status": "running",
+  "execution_id": 1
+}
+```
+
+**Ответ (404):** `{ "error": "Задача не найдена" }`
 
 ---
 
@@ -992,6 +1110,116 @@ Human-like ввод текста через CDP. Имитирует реальн
   "fingerprint_seed": "a1b2c3d4-..."
 }
 ```
+
+---
+
+## Настройки
+
+### GET /api/settings/crypto-status
+
+Получить статус крипто-модуля (AES-256-GCM шифрование секретных полей профилей).
+
+**Ответ (200):**
+```json
+{
+  "initialized": true,
+  "hasMasterKey": true,
+  "keySource": "keytar",
+  "passwordMode": false,
+  "encryptedFields": ["email_password", "twitter_password", "twitter_auth_token", "discord_password", "discord_token", "wallet_password"]
+}
+```
+
+---
+
+### POST /api/settings/set-master-password
+
+Установить мастер-пароль (включает passwordMode). Минимум 8 символов.
+
+**Тело запроса:**
+```json
+{
+  "password": "my_strong_password"
+}
+```
+
+**Ответ (200):**
+```json
+{
+  "status": "success",
+  "passwordMode": true
+}
+```
+
+**Ответ (400):** `{ "error": "Пароль должен быть не менее 8 символов" }`
+
+---
+
+### POST /api/settings/change-master-password
+
+Сменить мастер-пароль.
+
+**Тело запроса:**
+```json
+{
+  "old_password": "old_password",
+  "new_password": "new_password"
+}
+```
+
+**Ответ (200):**
+```json
+{
+  "status": "success"
+}
+```
+
+**Ответ (400):** `{ "error": "Неверный старый пароль" }`
+
+---
+
+### GET /api/settings/recovery-key
+
+Получить recovery-ключ (требуется мастер-пароль).
+
+**Ответ (200):**
+```json
+{
+  "recoveryKey": "recovery-key-here"
+}
+```
+
+**Ответ (400):** `{ "error": "Крипто-модуль не инициализирован" }`
+
+---
+
+### GET /api/settings/automation
+
+Получить настройки автоматизации (пути к директориям скриптов и проектов).
+
+**Ответ (200):**
+```json
+{
+  "scripts_dir": "",
+  "projects_dir": ""
+}
+```
+
+---
+
+### PUT /api/settings/automation
+
+Обновить настройки автоматизации.
+
+**Тело запроса:**
+```json
+{
+  "scripts_dir": "/path/to/scripts",
+  "projects_dir": "/path/to/projects"
+}
+```
+
+**Ответ (200):** Обновленные настройки
 
 ---
 

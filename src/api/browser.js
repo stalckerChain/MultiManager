@@ -11,6 +11,7 @@ const { createProfileLogger } = require('../logger');
 const { broadcastStatus } = require('../core/websocket');
 const { getExtensionsDir } = require('./extensions');
 const { humanType } = require('../typing');
+const { hasMasterKey, getMasterKey } = require('../crypto');
 
 const router = express.Router();
 
@@ -585,6 +586,101 @@ async function createCdpSession(port) {
   };
 }
 
+function createBrowserWs(port) {
+  return new Promise((resolve, reject) => {
+    const ws = new WebSocket(`ws://127.0.0.1:${port}/devtools/browser`);
+    ws.on('open', () => resolve(ws));
+    ws.on('error', reject);
+    setTimeout(() => reject(new Error('WS connect timeout')), 5000);
+  });
+}
+
+let cdpCallId = 1;
+
+function cdpCallRaw(ws, method, params, sessionId) {
+  const id = cdpCallId++;
+  return new Promise((resolve, reject) => {
+    const msg = { id, method, params };
+    if (sessionId) msg.sessionId = sessionId;
+    const timeout = setTimeout(() => reject(new Error(`CDP timeout: ${method}`)), 15000);
+    const handler = (data) => {
+      const resp = JSON.parse(data.toString());
+      if (resp.id === id) {
+        ws.removeListener('message', handler);
+        clearTimeout(timeout);
+        if (resp.error) reject(new Error(resp.error.message));
+        else resolve(resp.result);
+      }
+    };
+    ws.on('message', handler);
+    ws.send(JSON.stringify(msg));
+  });
+}
+
+async function waitForSelector(ws, sessionId, selector, timeout = 15000) {
+  const start = Date.now();
+  while (Date.now() - start < timeout) {
+    const result = await cdpCallRaw(ws, 'Runtime.evaluate', {
+      expression: `document.querySelector('${selector}') !== null`,
+    }, sessionId);
+    if (result && result.result && result.result.value) return;
+    await new Promise(r => setTimeout(r, 200));
+  }
+  throw new Error(`Timeout waiting for selector: ${selector}`);
+}
+
+async function waitForSelectorHidden(ws, sessionId, selector, timeout = 10000) {
+  const start = Date.now();
+  while (Date.now() - start < timeout) {
+    const result = await cdpCallRaw(ws, 'Runtime.evaluate', {
+      expression: `(function(){ const el = document.querySelector('${selector}'); return el === null || el.offsetParent === null || el.style.display === 'none'; })()`,
+    }, sessionId);
+    if (result && result.result && result.result.value) return;
+    await new Promise(r => setTimeout(r, 200));
+  }
+  throw new Error(`Timeout waiting for selector to hide: ${selector}`);
+}
+
+async function zerionLogin(port, password) {
+  const ZERION_ID = 'klghhnkeealcohjjanjjdaeeggmfmlpl';
+  const LOGIN_URL = `chrome-extension://${ZERION_ID}/popup.8e8f209b.html?windowType=dialog#/login`;
+
+  const ws = await createBrowserWs(port);
+  try {
+    const { targetInfos } = await cdpCallRaw(ws, 'Target.getTargets');
+    let targetId = null;
+    if (targetInfos) {
+      const existing = targetInfos.find(t => t.url && t.url.includes(ZERION_ID));
+      if (existing) targetId = existing.targetId;
+    }
+
+    if (!targetId) {
+      const result = await cdpCallRaw(ws, 'Target.createTarget', { url: LOGIN_URL });
+      targetId = result.targetId;
+    }
+
+    const { sessionId } = await cdpCallRaw(ws, 'Target.attachToTarget', { targetId, flatten: true });
+
+    await waitForSelector(ws, sessionId, "input[type='password']", 15000);
+
+    const escaped = password.replace(/\\/g, '\\\\').replace(/'/g, "\\'");
+    await cdpCallRaw(ws, 'Runtime.evaluate', {
+      expression: `document.querySelector("input[type='password']").value = '${escaped}'`,
+    }, sessionId);
+
+    await cdpCallRaw(ws, 'Input.dispatchKeyEvent', {
+      type: 'keyDown', key: 'Enter', code: 'Enter', windowsVirtualKeyCode: 13,
+    }, sessionId);
+    await cdpCallRaw(ws, 'Input.dispatchKeyEvent', {
+      type: 'keyUp', key: 'Enter', code: 'Enter', windowsVirtualKeyCode: 13,
+    }, sessionId);
+
+    await waitForSelectorHidden(ws, sessionId, "input[type='password']", 10000);
+  } finally {
+    ws.close();
+  }
+}
+
 router.post('/:id/type', async (req, res) => {
   const db = getDatabase();
   const profileQueries = createProfileQueries(db);
@@ -629,6 +725,31 @@ router.post('/:id/type', async (req, res) => {
   }
 });
 
+router.post('/:id/zerion-login', async (req, res) => {
+  const db = getDatabase();
+  const profileQueries = createProfileQueries(db);
+  const logQueries = createLogQueries(db);
+
+  const profile = profileQueries.getById(req.params.id);
+  if (!profile) return res.status(404).json({ error: 'Профиль не найден' });
+  if (profile.status !== 'running') return res.status(409).json({ error: 'Профиль не запущен' });
+
+  const cdpPort = cdpPorts.get(req.params.id);
+  if (!cdpPort) return res.status(502).json({ error: 'CDP порт не найден' });
+
+  const walletPassword = profile.wallet_password;
+  if (!walletPassword) return res.status(400).json({ error: 'Не задан wallet_password в профиле' });
+
+  try {
+    await zerionLogin(cdpPort, walletPassword);
+    logQueries.add(req.params.id, 'info', 'Zerion auto-login успешен');
+    res.json({ status: 'success' });
+  } catch (err) {
+    logQueries.add(req.params.id, 'error', `Zerion login failed: ${err.message}`);
+    res.status(500).json({ error: 'Zerion login failed', details: err.message });
+  }
+});
+
 router.post('/shutdown', async (req, res) => {
   const db = getDatabase();
   const profileQueries = createProfileQueries(db);
@@ -664,4 +785,5 @@ router.post('/shutdown', async (req, res) => {
 
 module.exports = router;
 module.exports.getCdpPort = getCdpPort;
+module.exports.createCdpSession = createCdpSession;
 module.exports.getProfileWindows = () => profileWindows;

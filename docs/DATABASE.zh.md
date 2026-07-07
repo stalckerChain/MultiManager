@@ -52,6 +52,8 @@ SQLite 数据库，使用 WAL 日志和 ACID 事务。
 **迁移 (v1.0.0 → v1.1.0)：**
 数据库初始化时，`migrateTables()` 通过 `PRAGMA table_info` 检查新列，并通过 `ALTER TABLE ADD COLUMN` 添加缺失列。迁移的列包括：`timezone`, `email`, `email_password`, `twitter_username`, `twitter_password`, `twitter_auth_token`, `twitter_email`, `discord_username`, `discord_password`, `discord_token`, `discord_email`, `wallet_evm_address`, `wallet_sol_address`, `wallet_password`。
 
+**加密 (v1.2.0)：** 字段 `email_password`、`twitter_password`、`twitter_auth_token`、`discord_password`、`discord_token`、`wallet_password` 在加密模块启用时会自动使用 AES-256-GCM 加密。格式：`aes-256-gcm:<iv>:<ciphertext>:<tag>`。主密钥存储在操作系统密钥链（keytar）中，并回退到 `system_config`。
+
 ---
 
 ### tasks

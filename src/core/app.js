@@ -10,6 +10,9 @@ const windowArrangerRouter = require('../api/window-arranger');
 const extensionsRouter = require('../api/extensions');
 const logsRouter = require('../api/logs');
 const fingerprintRouter = require('../api/fingerprint');
+const internalRouter = require('../api/internal');
+const tasksRouter = require('../api/tasks');
+const settingsRouter = require('../api/settings');
 const { setupWebSocket } = require('./websocket');
 
 const app = express();
@@ -30,6 +33,9 @@ app.use('/api/window-arranger', windowArrangerRouter);
 app.use('/api/extensions', extensionsRouter);
 app.use('/api/logs', logsRouter);
 app.use('/api/fingerprint', fingerprintRouter);
+app.use('/api/internal', internalRouter);
+app.use('/api/tasks', tasksRouter);
+app.use('/api/settings', settingsRouter);
 
 app.use((err, req, res, next) => {
   logger.error({ err: err.message, stack: err.stack }, 'Unhandled server error');

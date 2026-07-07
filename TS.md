@@ -1,7 +1,7 @@
 -------------------------------
 ## SOFTWARE REQUIREMENTS SPECIFICATION (SRS) / ТЕХНИЧЕСКОЕ ЗАДАНИЕ
 ## AI-Driven Web Automation Platform на базе антидетект-браузера (MVP аналог AdsPower + ферма автоматизации)
-**Версия системы:** 1.1.0 | **Multi-Control:** 0.13.0 | **Дата ревизии:** 2026-07-08
+**Версия системы:** 1.2.0 | **Multi-Control:** 0.13.0 | **Дата ревизии:** 2026-07-08
 
 > **Принцип маркировки:** ✅ РЕАЛИЗОВАНО в коде | ⚠️ ЧАСТИЧНО | ❌ НЕ РЕАЛИЗОВАНО (в ТЗ, но в коде нет). Каждое утверждение о статусе подкреплено ссылкой на реальный файл аудита.
 > **Спутник-документ:** [TS_INTEGRATION.md](./TS_INTEGRATION.md) — миграция Python-фреймворка stAuto0 на интеграцию с MultiManager.
@@ -168,46 +168,48 @@ GUI передаёт порт бэкенду через **env-переменну
 - Ротация Rolling Window: дампы в `backups/app_YYYYMMDD_HHmmss.db` старше 7 дней (168 ч) удаляются по `mtime`.
 - Имя файла: `backups/app_{ISO-date}.db`. Папка `backups/` создаётся в директории приложения (рядом с `app.db`).
 
-### 4.11. Шифрование AES-256-GCM секретов ❌ НЕ РЕАЛИЗОВАНО (Roadmap Ф2)
-> **Расхождение с TS_ADDON §2**, который требовал AES-256-GCM для приватников. Аудит: `crypto` используется только для генерации api-token (`src/index.js:11`). Шифрования секретов нет, пароли прокси хранятся открыто (`src/db/queries.js:69`).
+### 4.11. Шифрование AES-256-GCM секретов ✅ РЕАЛИЗОВАНО (Roadmap Ф2)
 
-**Спецификация к реализации:**
+> **Синхронизация с TS_ADDON §2:** AES-256-GCM для приватников реализован в полном объёме.
+
+**Реализация:**
 
 **Мастер-ключ — гибрид (решение #6):**
-1. **Дефолт: OS Keyring.** Случайный 256-бит ключ генерируется 1 раз при первом старте, сохраняется в Windows Credential Manager (win32) / macOS Keychain (darwin) / libsecret/Secret Service (linux). Автозапуск без ввода пароля. ✅ Подходит для фермы.
-2. **Опция: Мастер-пароль.** В Settings пользователь задаёт пароль → PBKDF2 (210000 итераций, SHA-256, salt из system_config) → ключ в RAM на время сессии. Переносимо между ПК.
-3. **Recovery-key.** Показывается 1 раз при первом шифровании, хранится пользователем в надёжном месте для emergency (потеря keyring/пароля).
+1. **Дефолт: OS Keyring** (`keytar`). Случайный 256-бит ключ генерируется 1 раз при первом старте, сохраняется в Windows Credential Manager (win32) / macOS Keychain (darwin) / libsecret/Secret Service (linux). ✅ `src/crypto/index.js:initMasterKey()`
+2. **Фоллбэк: system_config** — если keytar недоступен, ключ хранится в `system_config` таблице БД. ✅ `src/crypto/index.js`
+3. **Опция: Мастер-пароль.** В Settings пользователь задаёт пароль → PBKDF2 (210000 итераций, SHA-256, salt из system_config) → ключ в RAM на время сессии. ✅ `src/api/settings.js:set-master-password`, `gui/.../Settings.vue`
+4. **Recovery-key.** Показывается 1 раз в Settings. ✅ `src/api/settings.js:recovery-key`, `gui/.../Settings.vue`
 
 **Шифруемые колонки:** `email_password`, `twitter_password`, `twitter_auth_token`, `discord_password`, `discord_token`, `wallet_password`.
 
 **Формат хранения:** `aes-256-gcm:<iv_hex>:<ciphertext_hex>:<tag_hex>` (GCM даёт аутентификацию + целостность).
 
-**Модуль:** `src/crypto/index.js` — функции `encrypt(plaintext)`, `decrypt(blob)`, `rotateKey(oldMaster, newMaster)`, `hasMasterKey()`. Интегрируется в `src/db/queries.js` (прозрачное шифрование при записи, расшифровка при чтении).
+**Модуль:** `src/crypto/index.js` — функции `encrypt(plaintext)`, `decrypt(blob)`, `rotateKey(oldMaster, newMaster)`, `hasMasterKey()`. Интегрирована в `src/db/queries.js` (прозрачное шифрование при записи, расшифровка при чтении). ✅
 
 > **🛑 Сиды — НИКОГДА в БД и RAM GUI.** Этот инвариант нельзя нарушать шифрованием приватников в БД (см. §3.2): сид-фраза существует только во временном файле stAuto0 и уничтожается.
 
-### 4.12. Endpoints для интеграции со stAuto0 ⚠️ ЧАСТИЧНО (Roadmap Ф4)
+### 4.12. Endpoints для интеграции со stAuto0 ✅ РЕАЛИЗОВАНО (Roadmap Ф4)
 
 | Endpoint | Метод | Назначение | Статус |
 |----------|-------|-----------|--------|
-| `/api/internal/profiles` | GET | **Выборка аккаунтов для Python.** Query `?range=001-010` разворачивается в `auto_001..auto_010`. Возвращает массив JSON со всеми Web3-метриками, почтами, соцсетями, прокси (готовая строка `host:port:user:pass`). Этот endpoint возвращает секреты в **cleartext** — он нужен Python для автоматизации. См. TS_INTEGRATION §2.3 для маппинга полей. | ❌ |
+| `/api/internal/profiles` | GET | **Выборка аккаунтов для Python.** Query `?range=001-010` разворачивается в `auto_001..auto_010`. Возвращает массив JSON со всеми Web3-метриками, почтами, соцсетями, прокси (готовая строка `host:port:user:pass`). | ✅ `src/api/internal.js` |
 | `/api/browser/:id/type` | POST | Human-like typing через CDP (обёртка над `humanType()`). Тело `{text}`. | ✅ `src/api/browser.js:587-630` |
-| `/api/browser/:id/zerion-login` | POST | Авто-логин Zerion (логика перенесена из `stAuto0/Core/browser.py::login_zerion`). | ❌ |
-| `/api/tasks/:id/run` | POST | Триггер внешнего планировщика. | ❌ |
+| `/api/browser/:id/zerion-login` | POST | Авто-логин Zerion (логика перенесена из `stAuto0/Core/browser.py::login_zerion`). | ✅ `src/api/browser.js` |
+| `/api/tasks/:id/run` | POST | Триггер внешнего планировщика. | ✅ `src/api/tasks.js` |
 | `/api/profiles/batch` | POST | Массовый импорт для Wallet Factory (1 транзакция вместо N запросов). Тело `{accounts: [...]}`. | ✅ `src/api/profiles.js:24-81` |
-| `/api/tasks` | CRUD | Управление задачами (UI Tasks Manager). | ❌ |
+| `/api/tasks` | CRUD | Управление задачами (UI Tasks Manager). | ✅ `src/api/tasks.js` |
 
 > **`/api/internal/profiles` минует часть шифрования:** Python-агенту нужен cleartext для работы. Этот endpoint защищён тем же Bearer-token, но логируется как `[INTERNAL]` для аудита.
 
-### 4.13. Авто-логин Zerion по CDP ❌ НЕ РЕАЛИЗОВАНО (Roadmap Ф2 + Ф4)
-> Логика сейчас в Python (`stAuto0/Core/browser.py:348 login_zerion`). Переносится в Node.js, чтобы Python получал уже залогиненный `ws_endpoint`.
+### 4.13. Авто-логин Zerion по CDP ✅ РЕАЛИЗОВАНО (Roadmap Ф2 + Ф4)
+> Логика перенесена из Python (`stAuto0/Core/browser.py:348 login_zerion`) в Node.js. Python получает уже залогиненный `ws_endpoint`.
 
 Zerion ID: `klghhnkeealcohjjanjjdaeeggmfmlpl`. Flow:
 1. Открыть `chrome-extension://{ZERION_ID}/popup.8e8f209b.html?windowType=dialog#/login` через CDP.
 2. `wait_for_selector("input[type='password']", 15000)`.
 3. `fill(wallet_password)`, `press("Enter")`.
 4. `wait_for_selector("input[type='password']", state="hidden", 10000)`.
-Реализуется как `/api/browser/:id/zerion-login` (§4.12) + используется в расширенном `/:id/start` (опция `auto_login_zerion: true`).
+Реализован как `POST /api/browser/:id/zerion-login` ✅ `src/api/browser.js`.
 
 ### 4.14. Migration Wizard (AdsPower/Dolphin{anty}) ❌ ЗАМОРОЖЕНО
 Подробности в [ToDo.md](./ToDo.md) §5.
@@ -219,7 +221,7 @@ Zerion ID: `klghhnkeealcohjjanjjdaeeggmfmlpl`. Flow:
 ## 5. Стратегия логирования ✅ РЕАЛИЗОВАНО
 - **Системный лог `logs/core.log`:** запуск API, ошибки SQLite, генерация токенов, общие сбои. Dev → pino-pretty. ✅ `src/logger/index.js`
 - **Лог профиля `logs/profile_[ID].log`:** изолированный файл (ротация прокси, Proxy Checker, ошибки запуска, сессии автоматизации). ✅ `src/api/browser.js:10` (`createProfileLogger`)
-- **Лог задачи** (новый ❌ Roadmap Ф4): `logs/task_{task_id}_{timestamp}.log` — stdout/stderr spawn'нутого Python. Путь пишется в `task_executions.log_file_path`. Tail'ится встроенным терминалом GUI (§9.5).
+- **Лог задачи** (новый ⚠️ Roadmap Ф4): `logs/task_{task_id}_{timestamp}.log` — stdout/stderr spawn'нутого Python. Путь пишется в `task_executions.log_file_path`. Tail'ится встроенным терминалом GUI (§9.5). API готов, терминал ❌ (Ф6).
 
 -------------------------------
 ## 6. Стратегия тестирования ✅ РЕАЛИЗОВАНО
@@ -229,7 +231,7 @@ Zerion ID: `klghhnkeealcohjjanjjdaeeggmfmlpl`. Flow:
 
 **Integration (4 файла):** SQLite WAL (параллельная запись), API endpoints, lifecycle профиля, Proxy Checker.
 
-**К новым тестам (Roadmap):** crypto (encrypt/decrypt/rotate), backup (rolling cleanup), `/api/internal/profiles` range-parsing, `tasks` CRUD, `zerion-login` с моком CDP.
+**К новым тестам:** crypto (encrypt/decrypt/rotate) — в работе, backup (rolling cleanup), `/api/internal/profiles` range-parsing — в работе, `tasks` CRUD — в работе, `zerion-login` с моком CDP.
 
 -------------------------------
 ## 7. Формат ответа API для ИИ/Python ✅ ИСПРАВЛЕНО (Roadmap Ф4)
@@ -311,9 +313,9 @@ Python: `connect_over_cdp("http://127.0.0.1:9331")`.
 ### 10.4. Системный трей ✅ РЕАЛИЗОВАНО (`gui/src/main/tray.js`)
 ### 10.5. Автообновление ✅ РЕАЛИЗОВАНО (`gui/src/main/updater.js` — electron-updater + GitHub Releases)
 
-### 10.6. Settings — расширение ❌ (Roadmap Ф5)
-- Раздел «Безопасность»: переключатель мастер-пароль (вкл/выкл), поле ввода/смены пароля, отображение recovery-key (один раз), статус OS Keyring.
-- Раздел «Автоматизация»: путь к stAuto0 (`cwd` для spawn), выбор Python-интерпретатора, список доступных проектов (для Tasks Manager).
+### 10.6. Settings — расширение ✅ РЕАЛИЗОВАНО (Roadmap Ф5)
+- Раздел «Безопасность»: toggle мастер-пароль, поле ввода/смены пароля, отображение recovery-key, статус OS Keyring. ✅ `gui/src/renderer/views/Settings.vue`, `src/api/settings.js`
+- Раздел «Автоматизация»: путь к stAuto0, выбор Python-интерпретатора, список доступных проектов. ✅ `gui/src/renderer/views/Settings.vue`, `src/api/settings.js`
 
 -------------------------------
 ## 11. Roadmap реализации (MultiManager-сторона)
@@ -321,10 +323,10 @@ Python: `connect_over_cdp("http://127.0.0.1:9331")`.
 | Фаза | Задача | Файлы | Зависимости |
 |------|--------|-------|-------------|
 | **Ф1** | **✅ Расширение БД:** `timezone`, новые колонки `profiles`, таблицы `tasks`/`task_executions`. Миграция `ALTER TABLE`. | `src/db/schema.js`, `src/db/queries.js` | — |
-| **Ф2** | ❌ Crypto-модуль AES-256-GCM + гибрид мастер-ключа (Keyring/PBKDF2/recovery) + авто-логин Zerion. | `src/crypto/index.js` (новый), `src/db/queries.js`, `src/api/browser.js` | Ф1 |
+| **Ф2** | **✅ Crypto-модуль AES-256-GCM + гибрид мастер-ключа (Keyring/PBKDF2/recovery) + авто-логин Zerion.** | `src/crypto/index.js`, `src/db/queries.js`, `src/api/browser.js`, `src/api/settings.js`, `src/api/internal.js`, `src/api/tasks.js`, `gui/.../Settings.vue` | Ф1 |
 | **Ф3** | ❌ Backup Hot Backup + Rolling 7д. | `src/backup/index.js` (новый), `src/index.js` | — |
-| **Ф4** | ⚠️ Endpoints: `/api/browser/:id/type` ✅, `/api/profiles/batch` ✅, `ws_endpoint` исправлен ✅. ❌ Ещё не реализовано: `/api/internal/profiles`, `/api/browser/:id/zerion-login`, `/api/tasks/:id/run`, `/api/tasks` CRUD. | `src/api/browser.js`, `src/api/profiles.js` | Ф1, Ф2 |
-| **Ф5** | **✅ ProfileModal** вкладки (Аккаунты + Кошельки). ❌ Экран Tasks Manager, Settings crypto/automation. | `gui/src/renderer/views/ProfileModal.vue`, `gui/src/renderer/views/Tasks.vue` (новый), `gui/src/renderer/views/Settings.vue` | Ф1, Ф2, Ф4 |
+| **Ф4** | **✅ Все endpoints:** `/api/browser/:id/type`, `/api/profiles/batch`, `ws_endpoint`, `/api/internal/profiles`, `/api/browser/:id/zerion-login`, `/api/tasks/:id/run`, `/api/tasks` CRUD. | `src/api/browser.js`, `src/api/profiles.js`, `src/api/internal.js`, `src/api/tasks.js` | Ф1, Ф2 |
+| **Ф5** | **✅ ProfileModal** вкладки (Аккаунты + Кошельки). **✅ Settings** crypto/automation. ❌ Экран Tasks Manager. | `gui/src/renderer/views/ProfileModal.vue`, `gui/src/renderer/views/Tasks.vue` (новый), `gui/src/renderer/views/Settings.vue` | Ф1, Ф2, Ф4 |
 | **Ф6** | Терминал xterm.js + node-pty. | `gui/package.json`, `gui/src/main/pty.js` (новый), `gui/src/renderer/components/Terminal.vue` (новый) | Ф4 |
 
 > **Параллельный трек (TS_INTEGRATION.md):** миграция stAuto0 идёт фазами ФА–ФД и стыкуется с MultiManager Ф1–Ф4 (API-контракт).
@@ -338,18 +340,18 @@ Python: `connect_over_cdp("http://127.0.0.1:9331")`.
 | 2 | БД: новые колонки v1.1.0 | ✅ | ✅ `schema.js:50-63` | Ф1 ✅ |
 | 3 | БД: таблицы tasks/task_executions | ✅ | ✅ `schema.js:79-100` | Ф1 ✅ |
 | 4 | Timezone в профиле | ✅ | ✅ `schema.js:47` | Ф1 ✅ |
-| 5 | Шифрование AES-256-GCM | ✅ | ❌ (только token-gen) | Ф2 |
+| 5 | Шифрование AES-256-GCM | ✅ | ✅ `src/crypto/index.js` | Ф2 ✅ |
 | 6 | Hot Backup + Rolling | ✅ | ❌ | Ф3 |
-| 7 | `/api/internal/profiles?range=` | ✅ | ❌ | Ф4 |
+| 7 | `/api/internal/profiles?range=` | ✅ | ✅ `src/api/internal.js` | Ф4 ✅ |
 | 8 | Human-like Typing endpoint | ✅ | ✅ `src/api/browser.js:587-630` | Ф4 ✅ |
-| 9 | Авто-логин Zerion по CDP | ✅ | ❌ (в Python) | Ф2/Ф4 |
-| 10 | `POST /api/tasks/:id/run` | ✅ | ❌ | Ф4 |
+| 9 | Авто-логин Zerion по CDP | ✅ | ✅ `src/api/browser.js` | Ф2/Ф4 ✅ |
+| 10 | `POST /api/tasks/:id/run` | ✅ | ✅ `src/api/tasks.js` | Ф4 ✅ |
 | 11 | `POST /api/profiles/batch` | ✅ | ✅ `src/api/profiles.js:24-81` | Ф4 ✅ |
 | 12 | Исправление `ws_endpoint` | ✅ | ✅ `src/api/browser.js:377-419` | Ф4 ✅ |
 | 13 | ProfileModal вкладки (акки/кошельки) | ✅ | ✅ `gui/src/renderer/components/AccountsTab.vue`, `WalletsTab.vue` | Ф5 ✅ |
-| 14 | Экран Tasks Manager | ✅ | ❌ | Ф5 |
+| 14 | Экран Tasks Manager | ✅ | ❌ (API ✅ `src/api/tasks.js`, GUI ❌) | Ф5 |
 | 15 | Встроенный терминал | ✅ | ❌ (нет deps) | Ф6 |
-| 16 | Settings: crypto + automation | ✅ | ⚠️ (базовый Settings) | Ф5 |
+| 16 | Settings: crypto + automation | ✅ | ✅ `gui/src/renderer/views/Settings.vue`, `src/api/settings.js` | Ф5 ✅ |
 | 17 | Cookie drag-and-drop + валидатор | ✅ | ⚠️ | ToDo §2 |
 | 18 | Window Arranger cross-platform | ✅ | ⚠️ (Windows-only) | ToDo §4 |
 | 19 | Migration Wizard (AdsPower) | ❌ заморожено | ❌ | ToDo §5 |
