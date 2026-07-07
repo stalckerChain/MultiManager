@@ -1,7 +1,7 @@
 -------------------------------
 ## SOFTWARE REQUIREMENTS SPECIFICATION (SRS) / ТЕХНИЧЕСКОЕ ЗАДАНИЕ
 ## AI-Driven Web Automation Platform на базе антидетект-браузера (MVP аналог AdsPower + ферма автоматизации)
-**Версия системы:** 1.2.0 | **Multi-Control:** 0.13.0 | **Дата ревизии:** 2026-07-08
+**Версия системы:** 1.2.1 | **Multi-Control:** 0.13.0 | **Дата ревизии:** 2026-07-08
 
 > **Принцип маркировки:** ✅ РЕАЛИЗОВАНО в коде | ⚠️ ЧАСТИЧНО | ❌ НЕ РЕАЛИЗОВАНО (в ТЗ, но в коде нет). Каждое утверждение о статусе подкреплено ссылкой на реальный файл аудита.
 > **Спутник-документ:** [TS_INTEGRATION.md](./TS_INTEGRATION.md) — миграция Python-фреймворка stAuto0 на интеграцию с MultiManager.
@@ -21,7 +21,7 @@
 **Технологический стек Core:**
 - Node.js ≥ 20.x, Express 4.x, better-sqlite3 (WAL + ACID), pino (логирование), ws (WebSocket), socks (SOCKS5-proxy), adm-zip, ghost-cursor, tree-kill, koffi (FFI для нативных Windows-хуков)
 
-**Тестирование:** Vitest (unit + integration), ~500 тестов. ✅ `tests/`, `vitest.config.js`
+**Тестирование:** Vitest (unit + integration), ~532 теста. ✅ `tests/`, `vitest.config.js`
 
 -------------------------------
 ## 2. Безопасность и авторизация локального API ✅ РЕАЛИЗОВАНО
@@ -158,15 +158,15 @@ GUI передаёт порт бэкенду через **env-переменну
 - Graceful shutdown: SIGTERM → ожидание 8 сек → SIGKILL (tree-kill). ✅ `src/api/browser.js:497-531`
 - `POST /api/browser/shutdown` — массовая остановка. ✅ `src/api/browser.js:533-564`
 
-### 4.10. Hot Backup + Rolling Window ❌ НЕ РЕАЛИЗОВАНО (Roadmap Ф3)
-> **Расхождение с TS_ADDON §3.2**, который утверждал «реализована». Аудит: `grep -r backup src/` пуст. Нет ни `db.backup()`, ни папки `backups/`.
+### 4.10. Hot Backup + Rolling Window ✅ РЕАЛИЗОВАНО (Roadmap Ф3)
 
-**Спецификация к реализации:**
-- `src/backup/index.js`: метод `db.backup()` библиотеки better-sqlite3 (копирование на лету, исключает повреждение WAL).
-- Триггер: холодный старт приложения, сразу после `initDatabase()` в `src/index.js:15`.
+**Реализация:**
+- `src/backup/index.js`: метод `db.backup()` библиотеки better-sqlite3 (асинхронный, копирование на лету, исключает повреждение WAL). ✅ `src/backup/index.js`
+- Триггер: холодный старт приложения, сразу после `initDatabase()` в `src/index.js:20`. ✅ `src/index.js:20`
 - Бэкапится **только** `app.db`. Папки кэша браузеров полностью игнорируются.
 - Ротация Rolling Window: дампы в `backups/app_YYYYMMDD_HHmmss.db` старше 7 дней (168 ч) удаляются по `mtime`.
-- Имя файла: `backups/app_{ISO-date}.db`. Папка `backups/` создаётся в директории приложения (рядом с `app.db`).
+- Папка `backups/` создаётся в директории приложения (рядом с `app.db`).
+- 8 unit-тестов: проверка создания, валидности SQLite, ротации, игнорирования посторонних файлов. ✅ `tests/unit/backup.test.js`
 
 ### 4.11. Шифрование AES-256-GCM секретов ✅ РЕАЛИЗОВАНО (Roadmap Ф2)
 
@@ -225,13 +225,13 @@ Zerion ID: `klghhnkeealcohjjanjjdaeeggmfmlpl`. Flow:
 
 -------------------------------
 ## 6. Стратегия тестирования ✅ РЕАЛИЗОВАНО
-Фреймворк **Vitest v3.x**, ~500 тестов. Запуск: `npm test`, `npm run test:watch`.
+Фреймворк **Vitest v3.x**, ~532 теста (28 файлов). Запуск: `npm test`, `npm run test:watch`.
 
-**Unit (21 файл):** парсеры прокси/куки, fingerprint, auth middleware, расширения, CDP Manager, Multi-Control, Window Arranger, Human-like Typing.
+**Unit (22 файла):** парсеры прокси/куки, fingerprint, auth middleware, расширения, CDP Manager, Multi-Control, Window Arranger, Human-like Typing, backup.
 
 **Integration (4 файла):** SQLite WAL (параллельная запись), API endpoints, lifecycle профиля, Proxy Checker.
 
-**К новым тестам:** crypto (encrypt/decrypt/rotate) — в работе, backup (rolling cleanup), `/api/internal/profiles` range-parsing — в работе, `tasks` CRUD — в работе, `zerion-login` с моком CDP.
+**К новым тестам:** crypto (encrypt/decrypt/rotate) — ✅, backup (rolling cleanup) — ✅, `/api/internal/profiles` range-parsing — ✅, `tasks` CRUD — ✅, `zerion-login` с моком CDP — в работе.
 
 -------------------------------
 ## 7. Формат ответа API для ИИ/Python ✅ ИСПРАВЛЕНО (Roadmap Ф4)
@@ -324,7 +324,7 @@ Python: `connect_over_cdp("http://127.0.0.1:9331")`.
 |------|--------|-------|-------------|
 | **Ф1** | **✅ Расширение БД:** `timezone`, новые колонки `profiles`, таблицы `tasks`/`task_executions`. Миграция `ALTER TABLE`. | `src/db/schema.js`, `src/db/queries.js` | — |
 | **Ф2** | **✅ Crypto-модуль AES-256-GCM + гибрид мастер-ключа (Keyring/PBKDF2/recovery) + авто-логин Zerion.** | `src/crypto/index.js`, `src/db/queries.js`, `src/api/browser.js`, `src/api/settings.js`, `src/api/internal.js`, `src/api/tasks.js`, `gui/.../Settings.vue` | Ф1 |
-| **Ф3** | ❌ Backup Hot Backup + Rolling 7д. | `src/backup/index.js` (новый), `src/index.js` | — |
+| **Ф3** | **✅ Backup Hot Backup + Rolling 7д.** | `src/backup/index.js`, `src/index.js`, `tests/unit/backup.test.js` | — |
 | **Ф4** | **✅ Все endpoints:** `/api/browser/:id/type`, `/api/profiles/batch`, `ws_endpoint`, `/api/internal/profiles`, `/api/browser/:id/zerion-login`, `/api/tasks/:id/run`, `/api/tasks` CRUD. | `src/api/browser.js`, `src/api/profiles.js`, `src/api/internal.js`, `src/api/tasks.js` | Ф1, Ф2 |
 | **Ф5** | **✅ ProfileModal** вкладки (Аккаунты + Кошельки). **✅ Settings** crypto/automation. ❌ Экран Tasks Manager. | `gui/src/renderer/views/ProfileModal.vue`, `gui/src/renderer/views/Tasks.vue` (новый), `gui/src/renderer/views/Settings.vue` | Ф1, Ф2, Ф4 |
 | **Ф6** | Терминал xterm.js + node-pty. | `gui/package.json`, `gui/src/main/pty.js` (новый), `gui/src/renderer/components/Terminal.vue` (новый) | Ф4 |
@@ -332,7 +332,7 @@ Python: `connect_over_cdp("http://127.0.0.1:9331")`.
 > **Параллельный трек (TS_INTEGRATION.md):** миграция stAuto0 идёт фазами ФА–ФД и стыкуется с MultiManager Ф1–Ф4 (API-контракт).
 
 -------------------------------
-## 12. Сводная таблица статусов (аудит 2026-07-08)
+## 12. Сводная таблица статусов (аудит 2026-07-08, Ф3 ✅)
 
 | # | Фича | В ТЗ | В коде | Приоритет |
 |---|------|------|--------|-----------|
@@ -341,7 +341,7 @@ Python: `connect_over_cdp("http://127.0.0.1:9331")`.
 | 3 | БД: таблицы tasks/task_executions | ✅ | ✅ `schema.js:79-100` | Ф1 ✅ |
 | 4 | Timezone в профиле | ✅ | ✅ `schema.js:47` | Ф1 ✅ |
 | 5 | Шифрование AES-256-GCM | ✅ | ✅ `src/crypto/index.js` | Ф2 ✅ |
-| 6 | Hot Backup + Rolling | ✅ | ❌ | Ф3 |
+| 6 | Hot Backup + Rolling | ✅ | ✅ `src/backup/index.js` | Ф3 ✅ |
 | 7 | `/api/internal/profiles?range=` | ✅ | ✅ `src/api/internal.js` | Ф4 ✅ |
 | 8 | Human-like Typing endpoint | ✅ | ✅ `src/api/browser.js:587-630` | Ф4 ✅ |
 | 9 | Авто-логин Zerion по CDP | ✅ | ✅ `src/api/browser.js` | Ф2/Ф4 ✅ |

@@ -1,4 +1,4 @@
-# MultiManager v1.1.0
+# MultiManager v1.2.1
 
 AI-Driven Web Automation Platform — кроссплатформенный антидетект-браузер с интеграцией Python-фреймворка автоматизации, графическим интерфейсом и локальным REST API / WebSocket для автономных ИИ-агентов (аналог AdsPower) на базе C++ ядра CloakBrowser.
 
@@ -100,8 +100,8 @@ MultiManager/
 │           ├── components/   # Layout, StatusBar, LogPanel, BrowserDownload, AccountsTab, WalletsTab
 │           ├── composables/  # useTheme, useWebSocket
 │           └── api/          # HTTP-клиент к Core
-└── tests/                    # Vitest (~500 тестов)
-    ├── unit/                 # 21 файл: auth, proxy, fingerprint, typing, etc.
+└── tests/                    # Vitest (~532 теста)
+    ├── unit/                 # 22 файла: auth, proxy, fingerprint, typing, backup, etc.
     └── integration/          # 4 файла: SQLite WAL, API, lifecycle, proxy
 ```
 

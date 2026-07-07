@@ -4,6 +4,7 @@ const { logger } = require('./logger');
 const { initDatabase, getDatabase } = require('./db');
 const { setToken } = require('./api/auth');
 const { initMasterKey, hasMasterKey } = require('./crypto');
+const { performBackup } = require('./backup');
 const crypto = require('crypto');
 
 const args = process.argv.slice(2);
@@ -16,6 +17,7 @@ setToken(token);
 initDatabase();
 
 const db = getDatabase();
+performBackup(db).catch(err => logger.warn(`Hot backup пропущен (некритично): ${err.message}`));
 initMasterKey(db).then(() => {
   if (hasMasterKey()) {
     logger.info('Master-ключ инициализирован');
