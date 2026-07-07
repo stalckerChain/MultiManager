@@ -4,21 +4,11 @@
 
 | # | Задача | Сложность | Статус |
 |---|--------|-----------|--------|
-| 1 | Human-like Typing — HTTP endpoint для ИИ-агента | Малая | ❌ |
-| 2 | Cookie Manager — Drag-and-drop + пре-валидатор в GUI | Малая | ❌ |
-| 3 | Window Arranger — Группировка по профилям в GUI | Малая | ❌ |
-| 4 | Cross-platform Window Arranger — Замена PowerShell | Средняя | ❌ |
-| 5 | Migration Wizard — Импорт из AdsPower и Dolphin{anty} | Большая | ❌ |
-| 6 | Cloud Sync — Облачная синхронизация профилей | Большая | ❌ |
-
----
-
-## 1. Human-like Typing (4.5) — HTTP endpoint для ИИ-агента
-
-Утилита `humanType()` есть (задержки 50-150ms, 3% опечаток), тесты написаны, но **нет HTTP endpoint**, через который ИИ-агент мог бы вызвать печать текста в браузере.
-
-**Что нужно:** Добавить в API роут, принимающий `{ profileId, text }` и вызывающий `humanType()` через CDP.
-
+| 1 | Cookie Manager — Drag-and-drop + пре-валидатор в GUI | Малая | ❌ |
+| 2 | Window Arranger — Группировка по профилям в GUI | Малая | ❌ |
+| 3 | Cross-platform Window Arranger — Замена PowerShell | Средняя | ❌ |
+| 4 | Migration Wizard — Импорт из AdsPower и Dolphin{anty} | Большая | ❌ |
+| 5 | Cloud Sync — Облачная синхронизация профилей | Большая | ❌ |
 ---
 
 ## 2. Cookie Manager (2.4) — Drag-and-drop + пре-валидатор в GUI
@@ -118,18 +108,18 @@
 | # | Задача | Сложность | Фаза | Статус |
 |---|--------|-----------|------|--------|
 | 7.1 | Расширение БД: новые колонки `profiles` (timezone, email, Twitter, Discord, Web3), таблицы `tasks`/`task_executions` | Средняя | MultiManager Ф1 | ✅ |
-| 7.2 | Crypto-модуль AES-256-GCM + гибрид мастер-ключа (OS Keyring / PBKDF2 / recovery-key) | Большая | MultiManager Ф2 | ❌ |
-| 7.3 | Авто-логин Zerion по CDP (перенос из Python `Core/browser.py::login_zerion` в Node.js) | Средняя | MultiManager Ф2/Ф4 | ❌ |
+| 7.2 | Crypto-модуль AES-256-GCM + гибрид мастер-ключа (OS Keyring / PBKDF2 / recovery-key) | Большая | MultiManager Ф2 | ✅ |
+| 7.3 | Авто-логин Zerion по CDP (перенос из Python `Core/browser.py::login_zerion` в Node.js) | Средняя | MultiManager Ф2/Ф4 | ✅ |
 | 7.4 | Hot Backup + Rolling Window 7д (`db.backup()` при холодном старте) | Малая | MultiManager Ф3 | ❌ |
-| 7.5 | Endpoint `GET /api/internal/profiles?range=` — выборка аккаунтов для Python | Средняя | MultiManager Ф4 | ❌ |
-| 7.6 | Endpoint `POST /api/browser/:id/type` — Human-like Typing через CDP | Малая | MultiManager Ф4 | ❌ |
-| 7.7 | Endpoint `POST /api/browser/:id/zerion-login` — авто-логин Zerion | Средняя | MultiManager Ф4 | ❌ |
-| 7.8 | Endpoint `POST /api/tasks/:id/run` — триггер планировщика (spawn Python, exit code → task_executions) | Средняя | MultiManager Ф4 | ❌ |
-| 7.9 | Endpoint `POST /api/profiles/batch` — массовый импорт для Wallet Factory | Малая | MultiManager Ф4 | ❌ |
-| 7.10 | Исправление `ws_endpoint` — реальный CDP-порт вместо заглушки `ws://127.0.0.1:3000/...` | Малая | MultiManager Ф4 | ❌ |
+| 7.5 | Endpoint `GET /api/internal/profiles?range=` — выборка аккаунтов для Python | Средняя | MultiManager Ф4 | ✅ |
+| 7.6 | Endpoint `POST /api/browser/:id/type` — Human-like Typing через CDP | Малая | MultiManager Ф4 | ✅ |
+| 7.7 | Endpoint `POST /api/browser/:id/zerion-login` — авто-логин Zerion | Средняя | MultiManager Ф4 | ✅ |
+| 7.8 | Endpoint `POST /api/tasks/:id/run` — триггер планировщика (spawn Python, exit code → task_executions) | Средняя | MultiManager Ф4 | ✅ |
+| 7.9 | Endpoint `POST /api/profiles/batch` — массовый импорт для Wallet Factory | Малая | MultiManager Ф4 | ✅ |
+| 7.10 | Исправление `ws_endpoint` — реальный CDP-порт вместо заглушки `ws://127.0.0.1:3000/...` | Малая | MultiManager Ф4 | ✅ |
 | 7.11 | GUI: новые вкладки ProfileModal (Аккаунты, Кошельки, Timezone) | Средняя | MultiManager Ф5 | ✅ |
 | 7.12 | GUI: экран Tasks Manager (таблица задач + executions, кнопка Run now) | Средняя | MultiManager Ф5 | ❌ |
-| 7.13 | GUI: Settings — разделы Безопасность (crypto) + Автоматизация (путь stAuto0, Python) | Малая | MultiManager Ф5 | ❌ |
+| 7.13 | GUI: Settings — разделы Безопасность (crypto) + Автоматизация (путь stAuto0, Python) | Малая | MultiManager Ф5 | ✅ |
 | 7.14 | GUI: Встроенный терминал xterm.js + node-pty (tail логов задач) | Большая | MultiManager Ф6 | ❌ |
 | 7.15 | stAuto0 `main.py`: авто-детект Core (health-check → API / fallback legacy) | Средняя | stAuto0 ФА | ❌ |
 | 7.16 | stAuto0 `Core/browser.py`: рефакторинг launch() (_launch_via_multimanager + _launch_legacy), удаление прокси/fingerprint/zerion из основного пути | Большая | stAuto0 ФБ | ❌ |
@@ -139,40 +129,6 @@
 
 **Порядок реализации (минимальный набор для стыковки):**
 MultiManager Ф1 (БД) → Ф2 (Crypto) → Ф4 (endpoints + ws_endpoint) → параллельно stAuto0 ФА+ФБ (авто-детект + browser refactoring) → оставшиеся фазы.
-
----
-
-### 7.2. Crypto-модуль AES-256-GCM — спецификация
-
-> Вынесено из TASK.md при чистке. Планируется к реализации в MultiManager Ф2.
-
-**Модуль:** `src/crypto/index.js` (новый файл)
-
-**Зависимости:** только встроенный `crypto` модуль Node.js (npm-пакеты не нужны).
-
-**Функции:**
-- `initMasterKey()` — проверить наличие мастер-ключа в OS Keyring / system_config. Если нет — сгенерировать случайный 256-бит ключ и сохранить.
-- `getMasterKey()` → Buffer (ключ в RAM).
-- `encrypt(plaintext) → string` — формат `aes-256-gcm:<iv_hex>:<ciphertext_hex>:<tag_hex>`.
-- `decrypt(blob) → string` — парсит формат, расшифровывает через AES-256-GCM.
-- `hasEncryption() → boolean` — проверяет, есть ли мастер-ключ.
-- `isEncrypted(value) → boolean` — проверяет префикс `aes-256-gcm:`.
-
-**OS Keyring (дефолт):**
-- Windows: `reg.exe ADD HKCU\Software\CloakManager /v MasterKey /t REG_SZ /d {hex_key}`
-- macOS: `security add-generic-password -a CloakManager -s MasterKey -w {hex_key}`
-- Linux: `secret-tool store --label=MultiManager application CloakManager masterkey {hex_key}`
-- Фоллбэк при ошибке Keyring: сохранить в `system_config` (менее безопасно, но работает).
-
-**Recovery-key:** при первой инициализации вывести в logger.info() (одноразово). Пользователь записывает вручную.
-
-**Интеграция с queries (`src/db/queries.js`):**
-- Список шифруемых колонок: `['email_password', 'twitter_password', 'twitter_auth_token', 'discord_password', 'discord_token', 'wallet_password']`
-- `create(data)`: для шифруемых полей — вызвать `encrypt(value)` перед INSERT
-- `getById()` / `getAll()`: для шифруемых полей — вызвать `decrypt(value)` после SELECT
-- Если `hasEncryption() === false` — писать в cleartext с logger.warn() (обратная совместимость)
-
-**Тесты:** `tests/unit/crypto.test.js` — encrypt → decrypt roundtrip, isEncrypted, формат строки.
 
 ---
 
