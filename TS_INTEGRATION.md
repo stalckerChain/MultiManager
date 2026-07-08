@@ -5,7 +5,7 @@
 
 > **Принцип маркировки:** ✅ уже есть в коде stAuto0 | ❌ к реализации/изменению | ⚠️ будет удалено/переписано.
 > **Расположение stAuto0:** `C:\Users\stalcker\AI\stAuto0` (отдельный проект, отдельный git).
-> **Статус аудита (2026-07-09):** миграция stAuto0 — **0%** (ФА–ФД не начаты, код в 100% legacy-состоянии). MultiManager **Ф1–Ф6 ✅ готовы** к стыковке. Открытые вопросы Q1–Q5 — **РЕШЕНЫ** (см. §11).
+> **Статус аудита (2026-07-09):** миграция stAuto0 — **~15%** (ФА ✅ завершён, ФБ–ФД не начаты). MultiManager **Ф1–Ф6 ✅ готовы** к стыковке. Открытые вопросы Q1–Q5 — **РЕШЕНЫ** (см. §11).
 -------------------------------
 
 ## 1. Контекст stAuto0 (что есть сейчас — аудит 2026-07-07)
@@ -27,7 +27,7 @@ stAuto0 — Playwright-based фреймворк Web3-автоматизации 
 | **Миграционные скрипты** | — | **НЕ существуют.** `scripts/migrate_to_sqlite.py` и `scripts/migrate_profile_dirs.py` — к созданию. |
 | **Зависимости** | `requirements.txt` | mnemonic, eth-account, base58, pynacl, aiohttp, playwright, requests, websocket-client, cloakbrowser, google-auth-oauthlib, google-api-python-client, pytest, pytest-asyncio, mcp. |
 
-> **🛑 Аудит 2026-07-09 (пред-миграционный):** ни один файл stAuto0 **не содержит** ссылок на MultiManager API (`/api/internal/profiles`, `/api/browser`, `/api/profiles/batch`). `config/accounts.py` — статический tuple из 10 аккаунтов, остаётся единственным источником правды. Все пометки «⚠️ будет удалено/переписано» в таблице выше **актуальны** — код НЕ изменён. Файлы `scripts/migrate_to_sqlite.py`, `scripts/migrate_profile_dirs.py`, `Core/multimanager.py` — **НЕ существуют**.
+> **🛑 Аудит 2026-07-09 (пост-ФА):** `Core/multimanager.py` **СОЗДАН** ✅. `main.py` и `Core/browser.py` **ИЗМЕНЕНЫ** ✅ — содержат авто-детект Core и заглушку MM-режима. `config/accounts.py` остаётся источником правды для legacy-fallback. Файлы `scripts/migrate_to_sqlite.py`, `scripts/migrate_profile_dirs.py` — **НЕ существуют** (ФГ не начата).
 
 **Zerion ID:** `klghhnkeealcohjjanjjdaeeggmfmlpl`. URL онбординга: `chrome-extension://{ZERION_ID}/popup.8e8f209b.html?windowType=tab&appMode=onboarding#/onboarding/import/mnemonic`.
 
@@ -81,7 +81,7 @@ python main.py --project=concrete --range=001-010 --log-name=task_xyz
 -------------------------------
 ## 3. Рефакторинг `main.py` и авто-детект Core (решение #11)
 
-### 3.1. Авто-детект Core ❌
+### 3.1. Авто-детект Core ✅
 `main.py` должен сохранять CLI для **ручного запуска без MultiManager** (требование пользователя + решение Q1 — legacy-fallback остаётся). Реализация вынесена в модуль `Core/multimanager.py` (см. §3.4), в `main.py` — только делегирование:
 
 ```python
@@ -120,7 +120,7 @@ else:
 
 **Решение (Q1, 2026-07-09):** функция **НЕ удаляется** — остаётся в legacy-ветке `finally`/`KeyboardInterrupt`. В MM-режиме не вызывается: graceful shutdown делается через `POST /api/browser/:id/stop` (Node.js делает SIGTERM→SIGKILL через tree-kill).
 
-### 3.4. Модуль `Core/multimanager.py` (НОВЫЙ, фаза ФА) ❌
+### 3.4. Модуль `Core/multimanager.py` (НОВЫЙ, фаза ФА) ✅
 
 Инкапсулирует **все** HTTP-вызовы к MultiManager Core. Переиспользуется фазами ФА/ФБ/ФВ/ФД. Без этого модуля `main.py` и `Core/browser.py` дублировали бы HTTP-логику.
 
@@ -170,7 +170,7 @@ class MultiManagerClient:
 -------------------------------
 ## 4. Рефакторинг `Core/browser.py` (BaseBrowser)
 
-### 4.1. Метод `launch()` — разветвление по режиму ❌
+### 4.1. Метод `launch()` — разветвление по режиму ✅ (ФА — заглушка)
 
 **Текущая реализация** (`Core/browser.py:191`): `_kill_chrome_for_profile()` → формирование chrome_args (fingerprint, --remote-debugging-port, --load-extension, proxy) → `launch_persistent_context_async`.
 
@@ -419,7 +419,7 @@ python scripts/migrate_profile_dirs.py
 | Фаза | Задача | Файлы | Зависимости | Статус |
 |------|--------|-------|-------------|--------|
 | **ФГ** | **Миграционные скрипты** (ПЕРВАЯ): `migrate_to_sqlite.py` + `migrate_profile_dirs.py`. Перенос 10 аккаунтов из `config/accounts.py` в SQLite MultiManager. | `scripts/migrate_to_sqlite.py` (новый), `scripts/migrate_profile_dirs.py` (новый) | MultiManager Ф4 ✅ | ❌ |
-| **ФА** | **`main.py` + `Core/multimanager.py`:** авто-детект Core (`is_core_alive`), `GET /api/internal/profiles?range=`, модуль-клиент MultiManager API, adapter `normalize_account()`. ProxyChecker и kill_chrome остаются в legacy. | `main.py`, `Core/multimanager.py` (новый) | MultiManager Ф1 ✅, Ф4 ✅, ФГ (для тест-данных) | ❌ |
+| **ФА** | **`main.py` + `Core/multimanager.py`:** авто-детект Core (`is_core_alive`), `GET /api/internal/profiles?range=`, модуль-клиент MultiManager API, adapter `normalize_account()`. ProxyChecker и kill_chrome остаются в legacy. | `main.py`, `Core/multimanager.py` (новый) | MultiManager Ф1 ✅, Ф4 ✅, ФГ (для тест-данных) | ✅ |
 | **ФБ** | **`Core/browser.py`:** флаг `mm_mode`, новый `launch()` (`_launch_via_multimanager` + `_launch_legacy`), `connect_via_endpoint()`, ветвление `login_zerion()`/`close()`. Все legacy-методы сохраняются. | `Core/browser.py` | MultiManager Ф4 ✅, ФА | ❌ |
 | **ФВ** | **Wallet Factory на SQLite:** `create_wallets.py` (через `POST /api/profiles/batch`), `init_wallet4browser.py` (через API+CDP), `fill_emails.py` (через PUT). | `scripts/create_wallets.py`, `scripts/init_wallet4browser.py`, `scripts/fill_emails.py` | MultiManager Ф1 ✅, Ф4 ✅ | ❌ |
 | **ФД** | **MCP:** переключение `mcp_server/server.py` на MultiManager API + Recorder-режим + мультимодальный анализ. | `mcp_server/server.py` | MultiManager Ф4 ✅, ФА | ❌ |
