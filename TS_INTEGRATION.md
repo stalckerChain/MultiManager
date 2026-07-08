@@ -1,10 +1,11 @@
 -------------------------------
 ## ТЕХНИЧЕСКОЕ ЗАДАНИЕ: ИНТЕГРАЦИЯ stAuto0 С MultiManager
-## Спутник-документ к [TS.md](./TS.md) (MultiManager v1.1.0)
-**Версия:** 1.1.0 | **Дата ревизии:** 2026-07-07
+## Спутник-документ к [TS.md](./TS.md) (MultiManager v1.2.1)
+**Версия:** 1.1.0 | **Дата ревизии:** 2026-07-09
 
 > **Принцип маркировки:** ✅ уже есть в коде stAuto0 | ❌ к реализации/изменению | ⚠️ будет удалено/переписано.
 > **Расположение stAuto0:** `C:\Users\stalcker\AI\stAuto0` (отдельный проект, отдельный git).
+> **Статус аудита (2026-07-09):** миграция stAuto0 — **0%** (ФА–ФД не начаты, код в 100% legacy-состоянии). MultiManager **Ф1–Ф6 ✅ готовы** к стыковке. Открытые вопросы Q1–Q5 — **РЕШЕНЫ** (см. §11).
 -------------------------------
 
 ## 1. Контекст stAuto0 (что есть сейчас — аудит 2026-07-07)
@@ -17,14 +18,16 @@ stAuto0 — Playwright-based фреймворк Web3-автоматизации 
 |-----------|------|----------|
 | **Точка входа** | `main.py` | CLI: `--headless`, `--project=concrete,paragraph`, `--log-name=`, диапазоны `001-010` или `auto_001`. Разворачивает диапазоны через `expand_account_args()`. |
 | **BaseBrowser** | `Core/browser.py` | cloakbrowser (`launch_persistent_context_async`) + Playwright. Методы: `launch()`, `connect()`, `login_zerion()`, `run_project()`, `click_confirm()`, `_wallet_confirm()`, `_kill_chrome_for_profile()`, `_get_or_create_fingerprint_seed()`, `_parse_proxy()`, `_find_zerion_in_profile()`, `close()`. |
-| **ProxyChecker** | `Core/proxy.py` | aiohttp, тест через `api.ipify.org`. **Подлежит удалению.** |
-| **Аккаунты** | `config/accounts.py` | Статический tuple из 10 аккаунтов (статус, name, wallet_password, email, solana, evm, profile_directory, debugging_port, proxy, timezone). **Подлежит замене на API-чтение.** |
+| **ProxyChecker** | `Core/proxy.py` | aiohttp, тест через `api.ipify.org`. **Остаётся для legacy-fallback** (решение Q1, §3.2). |
+| **Аккаунты** | `config/accounts.py` | Статический tuple из 10 аккаунтов (статус, name, wallet_password, email, solana, evm, profile_directory, debugging_port, proxy, timezone). **Остаётся для legacy-fallback** (решение Q1); в MM-режиме заменяется на API-чтение. |
 | **Сиды** | `config/auto_sids.py` | Временный файл мнемоник (BIP39 24 слова). Создаётся `create_wallets.py`, уничтожается вручную после инициализации. |
 | **Проекты** | `projects/*.py` (15 шт.) | `BaseProject` subclasses: concrete, concrete_paragraph, allscale, cambrian, litvm, neuraverse, pumpcade, rabbithole, rax_finance, test, umbraprivacy, upshot, xstocks. Интерфейс: `_get_start_url()`, `_get_max_attempts()`, `_use_new_tab()`, `_check_success()`, `_login()`, `_process()`. |
 | **Wallet Factory** | `scripts/create_wallets.py`, `scripts/init_wallet4browser.py`, `scripts/fill_emails.py` | Генерация BIP39, деривация EVM/Solana, онбординг Zerion (24 слова). |
 | **MCP сервер** | `mcp_server/server.py` | FastMCP, 10 tools: `browser_launch`, `browser_close`, `browser_navigate`, `browser_click`, `browser_fill`, `browser_screenshot`, `browser_get_content`, `browser_wait_for`, `browser_login_zerion`, `browser_list_sessions`. Читает `config/accounts.py`. |
 | **Миграционные скрипты** | — | **НЕ существуют.** `scripts/migrate_to_sqlite.py` и `scripts/migrate_profile_dirs.py` — к созданию. |
 | **Зависимости** | `requirements.txt` | mnemonic, eth-account, base58, pynacl, aiohttp, playwright, requests, websocket-client, cloakbrowser, google-auth-oauthlib, google-api-python-client, pytest, pytest-asyncio, mcp. |
+
+> **🛑 Аудит 2026-07-09 (пред-миграционный):** ни один файл stAuto0 **не содержит** ссылок на MultiManager API (`/api/internal/profiles`, `/api/browser`, `/api/profiles/batch`). `config/accounts.py` — статический tuple из 10 аккаунтов, остаётся единственным источником правды. Все пометки «⚠️ будет удалено/переписано» в таблице выше **актуальны** — код НЕ изменён. Файлы `scripts/migrate_to_sqlite.py`, `scripts/migrate_profile_dirs.py`, `Core/multimanager.py` — **НЕ существуют**.
 
 **Zerion ID:** `klghhnkeealcohjjanjjdaeeggmfmlpl`. URL онбординга: `chrome-extension://{ZERION_ID}/popup.8e8f209b.html?windowType=tab&appMode=onboarding#/onboarding/import/mnemonic`.
 
@@ -79,63 +82,171 @@ python main.py --project=concrete --range=001-010 --log-name=task_xyz
 ## 3. Рефакторинг `main.py` и авто-детект Core (решение #11)
 
 ### 3.1. Авто-детект Core ❌
-`main.py` должен сохранять CLI для **ручного запуска без MultiManager** (требование пользователя). Реализация:
+`main.py` должен сохранять CLI для **ручного запуска без MultiManager** (требование пользователя + решение Q1 — legacy-fallback остаётся). Реализация вынесена в модуль `Core/multimanager.py` (см. §3.4), в `main.py` — только делегирование:
 
 ```python
-CORE_HEALTH_URL = f"http://127.0.0.1:{os.environ.get('MM_PORT', '3000')}/health"
+from Core.multimanager import MultiManagerClient
 
-async def is_core_alive() -> bool:
-    """Проверяет, запущен ли MultiManager Core."""
-    try:
-        async with aiohttp.ClientSession() as s:
-            async with s.get(CORE_HEALTH_URL, timeout=aiohttp.ClientTimeout(total=2)) as r:
-                return r.status == 200
-    except Exception:
-        return False
+mm = MultiManagerClient()  # порт из env MM_PORT (default 3000), токен из env MM_TOKEN
+
+if await mm.is_core_alive():
+    # MM-режим
+    accounts = await mm.get_profiles("001-010")
+else:
+    # legacy-fallback (решение Q1)
+    from config.accounts import accounts
 ```
 
+**Переменные окружения (новое):**
+- `MM_PORT` — порт Core (default `3000`).
+- `MM_TOKEN` — Bearer-токен для авторизации API (если не задан и Core жив → ошибка, т.к. `/api/*` требуют авторизации).
+
+**CLI-аргументы `main.py`:**
+- `--port=N` — порт Core (приоритет над `MM_PORT`).
+- `--token=SECRET` — Bearer-токен (приоритет над `MM_TOKEN`).
+- `--range=001-010` — диапазон аккаунтов для MM-режима (маппинг на существующий позиционный формат `001-010`).
+
+**Поведение по режимам:**
 - **Core жив → режим MultiManager:** аккаунты из `/api/internal/profiles?range=`, браузер через `POST /api/browser/:id/start`, прокси-чеккер пропускается (всё делает Node.js).
 - **Core мёртв → fallback на legacy:** аккаунты из `config/accounts.py`, браузер через `launch_persistent_context_async` напрямую, прокси через `Core/proxy.py` (aiohttp). Для ручного запуска/дебага.
 
-### 3.2. Удаление ProxyChecker из Python ⚠️
-В режиме MultiManager `check_account_proxy()` (`main.py:30`) **не вызывается** — прокси-валидация происходит в Node.js перед стартом (`src/api/browser.js:263`). `Core/proxy.py` остаётся только для fallback-режима (или удаляется, если fallback не нужен — решение за пользователем).
+### 3.2. ProxyChecker — остаётся в legacy-fallback (решение Q1) ✅
+В режиме MultiManager `check_account_proxy()` (`main.py:30`) **не вызывается** — прокси-валидация происходит в Node.js перед стартом (`src/api/browser.js:263`).
 
-### 3.3. Удаление `kill_chrome_processes()` ⚠️
-`main.py:49` использует `taskkill` для зависших Chrome. В режиме MultiManager — graceful shutdown через `POST /api/browser/:id/stop` (Node.js делает SIGTERM→SIGKILL через tree-kill).
+**Решение (Q1, 2026-07-09):** `Core/proxy.py` **НЕ удаляется** — остаётся для legacy-fallback режима. Удалять не нужно, это обеспечивает безопасность миграции и ручной запуск без MultiManager. Вызов `check_account_proxy()` остаётся только в legacy-ветке `run_account()`.
+
+### 3.3. `kill_chrome_processes()` — остаётся в legacy-fallback (решение Q1) ✅
+`main.py:49` использует `taskkill` для зависших Chrome.
+
+**Решение (Q1, 2026-07-09):** функция **НЕ удаляется** — остаётся в legacy-ветке `finally`/`KeyboardInterrupt`. В MM-режиме не вызывается: graceful shutdown делается через `POST /api/browser/:id/stop` (Node.js делает SIGTERM→SIGKILL через tree-kill).
+
+### 3.4. Модуль `Core/multimanager.py` (НОВЫЙ, фаза ФА) ❌
+
+Инкапсулирует **все** HTTP-вызовы к MultiManager Core. Переиспользуется фазами ФА/ФБ/ФВ/ФД. Без этого модуля `main.py` и `Core/browser.py` дублировали бы HTTP-логику.
+
+```python
+class MultiManagerClient:
+    def __init__(self, port=None, token=None):
+        self.base_url = f"http://127.0.0.1:{port or os.environ.get('MM_PORT', '3000')}"
+        self.token = token or os.environ.get('MM_TOKEN')
+        self._headers = {"Authorization": f"Bearer {self.token}"} if self.token else {}
+
+    # --- Health / detection ---
+    async def is_core_alive() -> bool          # GET /health, timeout 2 сек
+
+    # --- Accounts (стоковка с MultiManager Ф4) ---
+    async def get_profiles(range_str) -> list  # GET /api/internal/profiles?range=
+    async def create_profiles_batch(accounts)  # POST /api/profiles/batch (возвращает [{id, name, ...}])
+    async def update_profile(id, data)         # PUT /api/profiles/{id}
+    async def get_all_profiles() -> list       # GET /api/profiles (для миграционных скриптов)
+
+    # --- Browser lifecycle (стоковка с MultiManager Ф4) ---
+    async def start_browser(profile_id) -> dict  # POST /api/browser/{id}/start → {ws_endpoint, pid, cdp_port}
+    async def stop_browser(profile_id)           # POST /api/browser/{id}/stop
+    async def zerion_login(profile_id)           # POST /api/browser/{id}/zerion-login
+
+    # --- Proxies (для миграционных скриптов ФГ) ---
+    async def create_proxy(data) -> dict         # POST /api/proxies → {id, ...}
+```
+
+**Adapter `normalize_account(raw)`** — преобразует ответ `/api/internal/profiles` в legacy-совместимый dict, ожидаемый `BaseBrowser`:
+
+| Поле из `/api/internal/profiles` | Поле legacy-account | Примечание |
+|----------------------------------|---------------------|------------|
+| `id` (UUID) | `profile_id` (новое) | для API-вызовов MM |
+| `id` (UUID) | `id` | сохраняем UUID как идентификатор |
+| `name` (`auto_001`) | `name` | без изменений |
+| `proxy.connection_string` | `proxy` (строка) | `http://user:pass@host:port` |
+| `wallet_evm_address` | `evm` | обратный маппинг |
+| `wallet_sol_address` | `solana` | обратный маппинг |
+| `wallet_password` | `wallet_password` | уже расшифрован в MM |
+| `email` | `email` | без изменений |
+| `timezone` | `timezone` | без изменений |
+| — | `debugging_port` | **ОТСУТСТВУЕТ** (динамический, приходит в `start_browser()`) |
+| — | `profile_directory` | **ОТСУТСТВУЕТ** (браузер запускается Node.js, путь не нужен Python) |
+
+> **Ключевой инвариант адаптера:** legacy-код (`run_project`, `click_confirm`, `_wallet_confirm`) работает с `account` dict и **не знает** о существовании MultiManager. Adapter обеспечивает совместимость без правок проектов.
 
 -------------------------------
 ## 4. Рефакторинг `Core/browser.py` (BaseBrowser)
 
-### 4.1. Метод `launch()` — переписать ❌
+### 4.1. Метод `launch()` — разветвление по режиму ❌
 
 **Текущая реализация** (`Core/browser.py:191`): `_kill_chrome_for_profile()` → формирование chrome_args (fingerprint, --remote-debugging-port, --load-extension, proxy) → `launch_persistent_context_async`.
 
-**Новая реализация (режим MultiManager):**
+**Флаг режима** определяется в `__init__`:
 ```python
-async def launch(self, extensions=None):
-    if await is_core_alive():
-        await self._launch_via_multimanager()
-    else:
-        await self._launch_legacy()  # текущий код, переименованный
-
-async def _launch_via_multimanager(self):
-    resp = await self._mm_post(f"/api/browser/{self.profile_id}/start", json={})
-    data = await resp.json()
-    self.ws_endpoint = data["ws_endpoint"]   # "http://127.0.0.1:{cdpPort}"
-    self.pid = data["pid"]
-    await self.connect()   # connect_over_cdp(ws_endpoint)
+def __init__(self, account: dict, headless: bool = False):
+    # ... существующая инициализация ...
+    # MM-режим: account dict содержит 'profile_id' (UUID) — пришёл из normalize_account()
+    # legacy-режим: account dict содержит 'profile_directory' — из config/accounts.py
+    self.mm_mode = "profile_id" in account
+    self.profile_id = account.get("profile_id")  # UUID для MM-режима
+    self.ws_endpoint = None  # от MM API
+    self.mm_pid = None
 ```
 
-### 4.2. Удалить ⚠️ (только legacy-режим сохраняет)
-| Метод | Причина |
-|-------|---------|
-| `_kill_chrome_for_profile()` | Node.js Anti-Zombie делает это через tree-kill |
-| `_get_or_create_fingerprint_seed()` | MultiManager генерирует seed в SQLite |
-| `_parse_proxy()` | Прокси парсится в `src/proxy/index.js` MultiManager |
-| `_find_zerion_in_profile()` | Zerion грузится через `--load-extension` MultiManager |
-| `login_zerion()` | **Переносится в Node.js** (`POST /api/browser/:id/zerion-login`) |
+**Новая реализация `launch()`:**
+```python
+async def launch(self, extensions=None):
+    if self.mm_mode:
+        await self._launch_via_multimanager()
+    else:
+        await self._launch_legacy(extensions)  # текущий код, переименованный
 
-> **Решение:** если fallback на legacy не нужен — эти методы удаляются полностью. Если нужен — остаются в `_launch_legacy()` ветке. Рекомендация: оставить fallback на первое время для безопасности миграции.
+async def _launch_via_multimanager(self, extensions=None):
+    mm = MultiManagerClient()
+    data = await mm.start_browser(self.profile_id)
+    self.ws_endpoint = data["ws_endpoint"]   # "http://127.0.0.1:{cdpPort}"
+    self.mm_pid = data["pid"]
+    await self.connect_via_endpoint(self.ws_endpoint)
+```
+
+**Новый метод `connect_via_endpoint(ws_endpoint)`** — подключение к уже запущенному браузеру через ws_endpoint от MultiManager (вместо статического `debugging_port`):
+```python
+async def connect_via_endpoint(self, ws_endpoint):
+    from playwright.async_api import async_playwright
+    self._pw = await async_playwright().start()
+    cdp_browser = await self._pw.chromium.connect_over_cdp(ws_endpoint)
+    # ... получение context/page (тот же код, что в существующем connect()) ...
+    self._cdp_browser = cdp_browser
+    self._connected = True
+```
+Существующий `connect()` (по `debugging_port`) остаётся для legacy-fallback.
+
+### 4.2. Сохранить в legacy-fallback (решение Q1, 2026-07-09) ✅
+
+**⚠️ ВАЖНОЕ ИЗМЕНЕНИЕ vs предыдущей редакции ТЗ:** ранее эти методы помечались «Удалить». По решению Q1 (legacy-fallback остаётся) **НИ ОДИН метод не удаляется** — все остаются в `_launch_legacy()` ветке.
+
+| Метод | Где остаётся | В MM-режиме |
+|-------|-------------|-------------|
+| `_kill_chrome_for_profile()` | `_launch_legacy()` | не вызывается (Node.js Anti-Zombie через tree-kill) |
+| `_get_or_create_fingerprint_seed()` | `_launch_legacy()` | не вызывается (MM генерирует seed в SQLite) |
+| `_parse_proxy()` | `_launch_legacy()` | не вызывается (прокси парсится в `src/proxy/index.js`) |
+| `_find_zerion_in_profile()` | `_launch_legacy()` | не вызывается (Zerion грузится через `--load-extension` MM) |
+| `login_zerion()` | переименовать в `_login_zerion_legacy()` | делегирует в `POST /api/browser/:id/zerion-login` через `MultiManagerClient` |
+
+**Разветвление `login_zerion()`:**
+```python
+async def login_zerion(self, password=None):
+    if self.mm_mode:
+        mm = MultiManagerClient()
+        await mm.zerion_login(self.profile_id)  # Node.js делает логин
+    else:
+        await self._login_zerion_legacy(password)  # текущий код
+```
+
+**Разветвление `close()`:**
+```python
+async def close(self):
+    if self.mm_mode:
+        mm = MultiManagerClient()
+        await mm.stop_browser(self.profile_id)  # graceful shutdown через API
+        try: await self._pw.stop()
+        except: pass
+    else:
+        # текущий legacy код (context.close() + _kill_chrome_for_profile)
+```
 
 ### 4.3. Сохранить ✅
 | Метод | Зачем |
@@ -157,7 +268,7 @@ async def _launch_via_multimanager(self):
 - `get_start_index()`: вместо exec `accounts.py` → `GET /api/profiles` → `max(number) + 1`.
 - Генерация остаётся (BIP39, EVM, Solana) — ✅ без изменений.
 - Запись через `POST /api/profiles/batch` (`src/api/profiles.js` новый endpoint, Roadmap Ф4 MultiManager): только публичные данные (`wallet_evm_address`, `wallet_sol_address`, `wallet_password` default 'asdfj*KK').
-- **Сиды ТОЛЬКО во временный `config/auto_sids.py`** — никогда в БД. Параноидальный инвариант.
+- **Сиды ТОЛЬКО во временный `config/auto_sids.py`** — никогда в БД. Параноидальный инвариант. Расположение файла: `stAuto0/config/auto_sids.py` (решение Q4, без изменений).
 - Авто-распределение почт: читать `config/free_email.txt`, по одной почте на аккаунт через `PUT /api/profiles/:id {email}`. По завершении `free_email.txt` перезаписывается без использованных строк (логика `scripts/fill_emails.py`).
 
 ### 5.2. `scripts/init_wallet4browser.py` — переписать ❌
@@ -172,6 +283,16 @@ async def _launch_via_multimanager(self):
 
 ### 5.3. Уничтожение следов (без изменений ✅)
 После инициализации всей партии пользователь **вручную** удаляет `config/auto_sids.py`. В системе остаются чистые рабочие сессии Chromium без мнемоник на диске. **Этот шаг НЕ автоматизируется** — сознательное действие человека.
+
+### 5.4. Backup сидов — БЕЗ автоматизации (решение Q5, 2026-07-09) ✅
+
+**Контекст риска:** если `config/auto_sids.py` потерян ДО инициализации кошельков в браузере (Zerion), а сиды ещё не импортированы — средства **невосстановимы** (BIP39 без мнемоники = потеря навсегда).
+
+**Решение (Q5, 2026-07-09):** backup-стратегия для временного файла **НЕ автоматизируется**. Пользователь сам отвечает за сохранность `config/auto_sids.py`:
+- Ручной экспорт/копирование мнемоник в офлайн-хранилище (paper backup, hardware wallet) перед уничтожением.
+- MultiManager **не прикасается** к сидам (параноидальный инвариант, см. TS.md §3.2).
+
+> Это сознательный выбор: автоматизация backup'а сидов создала бы точку компрометации (где сиды в открытом или зашифрованном виде хранятся дольше необходимого). Ответственность остаётся на операторе фермы.
 
 -------------------------------
 ## 6. CDP-порты и ws_endpoint (решение #12)
@@ -192,19 +313,41 @@ async def _launch_via_multimanager(self):
 
 ### 7.1. `scripts/migrate_to_sqlite.py` (создать ❌)
 - Читает старый `config/accounts.py` (через exec, как `create_wallets.py:get_existing_accounts`).
-- Парсит строки прокси `host:port:user:pass` → формат MultiManager.
-- Для каждого аккаунта генерирует UUIDv4.
-- `POST /api/profiles/batch` к MultiManager (Bearer-token из аргументов).
-- Выгружает временную карту соответствия `mapping.json`: `{"auto_001": "8f3b201a-...", ...}`.
-- Сохраняет `mapping.json` для второго скрипта.
+- **CLI-аргументы:** `--token=SECRET` (обязательный), `--port=3000` (default 3000), `--host=127.0.0.1`, `--force` (принудительное пересоздание существующих).
+- **Идемпотентность:** перед batch — `GET /api/profiles`, фильтр существующих `auto_XXX` по имени. Без `--force` — skip существующих (лог warning); с `--force` — `DELETE` + пересоздание.
+- **Парсинг прокси:** строка `host:port:user:pass` → `POST /api/proxies {type:'http', host, port, username, password}` → получаем `proxy_id`. Кеш прокси по строке (чтобы не дублировать одинаковые).
+- **Batch-запрос:** `POST /api/profiles/batch` с массивом:
+  ```json
+  {
+    "accounts": [
+      {
+        "name": "auto_001",
+        "platform": "windows",
+        "proxy_id": "<UUID прокси>",
+        "timezone": "Europe/Berlin",
+        "email": "botany-icky-rocket@duck.com",
+        "wallet_evm_address": "0x48c95...",
+        "wallet_sol_address": "BPxz4Pq8...",
+        "wallet_password": "anal2006"
+      }
+    ]
+  }
+  ```
+  > **Fingerprint** генерируется автоматически в batch endpoint (TS.md §4.1). Старые seeds из `config/fingerprints/auto_XXX_fp.json` НЕ переносятся — MultiManager создаёт новые.
+- **Mapping.json:** выгружает временную карту соответствия `config/mapping.json`: `{"auto_001": "8f3b201a-...", "auto_002": "...", ...}`. Сохраняется для второго скрипта (§7.2).
+- Логирование прогресса по каждому аккаунту, обработка ошибок HTTP (4xx/5xx).
+
+> **⚠️ Прокси-тип:** в `config/accounts.py` прокси хранятся без указания типа (`ip:port:user:pass`). Миграция создаёт их с `type:'http'`. Если какие-то SOCKS5 — после миграции через GUI Proxy Manager поменять тип (или расширить скрипт авто-детектом, но это вне базового ТЗ).
 
 ### 7.2. `scripts/migrate_profile_dirs.py` (создать ❌)
-- Читает `mapping.json`.
-- `shutil.copytree` папок Chromium-сессий:
+- Читает `config/mapping.json` (вывод скрипта §7.1).
+- **Определение целевой директории:** `%APPDATA%/CloakManager/profiles/{UUID}/BrowserData/` (через `os.environ['APPDATA']` на Windows; для Linux/macOS — `~/.config/CloakManager/` / `~/Library/Application Support/CloakManager/`, см. TS.md §3).
+- **Копирование:** `shutil.copytree(src, dst, dirs_exist_ok=True)` (Python 3.8+):
   - **Откуда:** `config/chrome_accounts/auto_001/`
   - **Куда:** `%APPDATA%/CloakManager/profiles/{UUID}/BrowserData/`
-- Полностью сохраняет куки и авторизации кошельков.
-- Логирует успех/неудачу по каждому аккаунту (не прерывается при ошибке одного).
+- Полностью сохраняет куки и авторизации кошельков (копирование на уровне файлов сессии Chromium).
+- **Безопасность:** проверка существования источника (warning + skip если нет); проверка что назначение пустое или флаг `--overwrite`.
+- Логирует успех/неудачу по каждому аккаунту (не прерывается при ошибке одного). Итоговая сводка: N успешно, M с ошибками.
 
 ### 7.3. Запуск миграции
 ```bash
@@ -257,6 +400,12 @@ python scripts/migrate_profile_dirs.py
 - Поле «Python-интерпретатор» (путь к `python.exe` или `python3`).
 - Список доступных проектов (сканирование `projects/*.py` на классы `BaseProject`) — для выбора `script_name` в Tasks Manager.
 
+> **Python-окружение (решение Q3, 2026-07-09):** venv внутри stAuto0. Путь в Settings указывает на интерпретатор venv:
+> - **Windows:** `stAuto0/venv/Scripts/python.exe`
+> - **Linux/macOS:** `stAuto0/venv/bin/python3`
+>
+> Создание окружения: `python -m venv venv && venv\Scripts\activate && pip install -r requirements.txt` (Windows) / `python3 -m venv venv && source venv/bin/activate && pip install -r requirements.txt` (Linux/macOS).
+
 ### 9.3. Без GUI (headless ферма)
 - MultiManager Core работает как демон (без Electron). Запускается: `node src/index.js --api-token=SECRET --port=3000` или через systemd/Task Scheduler.
 - Внешний планировщик дёргает `POST /api/tasks/:id/run`.
@@ -265,25 +414,31 @@ python scripts/migrate_profile_dirs.py
 -------------------------------
 ## 10. Roadmap реализации (stAuto0-сторона)
 
-| Фаза | Задача | Файлы | Зависимости |
-|------|--------|-------|-------------|
-| **ФА** | `main.py`: авто-детект Core + `GET /api/internal/profiles?range=`. Удалить `Core/proxy.py` из основного пути (оставить fallback). | `main.py` | MultiManager Ф1, Ф4 |
-| **ФБ** | `Core/browser.py`: новый `launch()` (`_launch_via_multimanager` + `_launch_legacy`), удалить `login_zerion`/`_kill_chrome_for_profile`/`_get_or_create_fingerprint_seed`/`_parse_proxy`/`_find_zerion_in_profile` (или в legacy). | `Core/browser.py` | MultiManager Ф4 |
-| **ФВ** | Wallet Factory на SQLite: `create_wallets.py` (через `POST /api/profiles/batch`), `init_wallet4browser.py` (через API+CDP), `fill_emails.py` (через PUT). | `scripts/create_wallets.py`, `scripts/init_wallet4browser.py`, `scripts/fill_emails.py` | MultiManager Ф1, Ф4 |
-| **ФГ** | Миграционные скрипты: `scripts/migrate_to_sqlite.py` + `scripts/migrate_profile_dirs.py`. | `scripts/migrate_to_sqlite.py` (новый), `scripts/migrate_profile_dirs.py` (новый) | MultiManager Ф4 |
-| **ФД** | MCP: переключение на MultiManager API + Recorder-режим + мультимодальный анализ. | `mcp_server/server.py` | MultiManager Ф4 |
+> **Порядок реализации (решение пользователя, 2026-07-09):** ФГ (миграционные скрипты) → ФА+ФБ (ядро интеграции) → ФВ (Wallet Factory) → ФД (MCP). Каждая фаза тестируется на реальных данных перед переходом к следующей.
 
-> **Стыковка с MultiManager Roadmap:** ФА/ФБ требуют MultiManager Ф1 (БД) + Ф4 (endpoints). ФВ требует Ф1 + Ф4. ФГ требует Ф4. ФД требует Ф4. Рекомендуемый порядок реализации: MultiManager Ф1 → Ф4 (минимум для стыковки) → параллельно stAuto0 ФА+ФБ → остальные фазы.
+| Фаза | Задача | Файлы | Зависимости | Статус |
+|------|--------|-------|-------------|--------|
+| **ФГ** | **Миграционные скрипты** (ПЕРВАЯ): `migrate_to_sqlite.py` + `migrate_profile_dirs.py`. Перенос 10 аккаунтов из `config/accounts.py` в SQLite MultiManager. | `scripts/migrate_to_sqlite.py` (новый), `scripts/migrate_profile_dirs.py` (новый) | MultiManager Ф4 ✅ | ❌ |
+| **ФА** | **`main.py` + `Core/multimanager.py`:** авто-детект Core (`is_core_alive`), `GET /api/internal/profiles?range=`, модуль-клиент MultiManager API, adapter `normalize_account()`. ProxyChecker и kill_chrome остаются в legacy. | `main.py`, `Core/multimanager.py` (новый) | MultiManager Ф1 ✅, Ф4 ✅, ФГ (для тест-данных) | ❌ |
+| **ФБ** | **`Core/browser.py`:** флаг `mm_mode`, новый `launch()` (`_launch_via_multimanager` + `_launch_legacy`), `connect_via_endpoint()`, ветвление `login_zerion()`/`close()`. Все legacy-методы сохраняются. | `Core/browser.py` | MultiManager Ф4 ✅, ФА | ❌ |
+| **ФВ** | **Wallet Factory на SQLite:** `create_wallets.py` (через `POST /api/profiles/batch`), `init_wallet4browser.py` (через API+CDP), `fill_emails.py` (через PUT). | `scripts/create_wallets.py`, `scripts/init_wallet4browser.py`, `scripts/fill_emails.py` | MultiManager Ф1 ✅, Ф4 ✅ | ❌ |
+| **ФД** | **MCP:** переключение `mcp_server/server.py` на MultiManager API + Recorder-режим + мультимодальный анализ. | `mcp_server/server.py` | MultiManager Ф4 ✅, ФА | ❌ |
+
+> **Стыковка с MultiManager Roadmap:** MultiManager Ф1–Ф6 **все готовы** ✅. stAuto0 может начинать миграцию немедленно. Зависимости выполнены.
+>
+> **Параллельность:** ФА и ФБ можно реализовать параллельно (одна сессия), т.к. `Core/multimanager.py` (ФА) изолирован от `Core/browser.py` (ФБ). ФВ и ФД — строго после успешного smoke-теста ФА+ФБ.
 
 -------------------------------
-## 11. Открытые вопросы (требуют решения до реализации)
+## 11. Открытые вопросы — РЕШЕНЫ (2026-07-09)
 
-| # | Вопрос | Контекст |
-|---|--------|----------|
-| Q1 | Оставлять ли legacy-fallback в `Core/browser.py` (ФБ) или удалять прокси/fingerprint логику полностью? | Рекомендация: оставить на первое время для безопасности миграции. |
-| Q2 | Версионирование: stAuto0 в отдельном git или переезжает в monorepo с MultiManager? | Сейчас отдельные git. Решение за пользователем. |
-| Q3 | Python-окружение в продакшене: venv рядом со stAuto0, или PyInstaller-сборка? | Влияет на упаковку и авто-обновление. |
-| Q4 | `config/auto_sids.py` — где физически после миграции (в stAuto0 или в MultiManager)? | Сейчас в stAuto0. Параноидальный инвариант требует контроля доступа. |
-| Q5 | Recovery при потере `auto_sids.py` ДО инициализации кошельков? | Сиды ещё не в браузере → потеря средств. Нужен backup-strategy для временного файла. |
+> Все вопросы Q1–Q5 закрыты решениями пользователя. Реализация может начинаться без дополнительных согласований.
+
+| # | Вопрос | Решение (2026-07-09) | Где зафиксировано |
+|---|--------|----------------------|-------------------|
+| Q1 | Оставлять ли legacy-fallback в `Core/browser.py` (ФБ) или удалять прокси/fingerprint логику полностью? | ✅ **Оставить fallback.** Все legacy-методы (`_kill_chrome_for_profile`, `_get_or_create_fingerprint_seed`, `_parse_proxy`, `_find_zerion_in_profile`, `_login_zerion_legacy`) сохраняются в `_launch_legacy()` ветке. `Core/proxy.py` НЕ удаляется. | §3.2, §3.3, §4.2 |
+| Q2 | Версионирование: stAuto0 в отдельном git или переезжает в monorepo с MultiManager? | ✅ **Отдельные репозитории.** stAuto0 остаётся в `C:\Users\stalcker\AI\stAuto0` со своим git. MultiManager — отдельный репозиторий. | Шапка документа |
+| Q3 | Python-окружение в продакшене: venv рядом со stAuto0, или PyInstaller-сборка? | ✅ **venv внутри stAuto0.** Путь в Settings: `stAuto0/venv/Scripts/python.exe` (Win) / `stAuto0/venv/bin/python3` (Linux/macOS). | §9.2 |
+| Q4 | `config/auto_sids.py` — где физически после миграции? | ✅ **`stAuto0/config/auto_sids.py`** (без изменений). MultiManager не прикасается к сидам. | §5.1, §5.4 |
+| Q5 | Recovery при потере `auto_sids.py` ДО инициализации кошельков? | ✅ **Без автоматизации.** Пользователь сам отвечает за сохранность сидов (paper backup / offline). Автоматизация не создаётся — сознательный выбор безопасности. | §5.4 |
 
 -------------------------------
