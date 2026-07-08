@@ -209,6 +209,13 @@ Add a proxy.
 
 **Response (201):** Created proxy
 
+**Response (409):** A proxy with the same `host:port` already exists
+```json
+{
+  "error": "A proxy with the same host:port already exists"
+}
+```
+
 ---
 
 ### POST /api/proxies/import
@@ -226,9 +233,13 @@ Bulk import proxies.
 ```json
 {
   "count": 2,
-  "proxies": [...]
+  "duplicate_count": 1,
+  "proxies": [...],
+  "duplicates": [...]
 }
 ```
+
+`count` — number of newly created proxies, `duplicate_count` — number of skipped duplicates.
 
 ---
 

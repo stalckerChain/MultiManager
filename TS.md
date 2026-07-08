@@ -21,7 +21,7 @@
 **Технологический стек Core:**
 - Node.js ≥ 20.x, Express 4.x, better-sqlite3 (WAL + ACID), pino (логирование), ws (WebSocket), socks (SOCKS5-proxy), adm-zip, ghost-cursor, tree-kill, koffi (FFI для нативных Windows-хуков)
 
-**Тестирование:** Vitest (unit + integration), ~532 теста. ✅ `tests/`, `vitest.config.js`
+**Тестирование:** Vitest (unit + integration), ~551 тест. ✅ `tests/`, `vitest.config.js`
 
 -------------------------------
 ## 2. Безопасность и авторизация локального API ✅ РЕАЛИЗОВАНО
@@ -121,6 +121,7 @@ GUI передаёт порт бэкенду через **env-переменну
 ### 4.2. Менеджер прокси и ротация (Proxy Manager) ✅ РЕАЛИЗОВАНО
 - CRUD `CRUD /api/proxies`, `POST /api/proxies/import`, `POST /api/proxies/:id/check`. ✅ `src/api/proxies.js`
 - Протоколы HTTP/HTTPS/SOCKS5. Четыре формата парсинга. ✅ `src/proxy/index.js:7-39`
+- **Дедупликация:** при добавлении одиночного или массового импорта прокси проверяется уникальность по `host:port`. Дубликаты отбрасываются с сообщением в ответе (`duplicate_count`, `duplicates`). ✅ `src/api/proxies.js`, `src/db/queries.js`, `gui/src/api/proxies.js`, `gui/src/db/queries.js`
 - Ротация мобильных прокси: GET к `proxy_rotation_url`, пауза 3 сек. ✅ `src/proxy/index.js:180`
 - Proxy Checker: тестовый запрос к `api.ipify.org`; при недоступности — 412 Precondition Failed. ✅ `src/api/browser.js:263-276`
 - Автоопределение типа (HTTP→SOCKS5 fallback). ✅ `src/proxy/index.js:163-175`
@@ -220,16 +221,16 @@ Zerion ID: `klghhnkeealcohjjanjjdaeeggmfmlpl`. Flow:
 -------------------------------
 ## 5. Стратегия логирования ✅ РЕАЛИЗОВАНО
 - **Системный лог `logs/core.log`:** запуск API, ошибки SQLite, генерация токенов, общие сбои. Dev → pino-pretty. ✅ `src/logger/index.js`
-- **Лог профиля `logs/profile_[ID].log`:** изолированный файл (ротация прокси, Proxy Checker, ошибки запуска, сессии автоматизации). ✅ `src/api/browser.js:10` (`createProfileLogger`)
+- **Лог профиля `logs/profile_[ID].log`:** изолированный файл (ротация прокси, Proxy Checker, ошибки запуска, сессии автоматизации). Запись синхронная (`pino.destination({ sync: true })`) — гарантированный сброс на диск без задержек. ✅ `src/api/browser.js:10` (`createProfileLogger`)
 - **Лог задачи** (новый ✅ Roadmap Ф4): `logs/task_{task_id}_{timestamp}.log` — stdout/stderr spawn'нутого Python. Путь пишется в `task_executions.log_file_path`. Tail'ится встроенным терминалом GUI (§9.5). API готов, терминал ✅ (Ф6).
 
 -------------------------------
 ## 6. Стратегия тестирования ✅ РЕАЛИЗОВАНО
-Фреймворк **Vitest v3.x**, ~532 теста (28 файлов). Запуск: `npm test`, `npm run test:watch`.
+Фреймворк **Vitest v3.x**, ~551 тест (29 файлов). Запуск: `npm test`, `npm run test:watch`.
 
-**Unit (22 файла):** парсеры прокси/куки, fingerprint, auth middleware, расширения, CDP Manager, Multi-Control, Window Arranger, Human-like Typing, backup.
+**Unit (24 файла):** парсеры прокси/куки, fingerprint, auth middleware, расширения, CDP Manager, Multi-Control, Window Arranger, Human-like Typing, backup, crypto.
 
-**Integration (4 файла):** SQLite WAL (параллельная запись), API endpoints, lifecycle профиля, Proxy Checker.
+**Integration (5 файлов):** SQLite WAL (параллельная запись), API endpoints, lifecycle профиля, Proxy Checker, extensions.
 
 **К новым тестам:** crypto (encrypt/decrypt/rotate) — ✅, backup (rolling cleanup) — ✅, `/api/internal/profiles` range-parsing — ✅, `tasks` CRUD — ✅, `zerion-login` с моком CDP — в работе.
 

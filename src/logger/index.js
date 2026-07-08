@@ -59,11 +59,11 @@ function createProfileLogger(profileId) {
   ensureDir(logsDir);
 
   const logFile = path.join(logsDir, `profile_${profileId}.log`);
-  const stream = fs.createWriteStream(logFile, { flags: 'a' });
+  const dest = pino.destination({ dest: logFile, sync: true });
 
   return pino({
     level: 'debug',
-  }, stream);
+  }, dest);
 }
 
 module.exports = { logger, createProfileLogger, getAppDir };

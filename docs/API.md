@@ -209,6 +209,13 @@ Authorization: Bearer <token>
 
 **Ответ (201):** Созданный прокси
 
+**Ответ (409):** Прокси с таким `host:port` уже существует
+```json
+{
+  "error": "Прокси с таким host:port уже существует"
+}
+```
+
 ---
 
 ### POST /api/proxies/import
@@ -226,9 +233,13 @@ Authorization: Bearer <token>
 ```json
 {
   "count": 2,
-  "proxies": [...]
+  "duplicate_count": 1,
+  "proxies": [...],
+  "duplicates": [...]
 }
 ```
+
+Поле `count` — количество созданных прокси, `duplicate_count` — количество пропущенных дубликатов.
 
 ---
 

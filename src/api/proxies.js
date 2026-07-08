@@ -31,6 +31,11 @@ router.post('/', (req, res) => {
     return res.status(400).json({ error: 'Обязательные поля: type, host, port' });
   }
 
+  const existing = queries.findByHostPort(host, port);
+  if (existing) {
+    return res.status(409).json({ error: 'Прокси с таким host:port уже существует' });
+  }
+
   const proxy = queries.create({ type, host, port, username, password, proxy_rotation_url });
   res.status(201).json(proxy);
 });
@@ -48,13 +53,24 @@ router.post('/import', (req, res) => {
   try {
     const proxies = parseProxyList(text);
     const created = [];
+    const duplicates = [];
     
     for (const proxy of proxies) {
-      const p = queries.create(proxy);
-      created.push(p);
+      const existing = queries.findByHostPort(proxy.host, proxy.port);
+      if (existing) {
+        duplicates.push(proxy);
+      } else {
+        const p = queries.create(proxy);
+        created.push(p);
+      }
     }
 
-    res.status(201).json({ count: created.length, proxies: created });
+    res.status(201).json({
+      count: created.length,
+      duplicate_count: duplicates.length,
+      proxies: created,
+      duplicates
+    });
   } catch (err) {
     res.status(400).json({ error: err.message });
   }

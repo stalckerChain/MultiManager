@@ -106,7 +106,7 @@ MultiManager/
 │           ├── components/   # Layout, StatusBar, LogPanel, Terminal, BrowserDownload, AccountsTab, WalletsTab
 │           ├── composables/  # useTheme, useWebSocket
 │           └── api/          # HTTP-клиент к Core
-└── tests/                    # Vitest (550 тестов)
+└── tests/                    # Vitest (551 тест)
     ├── unit/                 # 24 файла: auth, proxy, fingerprint, typing, crypto, tasks, pty, etc.
     └── integration/          # 5 файлов: SQLite WAL, API, lifecycle, proxy, tasks API
 ```

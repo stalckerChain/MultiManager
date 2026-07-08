@@ -111,9 +111,9 @@ MultiManager/
 │           │   └── WalletsTab.vue
 │           ├── composables/  # Vue Composables
 │           └── api/          # HTTP client for Core requests
-└── tests/                    # Vitest (524 tests)
-    ├── unit/                 # 23 files: auth, proxy, fingerprint, typing, crypto, tasks, etc.
-    └── integration/          # 4 files: SQLite WAL, API, lifecycle, proxy
+└── tests/                    # Vitest (551 tests)
+    ├── unit/                 # 24 files: auth, proxy, fingerprint, typing, crypto, tasks, etc.
+    └── integration/          # 5 files: SQLite WAL, API, lifecycle, proxy, extensions
 ```
 
 ---

@@ -123,7 +123,7 @@ Stores proxy servers.
 | `updated_at` | DATETIME | Update date |
 
 **Indexes:**
-- `idx_proxies_host_port` — host:port uniqueness
+- `idx_proxies_host_port` — host:port lookup (used for duplicate detection at API layer via `findByHostPort()`)
 
 **Triggers:**
 - `update_proxies_timestamp` — Auto-update `updated_at`

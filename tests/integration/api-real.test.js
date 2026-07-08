@@ -291,11 +291,13 @@ describe('Proxies', () => {
   });
 
   it('POST /api/proxies/import bulk imports', async () => {
+    const suffix = Date.now();
     const res = await request('POST', '/api/proxies/import', {
-      text: 'socks5://u1:p1@host1:1080\nhttp://host2:8080\nhttps://user:pass@host3:443',
+      text: `socks5://u1:p1@import-host-1-${suffix}:1080\nhttp://import-host-2-${suffix}:8080\nhttps://user:pass@import-host-3-${suffix}:443`,
     });
     expect(res.status).toBe(201);
     expect(res.body.count).toBe(3);
+    expect(res.body.duplicate_count).toBe(0);
     expect(res.body.proxies.length).toBe(3);
   });
 
@@ -307,11 +309,15 @@ describe('Proxies', () => {
 
   it('PUT /api/proxies/:id updates proxy', async () => {
     const res = await request('PUT', `/api/proxies/${createdProxyId}`, {
-      host: 'new-proxy.com',
-      port: 9090,
+      host: 'proxy.example.com',
+      port: 1080,
     });
     expect(res.status).toBe(200);
-    expect(res.body.host).toBe('new-proxy.com');
+    expect(res.body.host).toBe('proxy.example.com');
+  });
+
+  it('DELETE /api/proxies/:id cleans up test proxy', async () => {
+    await request('DELETE', `/api/proxies/${createdProxyId}`).catch(() => {});
   });
 });
 

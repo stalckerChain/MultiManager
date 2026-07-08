@@ -111,9 +111,9 @@ MultiManager/
 │           │   └── WalletsTab.vue
 │           ├── composables/  # Vue Composables
 │           └── api/          # Core 请求的 HTTP 客户端
-└── tests/                    # Vitest（524 测试）
-    ├── unit/                 # 23 个文件：auth、proxy、fingerprint、typing、crypto、tasks 等
-    └── integration/          # 4 个文件：SQLite WAL、API、生命周期、代理
+└── tests/                    # Vitest（551 测试）
+    ├── unit/                 # 24 个文件：auth、proxy、fingerprint、typing、crypto、tasks 等
+    └── integration/          # 5 个文件：SQLite WAL、API、生命周期、代理、扩展
 ```
 
 ---

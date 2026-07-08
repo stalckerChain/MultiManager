@@ -209,6 +209,13 @@ Authorization: Bearer <token>
 
 **响应 (201)：** 创建的代理
 
+**响应 (409)：** 具有相同 `host:port` 的代理已存在
+```json
+{
+  "error": "具有相同 host:port 的代理已存在"
+}
+```
+
 ---
 
 ### POST /api/proxies/import
@@ -226,9 +233,13 @@ Authorization: Bearer <token>
 ```json
 {
   "count": 2,
-  "proxies": [...]
+  "duplicate_count": 1,
+  "proxies": [...],
+  "duplicates": [...]
 }
 ```
+
+`count` — 新创建的代理数量，`duplicate_count` — 跳过的重复代理数量。
 
 ---
 
