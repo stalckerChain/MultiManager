@@ -5,7 +5,7 @@
 
 > **Принцип маркировки:** ✅ уже есть в коде stAuto0 | ❌ к реализации/изменению | ⚠️ будет удалено/переписано.
 > **Расположение stAuto0:** `C:\Users\stalcker\AI\stAuto0` (отдельный проект, отдельный git).
-> **Статус аудита (2026-07-10):** миграция stAuto0 — **~80%** (ФГ ✅, ФА ✅, ФБ ✅, ФВ ✅, ФД ❌). MultiManager **Ф1–Ф6 ✅ готовы** к стыковке. Открытые вопросы Q1–Q5 — **РЕШЕНЫ** (см. §11).
+> **Статус аудита (2026-07-10):** миграция stAuto0 — **~100%** (ФГ ✅, ФА ✅, ФБ ✅, ФВ ✅, ФД ✅). MultiManager **Ф1–Ф6 ✅ готовы** к стыковке. Открытые вопросы Q1–Q5 — **РЕШЕНЫ** (см. §11).
 -------------------------------
 
 ## 1. Контекст stAuto0 (что есть сейчас — аудит 2026-07-07)
@@ -23,11 +23,11 @@ stAuto0 — Playwright-based фреймворк Web3-автоматизации 
 | **Сиды** | `config/auto_sids.py` | Временный файл мнемоник (BIP39 24 слова). Создаётся `create_wallets.py`, уничтожается вручную после инициализации. |
 | **Проекты** | `projects/*.py` (15 шт.) | `BaseProject` subclasses: concrete, concrete_paragraph, allscale, cambrian, litvm, neuraverse, pumpcade, rabbithole, rax_finance, test, umbraprivacy, upshot, xstocks. Интерфейс: `_get_start_url()`, `_get_max_attempts()`, `_use_new_tab()`, `_check_success()`, `_login()`, `_process()`. |
 | **Wallet Factory** | `scripts/create_wallets.py`, `scripts/init_wallet4browser.py`, `scripts/fill_emails.py` | Генерация BIP39, деривация EVM/Solana, онбординг Zerion (24 слова). **Переписана** ✅ — использует MultiManager API (`POST /api/profiles/batch`, `PUT /api/profiles/:id`). |
-| **MCP сервер** | `mcp_server/server.py` | FastMCP, 10 tools: `browser_launch`, `browser_close`, `browser_navigate`, `browser_click`, `browser_fill`, `browser_screenshot`, `browser_get_content`, `browser_wait_for`, `browser_login_zerion`, `browser_list_sessions`. Читает `config/accounts.py`. |
+| **MCP сервер** | `mcp_server/server.py` | FastMCP, 14 tools: `browser_launch`, `browser_close`, `browser_navigate`, `browser_click`, `browser_fill`, `browser_screenshot`, `browser_get_content`, `browser_wait_for`, `browser_login_zerion`, `browser_list_sessions`, `browser_get_account_info`, `recorder_start`, `recorder_stop`, `generate_project_class`, `browser_vision_analyze`. MM-детект, кеш профилей, fallback на `config/accounts.py`. |
 | **Миграционные скрипты** | `scripts/migrate_to_sqlite.py`, `scripts/migrate_profile_dirs.py` | **СОЗДАНЫ** ✅. Переносят 10 аккаунтов, прокси, профили. Smoke-тесты пройдены. |
 | **Зависимости** | `requirements.txt` | mnemonic, eth-account, base58, pynacl, aiohttp, playwright, requests, websocket-client, cloakbrowser, google-auth-oauthlib, google-api-python-client, pytest, pytest-asyncio, mcp. |
 
-> **🛑 Аудит 2026-07-10 (пост-ФВ):** `Core/multimanager.py` **СОЗДАН** ✅. `main.py` и `Core/browser.py` **ИЗМЕНЕНЫ** ✅ — содержат авто-детект Core и MM-режим. `scripts/migrate_to_sqlite.py`, `scripts/migrate_profile_dirs.py` **СОЗДАНЫ** ✅ — smoke-тесты пройдены (10 аккаунтов, --force, directory copy, MM GUI). `scripts/create_wallets.py`, `scripts/init_wallet4browser.py`, `scripts/fill_emails.py` **ПЕРЕПИСАНЫ** ✅ — используют MultiManager API вместо `config/accounts.py`. ФД не начата.
+> **🛑 Аудит 2026-07-10 (пост-ФД):** `Core/multimanager.py` **СОЗДАН** ✅. `main.py` и `Core/browser.py` **ИЗМЕНЕНЫ** ✅ — содержат авто-детект Core и MM-режим. `scripts/migrate_to_sqlite.py`, `scripts/migrate_profile_dirs.py` **СОЗДАНЫ** ✅ — smoke-тесты пройдены (10 аккаунтов, --force, directory copy, MM GUI). `scripts/create_wallets.py`, `scripts/init_wallet4browser.py`, `scripts/fill_emails.py` **ПЕРЕПИСАНЫ** ✅ — используют MultiManager API вместо `config/accounts.py`. `mcp_server/server.py` **ПЕРЕПИСАН** ✅ — MM-детект, резолв, Recorder, Vision. `mcp_server/client.py` **ИЗМЕНЕН** ✅ — MM-поддержка. `mcp_server/recorder.py`, `mcp_server/vision.py` **СОЗДАНЫ** ✅. Тесты: 131/131 pass.
 
 **Zerion ID:** `klghhnkeealcohjjanjjdaeeggmfmlpl`. URL онбординга: `chrome-extension://{ZERION_ID}/popup.8e8f209b.html?windowType=tab&appMode=onboarding#/onboarding/import/mnemonic`.
 
@@ -362,7 +362,7 @@ python scripts/migrate_profile_dirs.py
 -------------------------------
 ## 8. MCP-сервер — переключение на MultiManager API
 
-### 8.1. `mcp_server/server.py` — переписать ❌
+### 8.1. `mcp_server/server.py` — переписать ✅
 
 **Текущее:** читает `config/accounts.py`, `browser_launch` делает `BaseBrowser.launch()`, удерживает `_browsers` dict.
 
@@ -372,14 +372,14 @@ python scripts/migrate_profile_dirs.py
 - `browser_login_zerion` → делегирует в `POST /api/browser/{profile_id}/zerion-login` (Node.js).
 - Остальные tools (navigate/click/fill/screenshot/get_content/wait_for) — без изменений, работают поверх удерживаемой CDP-сессии.
 
-### 8.2. Recorder-режим (новый ❌, Roadmap ФД)
+### 8.2. Recorder-режим (новый ✅, Roadmap ФД)
 - FastMCP-сервер перехватывает CDP-события кликов и ввода пользователя (через `Input.dispatchKeyEvent`/`Input.dispatchMouseEvent` listener или DOM-инспекцию).
 - ИИ-модель (PicoAgent / GPT-4o / Claude 3.5) агрегирует события.
 - Компилирует в готовый Python-класс проекта, наследуемый от `BaseProject` (`projects/base.py`).
 - Автосохранение в `projects/generated_{name}.py`.
 - New tool: `generate_project_class(session_id, project_name)` → возвращает код класса.
 
-### 8.3. Мультимодальный анализ (новый ❌, Roadmap ФД)
+### 8.3. Мультимодальный анализ (новый ✅, Roadmap ФД)
 - `Page.captureScreenshot` через CDP → отправка в мультимодальную модель.
 - Используется для прохождения капч и сложных интерфейсов.
 - Компонуется с DOM-анализом (`browser_get_content` + LLM-резолв селекторов).
@@ -422,7 +422,7 @@ python scripts/migrate_profile_dirs.py
 | **ФА** | **`main.py` + `Core/multimanager.py`:** авто-детект Core (`is_core_alive`), `GET /api/internal/profiles?range=`, модуль-клиент MultiManager API, adapter `normalize_account()`. ProxyChecker и kill_chrome остаются в legacy. | `main.py`, `Core/multimanager.py` (новый) | MultiManager Ф1 ✅, Ф4 ✅, ФГ (для тест-данных) | ✅ |
 | **ФБ** | **`Core/browser.py`:** флаг `mm_mode`, новый `launch()` (`_launch_via_multimanager` + `_launch_legacy`), `connect_via_endpoint()`, ветвление `login_zerion()`/`close()`. Все legacy-методы сохраняются. | `Core/browser.py` | MultiManager Ф4 ✅, ФА | ✅ |
 | **ФВ** | **Wallet Factory на SQLite:** `create_wallets.py` (через `POST /api/profiles/batch`), `init_wallet4browser.py` (через API+CDP), `fill_emails.py` (через PUT). | `scripts/create_wallets.py`, `scripts/init_wallet4browser.py`, `scripts/fill_emails.py` | MultiManager Ф1 ✅, Ф4 ✅ | ✅ |
-| **ФД** | **MCP:** переключение `mcp_server/server.py` на MultiManager API + Recorder-режим + мультимодальный анализ. | `mcp_server/server.py` | MultiManager Ф4 ✅, ФА | ❌ |
+| **ФД** | **MCP:** переключение `mcp_server/server.py` на MultiManager API + Recorder-режим + мультимодальный анализ. | `mcp_server/server.py`, `mcp_server/recorder.py`, `mcp_server/vision.py`, `mcp_server/client.py` | MultiManager Ф4 ✅, ФА | ✅ |
 
 > **Стыковка с MultiManager Roadmap:** MultiManager Ф1–Ф6 **все готовы** ✅. stAuto0 может начинать миграцию немедленно. Зависимости выполнены.
 >
