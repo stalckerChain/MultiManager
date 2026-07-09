@@ -5,7 +5,7 @@
 
 > **Принцип маркировки:** ✅ уже есть в коде stAuto0 | ❌ к реализации/изменению | ⚠️ будет удалено/переписано.
 > **Расположение stAuto0:** `C:\Users\stalcker\AI\stAuto0` (отдельный проект, отдельный git).
-> **Статус аудита (2026-07-10):** миграция stAuto0 — **~100%** (ФГ ✅, ФА ✅, ФБ ✅, ФВ ✅, ФД ✅). MultiManager **Ф1–Ф6 ✅ готовы** к стыковке. Открытые вопросы Q1–Q5 — **РЕШЕНЫ** (см. §11).
+> **Статус аудита (2026-07-10):** миграция stAuto0 — **~100%** (ФГ ✅, ФА ✅, ФБ ✅, ФВ ✅, ФД ✅). MultiManager **Ф1–Ф5 ✅ готовы** к стыковке; **Ф6 — частично** (CRUD задач и tail-терминал готовы, но spawn Python-исполнения в `POST /api/tasks/:id/run` НЕ реализован — см. §9.1, §12). Открытые вопросы Q1–Q5 — **РЕШЕНЫ** (см. §11). Детальный аудит реализации — см. **§12**.
 -------------------------------
 
 ## 1. Контекст stAuto0 (что есть сейчас — аудит 2026-07-07)
@@ -395,6 +395,14 @@ python scripts/migrate_profile_dirs.py
 - stdout/stderr → `logs/task_{task_id}_{timestamp}.log` (путь в `task_executions.log_file_path`).
 - Встроенный терминал GUI (MultiManager Ф6) tail'ит этот файл.
 
+> **⚠️ АУДИТ 2026-07-10 — выше описано ЦЕЛЕВОЕ поведение, текущая реализация НЕ полностью ему соответствует.** `POST /api/tasks/:id/run` (`src/api/tasks.js:94-133`) сейчас:
+> - создаёт записи `task_executions` со статусом `'running'` и возвращает `{status:'started'}`;
+> - **НЕ spawn'ит** `python main.py` (в `tasks.js` нет `require('child_process')`, не передаются `cwd`/`--project`/`--range`/`--log-name`);
+> - `task_executions.log_file_path` **всегда `null`** (`createExecution` зовётся с дефолтом, `updateExecutionStatus` определён, но нигде не вызывается → status/exit_code не обновляются);
+> - встроенный терминал (`gui/src/main/pty.js`) только tail'ит файл по **вручную введённому** пути — не связан с задачами.
+>
+> Следствие: **без-GUI ферма (§9.3) пока невозможна** — внешний триггер получит `started`, но Python не запустится. Ручной/CLI запуск (`python main.py ...` поверх живого Core) работает корректно: Ф1–Ф5 + все фазы stAuto0 стыкуются. Задача реализации spawn-ядра Ф6 — **открыта**.
+
 ### 9.2. Конфигурация в Settings MultiManager (Ф5)
 - Поле «Путь к stAuto0» (cwd для spawn).
 - Поле «Python-интерпретатор» (путь к `python.exe` или `python3`).
@@ -424,7 +432,7 @@ python scripts/migrate_profile_dirs.py
 | **ФВ** | **Wallet Factory на SQLite:** `create_wallets.py` (через `POST /api/profiles/batch`), `init_wallet4browser.py` (через API+CDP), `fill_emails.py` (через PUT). | `scripts/create_wallets.py`, `scripts/init_wallet4browser.py`, `scripts/fill_emails.py` | MultiManager Ф1 ✅, Ф4 ✅ | ✅ |
 | **ФД** | **MCP:** переключение `mcp_server/server.py` на MultiManager API + Recorder-режим + мультимодальный анализ. | `mcp_server/server.py`, `mcp_server/recorder.py`, `mcp_server/vision.py`, `mcp_server/client.py` | MultiManager Ф4 ✅, ФА | ✅ |
 
-> **Стыковка с MultiManager Roadmap:** MultiManager Ф1–Ф6 **все готовы** ✅. stAuto0 может начинать миграцию немедленно. Зависимости выполнены.
+> **Стыковка с MultiManager Roadmap:** MultiManager **Ф1–Ф5 готовы ✅**; **Ф6 — частично** (CRUD задач и tail-терминал готовы, но spawn Python-исполнения не реализован — см. §9.1, §12). stAuto0 может начинать миграцию немедленно для ручного/CLI-режима; автоматическое исполнение по расписанию требует доработки Ф6.
 >
 > **Параллельность:** ФА и ФБ реализованы параллельно (одна сессия), т.к. `Core/multimanager.py` (ФА) изолирован от `Core/browser.py` (ФБ). ФВ реализована после успешного smoke-теста ФА+ФБ (smoke-тест пройден ✅). ФД — следующая фаза.
 
@@ -440,5 +448,56 @@ python scripts/migrate_profile_dirs.py
 | Q3 | Python-окружение в продакшене: venv рядом со stAuto0, или PyInstaller-сборка? | ✅ **venv внутри stAuto0.** Путь в Settings: `stAuto0/venv/Scripts/python.exe` (Win) / `stAuto0/venv/bin/python3` (Linux/macOS). | §9.2 |
 | Q4 | `config/auto_sids.py` — где физически после миграции? | ✅ **`stAuto0/config/auto_sids.py`** (без изменений). MultiManager не прикасается к сидам. | §5.1, §5.4 |
 | Q5 | Recovery при потере `auto_sids.py` ДО инициализации кошельков? | ✅ **Без автоматизации.** Пользователь сам отвечает за сохранность сидов (paper backup / offline). Автоматизация не создаётся — сознательный выбор безопасности. | §5.4 |
+
+-------------------------------
+## 12. Аудит реализации (2026-07-10)
+
+Сверка заявленного в настоящем ТЗ с реальным кодом обоих репозиториев. Раздел фиксирует отклонения и фактическое состояние фаз.
+
+### 12.1. stAuto0 (Python, ФА–ФД) — ✅ соответствует заявленному
+
+**Тесты: 131/131 pass** (6 E2E помечены `@pytest.mark.e2e` и сняты `pytest.ini`/`-m "not e2e"`). **0 заглушек** в миграционном коде: поиск `TODO|FIXME|XXX|not implemented|NotImplementedError` и голых `pass`/`...` по `Core/`, `scripts/`, `mcp_server/`, `main.py` — без совпадений.
+
+| Фаза | Файл | Строк | Оценка |
+|------|------|-------|--------|
+| ФГ | `scripts/migrate_to_sqlite.py` | 198 | ✅ реально работает (proxy parse, batch POST, proxy POST с fallback на 409, mapping.json с 10 живыми UUID — скрипт выполнялся) |
+| ФГ | `scripts/migrate_profile_dirs.py` | 124 | ✅ `shutil.copytree(dirs_exist_ok=True)`, `--overwrite` |
+| ФА | `Core/multimanager.py` | 139 | ✅ все 10+ методов + `normalize_account()` |
+| ФА | `main.py` | 241 | ✅ авто-детект через `can_access_api()`, CLI `--port/--token/--range`, `check_account_proxy` в legacy |
+| ФБ | `Core/browser.py` | 526 | ✅ mm_mode, `_launch_via_multimanager`, `connect_via_endpoint`, ветвление `login_zerion`/`close`, legacy сохранён |
+| ФВ | `scripts/create_wallets.py` / `init_wallet4browser.py` / `fill_emails.py` | 150/173/61 | ✅ переписаны под API |
+| ФД | `mcp_server/server.py` / `recorder.py` / `vision.py` / `client.py` | 491/181/62/222 | ✅ tri-state детект, генерация `BaseProject`-класса, GPT-4o vision, BrowserClient |
+
+**Отклонения от буквального ТЗ (разумные инженерные решения, НЕ баги):**
+- `migrate_to_sqlite.py` использует прямой `import config.accounts` вместо `exec()` — чище и безопаснее.
+- `mm_mode` передаётся **аргументом конструктора** `BaseBrowser`, а не выводится из наличия ключа `profile_id` в dict — чище разделение ответственности.
+- legacy-ветка инлайнена в тело `launch()` без выделения отдельного метода `_launch_legacy()` — то же поведение.
+- `recorder.py` использует `page.expose_function()` + DOM-listeners вместо «сырых CDP-событий» — рабочая альтернатива.
+- `vision.py` использует `page.screenshot()` (Playwright) вместо `Page.captureScreenshot` (CDP) — тот же результат.
+
+**Реальные шероховатости (не блокирующие):**
+- venv поставляется **без** `pytest`/`openai`/`mcp` → `python -m pytest` падает из коробки с `ModuleNotFoundError`, проходит только после `pip install openai mcp pytest pytest-asyncio`.
+- `recorder.stop()` только сбрасывает флаг `_recording=False`, **не снимает** инжектированные DOM-listeners → мини-утечка до следующей навигации страницы.
+
+### 12.2. MultiManager (Node.js, Ф1–Ф6) — Ф1–Ф5 ✅, Ф6 частично 🔴
+
+| Фаза | Статус | Ключевое |
+|------|--------|----------|
+| Ф1 Core/health | ✅ | `GET /health` есть (`src/core/app.js:23-25`). За Bearer-auth (`app.use(authMiddleware)` до `/health`), но stAuto0 `is_core_alive()` (`Core/multimanager.py:37-42`) считает **401 признаком живого Core** → авто-детект работает корректно. Демон запускается (`src/index.js --api-token= --port=`). |
+| Ф2 crypto/secrets | ✅ | AES-256-GCM (`src/crypto/index.js`). Шифруются 6 полей (`email_password, twitter_password, twitter_auth_token, discord_password, discord_token, wallet_password`). Расшифровка через `decryptRowSafe` — **только при master-ключе в памяти**. |
+| Ф3 backup | ✅ | `src/backup/index.js` — hot backup + rolling window (коммит `6e29a46`). |
+| **Ф4 Profiles/Browser (критичная точка стыковки)** | ✅ | `POST /api/browser/:id/start` возвращает **настоящий** `ws_endpoint` — НЕ заглушка (`src/api/browser.js:415-421`). cdpPort ловится из stderr регексом `/DevTools listening on ws:\/\/127\.0\.0\.1:(\d+)/` (`browser.js:346-349`). `GET /api/internal/profiles?range=` отдаёт **расшифрованные секреты + готовую `connection_string` прокси** (`src/api/internal.js:46-63`). `POST /api/profiles/batch` генерирует fingerprint автоматически. `POST /api/browser/:id/stop` — tree-kill (SIGTERM→SIGKILL). |
+| Ф5 Settings | ✅ | `stAuto0_path`, `python_path`, список проектов из `projects/*.py` (`src/api/settings.js:91-128`, GUI `Settings.vue:73-86`). |
+| **Ф6 Tasks/Scheduler+терминал** | 🔴 **частично** | CRUD задач ✅; tail-терминал ✅; **НО spawn Python-исполнения НЕ реализован** (см. §9.1). |
+
+**Отклонения/недочёты MultiManager:**
+- **Ф6 spawn-ядро отсутствует** (главное): `POST /api/tasks/:id/run` (`src/api/tasks.js:94-133`) не запускает `python main.py`, не передаёт `cwd`/`--project`/`--range`/`--log-name`; `task_executions.log_file_path` всегда `null`; `updateExecutionStatus` определён, но нигде не вызывается. Терминал не привязан к задачам.
+- Невалидный `range` в `GET /api/internal/profiles` отдаёт **все профили** без фильтрации (`src/api/internal.js:37-42`: `parseRange('abc')` → null → `getAll()`), вместо `400` как заявлено в `docs/API.md`.
+- `POST /api/browser/:id/zerion-login` хардкодит `popup.8e8f209b.html` (`src/api/browser.js:646`) — хрупко к версии расширения Zerion.
+- `src/api/auth.js:20` сравнивает токен через `===`, не `timingSafeEqual` — теоретическая timing-уязвимость (малокритично на localhost).
+
+### 12.3. Итог по стыковке
+**Ручной/CLI запуск** (`python main.py --project=... --range=... --token=...` поверх живого MultiManager Core) — **работает**: Ф1–Ф5 MultiManager и все фазы stAuto0 стыкуются корректно, `ws_endpoint` реальный, секреты и прокси приходят готовыми.
+**Автоматическое исполнение по расписанию** (Tasks Manager → cron/Task Scheduler → `POST /api/tasks/:id/run`) — **не работает** до реализации spawn-ядра Ф6 (создаётся запись БД со статусом `'running'`, Python не запускается, логи не пишутся).
 
 -------------------------------
