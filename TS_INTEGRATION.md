@@ -5,7 +5,7 @@
 
 > **Принцип маркировки:** ✅ уже есть в коде stAuto0 | ❌ к реализации/изменению | ⚠️ будет удалено/переписано.
 > **Расположение stAuto0:** `C:\Users\stalcker\AI\stAuto0` (отдельный проект, отдельный git).
-> **Статус аудита (2026-07-09):** миграция stAuto0 — **~30%** (ФА ✅, ФБ ✅ завершён, ФВ–ФД не начаты). MultiManager **Ф1–Ф6 ✅ готовы** к стыковке. Открытые вопросы Q1–Q5 — **РЕШЕНЫ** (см. §11).
+> **Статус аудита (2026-07-10):** миграция stAuto0 — **~50%** (ФГ ✅, ФА ✅, ФБ ✅, ФВ–ФД не начаты). MultiManager **Ф1–Ф6 ✅ готовы** к стыковке. Открытые вопросы Q1–Q5 — **РЕШЕНЫ** (см. §11).
 -------------------------------
 
 ## 1. Контекст stAuto0 (что есть сейчас — аудит 2026-07-07)
@@ -24,10 +24,10 @@ stAuto0 — Playwright-based фреймворк Web3-автоматизации 
 | **Проекты** | `projects/*.py` (15 шт.) | `BaseProject` subclasses: concrete, concrete_paragraph, allscale, cambrian, litvm, neuraverse, pumpcade, rabbithole, rax_finance, test, umbraprivacy, upshot, xstocks. Интерфейс: `_get_start_url()`, `_get_max_attempts()`, `_use_new_tab()`, `_check_success()`, `_login()`, `_process()`. |
 | **Wallet Factory** | `scripts/create_wallets.py`, `scripts/init_wallet4browser.py`, `scripts/fill_emails.py` | Генерация BIP39, деривация EVM/Solana, онбординг Zerion (24 слова). |
 | **MCP сервер** | `mcp_server/server.py` | FastMCP, 10 tools: `browser_launch`, `browser_close`, `browser_navigate`, `browser_click`, `browser_fill`, `browser_screenshot`, `browser_get_content`, `browser_wait_for`, `browser_login_zerion`, `browser_list_sessions`. Читает `config/accounts.py`. |
-| **Миграционные скрипты** | — | **НЕ существуют.** `scripts/migrate_to_sqlite.py` и `scripts/migrate_profile_dirs.py` — к созданию. |
+| **Миграционные скрипты** | `scripts/migrate_to_sqlite.py`, `scripts/migrate_profile_dirs.py` | **СОЗДАНЫ** ✅. Переносят 10 аккаунтов, прокси, профили. Smoke-тесты пройдены. |
 | **Зависимости** | `requirements.txt` | mnemonic, eth-account, base58, pynacl, aiohttp, playwright, requests, websocket-client, cloakbrowser, google-auth-oauthlib, google-api-python-client, pytest, pytest-asyncio, mcp. |
 
-> **🛑 Аудит 2026-07-09 (пост-ФА):** `Core/multimanager.py` **СОЗДАН** ✅. `main.py` и `Core/browser.py` **ИЗМЕНЕНЫ** ✅ — содержат авто-детект Core и заглушку MM-режима. `config/accounts.py` остаётся источником правды для legacy-fallback. Файлы `scripts/migrate_to_sqlite.py`, `scripts/migrate_profile_dirs.py` — **НЕ существуют** (ФГ не начата).
+> **🛑 Аудит 2026-07-10 (пост-ФГ):** `Core/multimanager.py` **СОЗДАН** ✅. `main.py` и `Core/browser.py` **ИЗМЕНЕНЫ** ✅ — содержат авто-детект Core и MM-режим. `scripts/migrate_to_sqlite.py`, `scripts/migrate_profile_dirs.py` **СОЗДАНЫ** ✅ — smoke-тесты пройдены (10 аккаунтов, --force, directory copy, MM GUI). ФВ–ФД не начаты.
 
 **Zerion ID:** `klghhnkeealcohjjanjjdaeeggmfmlpl`. URL онбординга: `chrome-extension://{ZERION_ID}/popup.8e8f209b.html?windowType=tab&appMode=onboarding#/onboarding/import/mnemonic`.
 
@@ -307,11 +307,11 @@ async def close(self):
 - Python: `await playwright.chromium.connect_over_cdp(ws_endpoint)` (метод `connect()` уже это делает, `Core/browser.py:62`).
 
 -------------------------------
-## 7. Миграция существующего инстанса (новые скрипты ❌)
+## 7. Миграция существующего инстанса (новые скрипты ✅)
 
 Для переезда «жирного» инстанса с старыми куками/сессиями GUI не пишется — задача решается двумя изолированными консольными скриптами. **Скрипты удаляются после миграции.**
 
-### 7.1. `scripts/migrate_to_sqlite.py` (создать ❌)
+### 7.1. `scripts/migrate_to_sqlite.py` ✅
 - Читает старый `config/accounts.py` (через exec, как `create_wallets.py:get_existing_accounts`).
 - **CLI-аргументы:** `--token=SECRET` (обязательный), `--port=3000` (default 3000), `--host=127.0.0.1`, `--force` (принудительное пересоздание существующих).
 - **Идемпотентность:** перед batch — `GET /api/profiles`, фильтр существующих `auto_XXX` по имени. Без `--force` — skip существующих (лог warning); с `--force` — `DELETE` + пересоздание.
@@ -339,7 +339,7 @@ async def close(self):
 
 > **⚠️ Прокси-тип:** в `config/accounts.py` прокси хранятся без указания типа (`ip:port:user:pass`). Миграция создаёт их с `type:'http'`. Если какие-то SOCKS5 — после миграции через GUI Proxy Manager поменять тип (или расширить скрипт авто-детектом, но это вне базового ТЗ).
 
-### 7.2. `scripts/migrate_profile_dirs.py` (создать ❌)
+### 7.2. `scripts/migrate_profile_dirs.py` ✅
 - Читает `config/mapping.json` (вывод скрипта §7.1).
 - **Определение целевой директории:** `%APPDATA%/CloakManager/profiles/{UUID}/BrowserData/` (через `os.environ['APPDATA']` на Windows; для Linux/macOS — `~/.config/CloakManager/` / `~/Library/Application Support/CloakManager/`, см. TS.md §3).
 - **Копирование:** `shutil.copytree(src, dst, dirs_exist_ok=True)` (Python 3.8+):
@@ -418,7 +418,7 @@ python scripts/migrate_profile_dirs.py
 
 | Фаза | Задача | Файлы | Зависимости | Статус |
 |------|--------|-------|-------------|--------|
-| **ФГ** | **Миграционные скрипты** (ПЕРВАЯ): `migrate_to_sqlite.py` + `migrate_profile_dirs.py`. Перенос 10 аккаунтов из `config/accounts.py` в SQLite MultiManager. | `scripts/migrate_to_sqlite.py` (новый), `scripts/migrate_profile_dirs.py` (новый) | MultiManager Ф4 ✅ | ❌ |
+| **ФГ** | **Миграционные скрипты** (ПЕРВАЯ): `migrate_to_sqlite.py` + `migrate_profile_dirs.py`. Перенос 10 аккаунтов из `config/accounts.py` в SQLite MultiManager. | `scripts/migrate_to_sqlite.py` (новый), `scripts/migrate_profile_dirs.py` (новый) | MultiManager Ф4 ✅ | ✅ |
 | **ФА** | **`main.py` + `Core/multimanager.py`:** авто-детект Core (`is_core_alive`), `GET /api/internal/profiles?range=`, модуль-клиент MultiManager API, adapter `normalize_account()`. ProxyChecker и kill_chrome остаются в legacy. | `main.py`, `Core/multimanager.py` (новый) | MultiManager Ф1 ✅, Ф4 ✅, ФГ (для тест-данных) | ✅ |
 | **ФБ** | **`Core/browser.py`:** флаг `mm_mode`, новый `launch()` (`_launch_via_multimanager` + `_launch_legacy`), `connect_via_endpoint()`, ветвление `login_zerion()`/`close()`. Все legacy-методы сохраняются. | `Core/browser.py` | MultiManager Ф4 ✅, ФА | ✅ |
 | **ФВ** | **Wallet Factory на SQLite:** `create_wallets.py` (через `POST /api/profiles/batch`), `init_wallet4browser.py` (через API+CDP), `fill_emails.py` (через PUT). | `scripts/create_wallets.py`, `scripts/init_wallet4browser.py`, `scripts/fill_emails.py` | MultiManager Ф1 ✅, Ф4 ✅ | ❌ |

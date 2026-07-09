@@ -1,218 +1,192 @@
-# TASK: ФБ — Рефакторинг `Core/browser.py` (BaseBrowser)
+# ФГ: Миграционные скрипты — План реализации
 
-> **Статус:** ❌ Запланировано
-> **Фаза:** ФБ (сторона stAuto0)
-> **Основание:** TS_INTEGRATION.md §4 (Рефакторинг Core/browser.py)
-> **Зависимости:** ФА ✅ (`Core/multimanager.py` готов, `main.py` модифицирован)
-> **Вход:** `C:\Users\stalcker\AI\stAuto0\Core\browser.py` (ревизия с заглушками MM-режима)
-
----
-
-## Текущее состояние (аудит)
-
-В `Core/browser.py` уже присутствуют:
-- `__init__` — поле `mm_mode`, `profile_id`, `ws_endpoint`, `mm_pid` — ✅
-- `launch()` — ветвление `if self.mm_mode: _launch_via_multimanager()` — ✅
-- `_launch_via_multimanager()` — **ЗАГЛУШКА** (только `self._connected = True`) — ❌
-- `connect_via_endpoint()` — **реализован** (Playwright `connect_over_cdp`) — ✅
-- `close()` — ветвление `if self.mm_mode` с заглушкой — ❌
-- `login_zerion()` — ветвление `if self.mm_mode` с заглушкой — ❌
-- Все legacy-методы не тронуты — ✅
-- `connect()` — CDP по debugging_port для legacy — ✅
+> **Цель:** Перенести 10 существующих аккаунтов (auto_001–auto_010) из `config/accounts.py` + `config/chrome_accounts/` в SQLite MultiManager, сохранив куки, сессии кошельков и прокси.
+>
+> **Статус:** ⬜ Не начато
+> **Документ ТЗ:** `TS_INTEGRATION.md §7`
 
 ---
 
-## Пошаговый план
+## Этап 1: Скрипт `scripts/migrate_to_sqlite.py`
 
-### Шаг 1: Реализация `_launch_via_multimanager()` (замена заглушки)
+### 1.1. Базовая структура (скелет)
 
-**Файл:** `Core/browser.py`, метод `_launch_via_multimanager` (строка 197)
+- [ ] Создать файл `C:\Users\stalcker\AI\stAuto0\scripts\migrate_to_sqlite.py`
+- [ ] CLI-аргументы через `argparse`:
+  - `--token` (обязательный) — Bearer-токен MM API
+  - `--port` (default: 3000) — порт MM Core
+  - `--host` (default: 127.0.0.1)
+  - `--force` (flag) — принудительное пересоздание существующих профилей
+- [ ] Импорт: `asyncio`, `argparse`, `json`, `logging`, `sys`, `os`
+- [ ] Импорт: `Core.multimanager.MultiManagerClient`
+- [ ] Импорт: `config.accounts.accounts` (через `sys.path.append`)
+- [ ] `main()` с `async def`, запуск через `asyncio.run()`
+- [ ] Логирование в `logs/migrate_to_sqlite_YYYYMMDD_HHMMSS.log`
 
-**Что сделать:**
-- Создать `MultiManagerClient()` (берёт порт/токен из env)
-- Вызвать `await mm.start_browser(self.profile_id)`
-- Сохранить `ws_endpoint` и `mm_pid` из ответа
-- Вызвать `await self.connect_via_endpoint(ws_endpoint)`
+### 1.2. Определение существующих профилей
 
-**Ожидаемый ответ MM API (`POST /api/browser/:id/start`):**
-```json
-{ "ws_endpoint": "http://127.0.0.1:{cdpPort}", "pid": 12345, "cdp_port": 9330 }
-```
+- [ ] Подключение к MM API: `GET /api/profiles` через `mm_client.get_all_profiles()`
+- [ ] Построить `set` существующих имён (например `auto_001`)
+- [ ] Если `--force`:
+  - Для каждого существующего профиля, чьё имя совпадает с мигрируемым:
+    - `DELETE /api/profiles/:id` (игнорировать 404/409)
+    - Лог: `[force] auto_001: удалён и будет пересоздан`
+- [ ] Если `--force` не задан:
+  - Фильтр: пропускать аккаунты, уже существующие в MM (лог warning)
+  - Работать только с отсутствующими
 
-**Код:**
-```python
-async def _launch_via_multimanager(self, extensions=None):
-    from Core.multimanager import MultiManagerClient
-    mm = MultiManagerClient()
-    data = await mm.start_browser(self.profile_id)
-    self.ws_endpoint = data["ws_endpoint"]
-    self.mm_pid = data.get("pid")
-    await self.connect_via_endpoint(self.ws_endpoint)
-```
+### 1.3. Парсинг прокси
 
-**Проверка:** метод больше не заглушка, реально подключается к браузеру.
+- [ ] Чтение прокси из `account['proxy']` (формат: `host:port:user:pass`)
+- [ ] Разбивка строки: `host, port_str, user, pass_str = proxy.split(':')`
+- [ ] Кеш прокси (dict по строке `host:port`) — чтобы не плодить дубликаты
+- [ ] Для каждой уникальной прокси:
+  - `POST /api/proxies` c `{ type: 'http', host, port: int(port), username: user, password: pass_str }`
+  - Обработка 409 (уже существует) — `GET /api/proxies`, поиск по host:port
+  - Сохранение `proxy_id` в кеш
+- [ ] Лог: `[proxy] 45.151.163.190:5943 → proxy_id=5`
 
----
+### 1.4. Batch-создание профилей
 
-### Шаг 2: Реализация `close()` в MM-режиме (замена заглушки)
+- [ ] Для каждого аккаунта (после фильтрации существующих):
+  - Формирование payload:
+    ```json
+    {
+      "name": "auto_001",
+      "platform": "windows",
+      "proxy_id": "<UUID или null>",
+      "timezone": "Europe/Berlin",
+      "email": "botany-icky-rocket@duck.com",
+      "wallet_evm_address": "0x48c95...",
+      "wallet_sol_address": "BPxz4Pq8...",
+      "wallet_password": "anal2006"
+    }
+    ```
+- [ ] Вызов `mm_client.create_profiles_batch(payloads)`
+- [ ] Обработка ошибок HTTP — логирование + прерывание скрипта
 
-**Файл:** `Core/browser.py`, MM-ветка метода `close()` (строка 363)
+### 1.5. Генерация mapping.json
 
-**Что сделать:**
-- Вызвать `await mm.stop_browser(self.profile_id)` — graceful shutdown на Node.js
-- Остановить Playwright-сессию (`self._pw.stop()`)
-
-**Код:**
-```python
-if self.mm_mode:
-    mm = MultiManagerClient()
-    await mm.stop_browser(self.profile_id)
-    if hasattr(self, '_pw'):
-        try:
-            await self._pw.stop()
-        except Exception:
-            pass
-    self._connected = False
-    return
-```
-
-**Важно:** Не забыть `self._connected = False` после остановки.
-
----
-
-### Шаг 3: Реализация `login_zerion()` в MM-режиме (замена заглушки)
-
-**Файл:** `Core/browser.py`, MM-ветка метода `login_zerion()` (строка 396)
-
-**Что сделать:**
-- Вызвать `await mm.zerion_login(self.profile_id)` — Node.js делает логин через расширение
-
-**Код:**
-```python
-if self.mm_mode:
-    from Core.multimanager import MultiManagerClient
-    mm = MultiManagerClient()
-    await mm.zerion_login(self.profile_id)
-    return
-```
-
----
-
-### Шаг 4: Проверка `connect_via_endpoint()` на корректность
-
-**Файл:** `Core/browser.py`, метод `connect_via_endpoint()` (строка 201)
-
-Текущая реализация уже корректна — подключение к уже запущенному браузеру через CDP ws_endpoint.
-
-**Убедиться:** что после `connect_via_endpoint` `self._connected = True`, получены `self.context` и `self.page`.
-
----
-
-### Шаг 5: Рефакторинг `connect()` — избавиться от дублирования
-
-**Файл:** `Core/browser.py`, метод `connect()` (строка 68)
-
-**Проблема:** методы `connect()` и `connect_via_endpoint()` дублируют логику (Playwright start → connect_over_cdp → получение context/page → bring_to_front).
-
-**Что сделать:**
-- Переписать `connect()` через `connect_via_endpoint()`:
-  ```python
-  async def connect(self):
-      port = self.debugging_port
-      if not port:
-          raise RuntimeError("No debugging port configured for this account")
-      await self.connect_via_endpoint(f"http://127.0.0.1:{port}")
+- [ ] По map: `{ "auto_001": "<UUID_из_ответа>", ... }`
+- [ ] Сохранение в `config/mapping.json` (формат JSON, `indent=2`)
+- [ ] Лог: `[mapping] config/mapping.json сохранён (N записей)`
+- [ ] Итоговая сводка:
+  ```
+  ===== ИТОГ МИГРАЦИИ =====
+  Всего аккаунтов:        10
+  Создано:                10
+  Пропущено (существуют): 0
+  Ошибок:                 0
+  Прокси создано:         4
+  Mapping:                config/mapping.json
   ```
 
----
+### 1.6. Обработка крайних случаев
 
-### Шаг 6: Проверка legacy-веток — ничего не сломано
-
-**Файл:** `Core/browser.py`
-
-**Что проверить:**
-- `launch()` → `_launch_legacy()` (текущий full launch код) — не изменяется
-- `close()` → legacy-ветка с `context.close()` + `_kill_chrome_for_profile()` — не изменяется
-- `login_zerion()` → `_login_zerion_legacy()` (текущий код с password input) — не изменяется
-- `_kill_chrome_for_profile()` — не тронут
-- `_get_or_create_fingerprint_seed()` — не тронут
-- `_parse_proxy()` — не тронут
-- `_find_zerion_in_profile()` — не тронут
-- `click_confirm()` / `_wallet_confirm()` — не тронуты
-- `run_project()` — не тронут
+- [ ] Если `--force` и `DELETE` возвращает 409 (профиль запущен) — `SystemExit` с сообщением
+- [ ] Если `--token` не указан — `SystemExit`
+- [ ] Если Core недоступен — `SystemExit` с советом запустить MM
+- [ ] Если `accounts` пустой tuple — лог warning, выход без ошибки
+- [ ] Если прокси с таким `host:port` уже существует — 409, поиск существующей
 
 ---
 
-### Шаг 7: Проверка интеграции с `main.py` / `run_account()`
+## Этап 2: Скрипт `scripts/migrate_profile_dirs.py`
 
-**Файл:** `main.py`, функция `run_account()` (строка 83)
+### 2.1. Базовая структура
 
-**Убедиться:** что `run_account()` корректно работает с обеими ветками:
-- MM-режим: `BaseBrowser(account, headless=headless, mm_mode=True)` → `browser.launch()` → `_launch_via_multimanager()`
-- Legacy-режим: `BaseBrowser(account, headless=headless, mm_mode=False)` → `browser.launch()` → `_launch_legacy()`
+- [ ] Создать файл `C:\Users\stalcker\AI\stAuto0\scripts\migrate_profile_dirs.py`
+- [ ] CLI-аргументы:
+  - `--mapping` (default: `config/mapping.json`)
+  - `--overwrite` (flag) — перезаписывать существующие директории
+- [ ] Импорт: `shutil`, `json`, `logging`, `os`, `sys`
+- [ ] `main()` синхронная (без asyncio — только файловые операции)
 
-`run_account()` в MM-режиме уже пропускает `check_account_proxy()` и `check_account_running()` — это корректно.
+### 2.2. Чтение mapping.json
 
----
+- [ ] Проверка существования `config/mapping.json` — если нет, `SystemExit` с инструкцией запустить `migrate_to_sqlite.py`
+- [ ] Загрузка JSON: `{ "auto_001": "8f3b201a-...", ... }`
 
-### Шаг 8: Обработка ошибок и таймаутов в MM-режиме
+### 2.3. Определение путей
 
-**Что сделать:**
-- Обернуть вызовы `mm.start_browser()` / `mm.stop_browser()` / `mm.zerion_login()` в try/except
-- При ошибке `start_browser` — логировать и пробрасывать исключение (не маскировать)
-- При ошибке `stop_browser` в `close()` — логировать warning, не бросать (cleanup не должен прерывать)
-- При ошибке `zerion_login` — логировать error и пробрасывать (авторизация критична)
+- [ ] **Source:** `config/chrome_accounts/{name}/` (например `config/chrome_accounts/auto_001/`)
+- [ ] **Target:** `{APPDATA}/CloakManager/profiles/{UUID}/BrowserData/`
+  - Windows: `os.environ['APPDATA']` → `C:\Users\stalcker\AppData\Roaming\CloakManager\profiles\{UUID}\BrowserData\`
+  - Платформозависимость: пока только Windows (stAuto0 на Windows)
+- [ ] Проверка: существует ли `APPDATA` (если нет — fallback на `~/CloakManager/profiles/...`)
 
----
+### 2.4. Копирование профилей
 
-### Шаг 9: Интеграционный тест (ручной smoke-тест)
+- [ ] Для каждой записи `{ name: uuid }`:
+  - Проверка: `source` существует? Если нет — лог `[skip] auto_001: исходная директория не найдена`
+  - Проверка: `target` уже существует?
+    - Если да и не `--overwrite` — лог `[skip] auto_001: целевая директория не пуста (используй --overwrite)`
+    - Если да и `--overwrite` — `shutil.rmtree(target)` + создание заново
+  - **Копирование:** `shutil.copytree(source, target, dirs_exist_ok=True)`
+  - Лог: `[ok] auto_001 → {UUID} (N файлов)`
+  - При ошибке копирования: лог `[err] auto_001: {traceback}`, **продолжить** со следующим
 
-**Что сделать:**
-1. Запустить MultiManager Core (GUI или `node src/index.js`)
-2. Убедиться, что есть хотя бы 1 профиль в БД
-3. Запустить из stAuto0:
-   ```
-   python main.py --project=test --range=001-001 --token=SECRET
-   ```
-4. Проверить лог: `[MM-mode]` — профиль получен из API, браузер запущен через MM, `connect_via_endpoint` выполнен
-5. Проверить что проект запустился и отработал
-6. Проверить что `close()` вызвал `mm.stop_browser()`
-7. Повторить legacy-режим (без запущенного Core):
-   ```
-   python main.py --project=test 001-001
-   ```
-8. Убедиться что legacy-ветка работает как раньше
+### 2.5. Итоговая сводка
 
----
+- [ ] Вывод:
+  ```
+  ===== ИТОГ КОПИРОВАНИЯ =====
+  Успешно:   10
+  Пропущено: 0
+  Ошибок:    0
+  ```
+- [ ] Если есть ошибки — exit code 1 (для CI/CD)
+- [ ] Рекомендация: `Теперь можно запустить main.py --project=... --range=001-010 и проверить в MM GUI`
 
-## Файловый манифест
+### 2.6. Безопасность и edge cases
 
-| Файл | Действие | Описание |
-|------|----------|----------|
-| `Core/browser.py` | **ИЗМЕНИТЬ** | Шаги 1–6: реализация MM-методов, рефакторинг `connect()` |
-| `Core/multimanager.py` | **НЕ ТРОГАТЬ** | Уже готов (ФА) |
-| `main.py` | **НЕ ТРОГАТЬ** | Уже готов (ФА) — проверка интеграции |
-
----
-
-## Порядок реализации
-
-| № | Шаг | Суть | Сложность |
-|---|-----|------|-----------|
-| 1 | `_launch_via_multimanager()` | Замена заглушки на вызов MM API + `connect_via_endpoint()` | low |
-| 2 | `close()` MM-ветка | Замена заглушки на `mm.stop_browser()` + stop Playwright | low |
-| 3 | `login_zerion()` MM-ветка | Замена заглушки на `mm.zerion_login()` | low |
-| 4 | `connect()` → `connect_via_endpoint()` | Устранение дублирования | low |
-| 5 | try/except в MM-вызовах | Обработка ошибок (error в launch/login, warning в close) | low |
-| 6 | Smoke-тест | Запуск MM-mode и legacy-mode, проверка логов | medium |
+- [ ] `source` не существует → skip, не прерывать
+- [ ] `target` частично заполнен (бывший неудачный запуск) → `--overwrite` решает
+- [ ] Пробелы в пути `APPDATA` → корректная обработка (shutil сам экранирует)
+- [ ] Атомарность на уровне одного профиля: ошибка одного не ломает остальные
+- [ ] Если mapping.json пустой — `SystemExit`
 
 ---
 
-## Не делаем в рамках ФБ
+## Этап 3: Тестирование интеграции
 
-- ❌ Wallet Factory (ФВ) — будет позже
-- ❌ Миграционные скрипты (ФГ) — можно делать параллельно
-- ❌ MCP-сервер (ФД) — позже
-- ❌ Изменение API MultiManager (всё готово в Ф4)
-- ❌ Удаление legacy-методов (они остаются навсегда, решение Q1)
-- ❌ Рефакторинг `config/accounts.py` или других файлов stAuto0
+### 3.1. Smoke-тест migrate_to_sqlite (без --force)
+
+- [ ] Убедиться, что MM Core запущен
+- [ ] Запустить: `python scripts/migrate_to_sqlite.py --token=SECRET`
+- [ ] Проверить: профили созданы, прокси созданы, mapping.json создан
+- [ ] Проверить в GUI: 10 профилей, данные совпадают с accounts.py
+
+### 3.2. Smoke-тест migrate_to_sqlite (с --force, идемпотентность)
+
+- [ ] Запустить повторно без `--force` — должно сказать «все пропущены»
+- [ ] Запустить с `--force` — должно пересоздать все 10
+
+### 3.3. Smoke-тест migrate_profile_dirs
+
+- [ ] Убедиться, что mapping.json существует
+- [ ] Запустить: `python scripts/migrate_profile_dirs.py`
+- [ ] Проверить: `%APPDATA%/CloakManager/profiles/{UUID}/BrowserData/` существуют
+- [ ] Проверить: внутри есть куки, Local Storage и т.д.
+
+### 3.4. Интеграционный тест: main.py в MM-режиме
+
+- [ ] **Отключить legacy:** временно убрать токен/порт, чтобы убедиться что MM-режим работает
+- [ ] Запустить: `python main.py --project=test --range=001-003 --token=SECRET`
+- [ ] Проверить: браузер стартует через MM API, проект запускается, браузер стопается
+
+### 3.5. Интеграционный тест: legacy fallback
+
+- [ ] **Отключить MM Core** (остановить процесс)
+- [ ] Запустить: `python main.py --project=test 001-003`
+- [ ] Проверить: работает в legacy-режиме через accounts.py + прямой launch
+
+---
+
+## Этап 4: Финализация
+
+- [ ] Убедиться, что оба скрипта Console Scripts (не GUI)
+- [ ] Проверить `--help` для обоих скриптов
+- [ ] Проверить логирование (читаемые сообщения)
+- [ ] Удалить скрипты **только после подтверждения пользователя** (§7.3 ТЗ)
+- [ ] Обновить `TS_INTEGRATION.md`: поменять статус ❌ → ✅ для ФГ

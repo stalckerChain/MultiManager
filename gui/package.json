@@ -75,7 +75,7 @@
       "icon": "resources/icon.icns"
     },
     "win": {
-      "target": "nsis",
+      "target": ["nsis", "portable"],
       "icon": "resources/icon.ico"
     },
     "linux": {
