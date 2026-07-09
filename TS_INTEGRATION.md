@@ -1,11 +1,11 @@
 -------------------------------
 ## ТЕХНИЧЕСКОЕ ЗАДАНИЕ: ИНТЕГРАЦИЯ stAuto0 С MultiManager
 ## Спутник-документ к [TS.md](./TS.md) (MultiManager v1.2.1)
-**Версия:** 1.1.0 | **Дата ревизии:** 2026-07-09
+**Версия:** 1.2.0 | **Дата ревизии:** 2026-07-10
 
 > **Принцип маркировки:** ✅ уже есть в коде stAuto0 | ❌ к реализации/изменению | ⚠️ будет удалено/переписано.
 > **Расположение stAuto0:** `C:\Users\stalcker\AI\stAuto0` (отдельный проект, отдельный git).
-> **Статус аудита (2026-07-10):** миграция stAuto0 — **~50%** (ФГ ✅, ФА ✅, ФБ ✅, ФВ–ФД не начаты). MultiManager **Ф1–Ф6 ✅ готовы** к стыковке. Открытые вопросы Q1–Q5 — **РЕШЕНЫ** (см. §11).
+> **Статус аудита (2026-07-10):** миграция stAuto0 — **~80%** (ФГ ✅, ФА ✅, ФБ ✅, ФВ ✅, ФД ❌). MultiManager **Ф1–Ф6 ✅ готовы** к стыковке. Открытые вопросы Q1–Q5 — **РЕШЕНЫ** (см. §11).
 -------------------------------
 
 ## 1. Контекст stAuto0 (что есть сейчас — аудит 2026-07-07)
@@ -22,12 +22,12 @@ stAuto0 — Playwright-based фреймворк Web3-автоматизации 
 | **Аккаунты** | `config/accounts.py` | Статический tuple из 10 аккаунтов (статус, name, wallet_password, email, solana, evm, profile_directory, debugging_port, proxy, timezone). **Остаётся для legacy-fallback** (решение Q1); в MM-режиме заменяется на API-чтение. |
 | **Сиды** | `config/auto_sids.py` | Временный файл мнемоник (BIP39 24 слова). Создаётся `create_wallets.py`, уничтожается вручную после инициализации. |
 | **Проекты** | `projects/*.py` (15 шт.) | `BaseProject` subclasses: concrete, concrete_paragraph, allscale, cambrian, litvm, neuraverse, pumpcade, rabbithole, rax_finance, test, umbraprivacy, upshot, xstocks. Интерфейс: `_get_start_url()`, `_get_max_attempts()`, `_use_new_tab()`, `_check_success()`, `_login()`, `_process()`. |
-| **Wallet Factory** | `scripts/create_wallets.py`, `scripts/init_wallet4browser.py`, `scripts/fill_emails.py` | Генерация BIP39, деривация EVM/Solana, онбординг Zerion (24 слова). |
+| **Wallet Factory** | `scripts/create_wallets.py`, `scripts/init_wallet4browser.py`, `scripts/fill_emails.py` | Генерация BIP39, деривация EVM/Solana, онбординг Zerion (24 слова). **Переписана** ✅ — использует MultiManager API (`POST /api/profiles/batch`, `PUT /api/profiles/:id`). |
 | **MCP сервер** | `mcp_server/server.py` | FastMCP, 10 tools: `browser_launch`, `browser_close`, `browser_navigate`, `browser_click`, `browser_fill`, `browser_screenshot`, `browser_get_content`, `browser_wait_for`, `browser_login_zerion`, `browser_list_sessions`. Читает `config/accounts.py`. |
 | **Миграционные скрипты** | `scripts/migrate_to_sqlite.py`, `scripts/migrate_profile_dirs.py` | **СОЗДАНЫ** ✅. Переносят 10 аккаунтов, прокси, профили. Smoke-тесты пройдены. |
 | **Зависимости** | `requirements.txt` | mnemonic, eth-account, base58, pynacl, aiohttp, playwright, requests, websocket-client, cloakbrowser, google-auth-oauthlib, google-api-python-client, pytest, pytest-asyncio, mcp. |
 
-> **🛑 Аудит 2026-07-10 (пост-ФГ):** `Core/multimanager.py` **СОЗДАН** ✅. `main.py` и `Core/browser.py` **ИЗМЕНЕНЫ** ✅ — содержат авто-детект Core и MM-режим. `scripts/migrate_to_sqlite.py`, `scripts/migrate_profile_dirs.py` **СОЗДАНЫ** ✅ — smoke-тесты пройдены (10 аккаунтов, --force, directory copy, MM GUI). ФВ–ФД не начаты.
+> **🛑 Аудит 2026-07-10 (пост-ФВ):** `Core/multimanager.py` **СОЗДАН** ✅. `main.py` и `Core/browser.py` **ИЗМЕНЕНЫ** ✅ — содержат авто-детект Core и MM-режим. `scripts/migrate_to_sqlite.py`, `scripts/migrate_profile_dirs.py` **СОЗДАНЫ** ✅ — smoke-тесты пройдены (10 аккаунтов, --force, directory copy, MM GUI). `scripts/create_wallets.py`, `scripts/init_wallet4browser.py`, `scripts/fill_emails.py` **ПЕРЕПИСАНЫ** ✅ — используют MultiManager API вместо `config/accounts.py`. ФД не начата.
 
 **Zerion ID:** `klghhnkeealcohjjanjjdaeeggmfmlpl`. URL онбординга: `chrome-extension://{ZERION_ID}/popup.8e8f209b.html?windowType=tab&appMode=onboarding#/onboarding/import/mnemonic`.
 
@@ -258,9 +258,9 @@ async def close(self):
 | `close()` | В режиме MultiManager — `POST /api/browser/:id/stop`; в legacy — `context.close()` |
 
 -------------------------------
-## 5. Wallet Factory на SQLite
+## 5. Wallet Factory на SQLite ✅
 
-### 5.1. `scripts/create_wallets.py` — переписать ❌
+### 5.1. `scripts/create_wallets.py` — переписано ✅
 
 **Текущее:** читает/пишет `config/accounts.py` (`get_existing_accounts`, `get_start_index`), генерирует BIP39 (24 слова), деривирует EVM (`m/44'/60'/0'/0/0`) и Solana (`m/44'/501'/0'/0'` через SLIP-0010 Ed25519), пишет всё в `accounts.py` + сиды в `auto_sids.py`.
 
@@ -271,7 +271,7 @@ async def close(self):
 - **Сиды ТОЛЬКО во временный `config/auto_sids.py`** — никогда в БД. Параноидальный инвариант. Расположение файла: `stAuto0/config/auto_sids.py` (решение Q4, без изменений).
 - Авто-распределение почт: читать `config/free_email.txt`, по одной почте на аккаунт через `PUT /api/profiles/:id {email}`. По завершении `free_email.txt` перезаписывается без использованных строк (логика `scripts/fill_emails.py`).
 
-### 5.2. `scripts/init_wallet4browser.py` — переписать ❌
+### 5.2. `scripts/init_wallet4browser.py` — переписано ✅
 
 **Текущее:** читает `config/auto_sids.py`, поочерёдно `BaseBrowser.launch()`, навигация на `chrome-extension://.../onboarding`, ввод 24 слов, установка пароля. Идемпотентность: если `Session expired` → skip.
 
@@ -421,12 +421,12 @@ python scripts/migrate_profile_dirs.py
 | **ФГ** | **Миграционные скрипты** (ПЕРВАЯ): `migrate_to_sqlite.py` + `migrate_profile_dirs.py`. Перенос 10 аккаунтов из `config/accounts.py` в SQLite MultiManager. | `scripts/migrate_to_sqlite.py` (новый), `scripts/migrate_profile_dirs.py` (новый) | MultiManager Ф4 ✅ | ✅ |
 | **ФА** | **`main.py` + `Core/multimanager.py`:** авто-детект Core (`is_core_alive`), `GET /api/internal/profiles?range=`, модуль-клиент MultiManager API, adapter `normalize_account()`. ProxyChecker и kill_chrome остаются в legacy. | `main.py`, `Core/multimanager.py` (новый) | MultiManager Ф1 ✅, Ф4 ✅, ФГ (для тест-данных) | ✅ |
 | **ФБ** | **`Core/browser.py`:** флаг `mm_mode`, новый `launch()` (`_launch_via_multimanager` + `_launch_legacy`), `connect_via_endpoint()`, ветвление `login_zerion()`/`close()`. Все legacy-методы сохраняются. | `Core/browser.py` | MultiManager Ф4 ✅, ФА | ✅ |
-| **ФВ** | **Wallet Factory на SQLite:** `create_wallets.py` (через `POST /api/profiles/batch`), `init_wallet4browser.py` (через API+CDP), `fill_emails.py` (через PUT). | `scripts/create_wallets.py`, `scripts/init_wallet4browser.py`, `scripts/fill_emails.py` | MultiManager Ф1 ✅, Ф4 ✅ | ❌ |
+| **ФВ** | **Wallet Factory на SQLite:** `create_wallets.py` (через `POST /api/profiles/batch`), `init_wallet4browser.py` (через API+CDP), `fill_emails.py` (через PUT). | `scripts/create_wallets.py`, `scripts/init_wallet4browser.py`, `scripts/fill_emails.py` | MultiManager Ф1 ✅, Ф4 ✅ | ✅ |
 | **ФД** | **MCP:** переключение `mcp_server/server.py` на MultiManager API + Recorder-режим + мультимодальный анализ. | `mcp_server/server.py` | MultiManager Ф4 ✅, ФА | ❌ |
 
 > **Стыковка с MultiManager Roadmap:** MultiManager Ф1–Ф6 **все готовы** ✅. stAuto0 может начинать миграцию немедленно. Зависимости выполнены.
 >
-> **Параллельность:** ФА и ФБ реализованы параллельно (одна сессия), т.к. `Core/multimanager.py` (ФА) изолирован от `Core/browser.py` (ФБ). ФВ и ФД — строго после успешного smoke-теста ФА+ФБ (smoke-тест пройден ✅).
+> **Параллельность:** ФА и ФБ реализованы параллельно (одна сессия), т.к. `Core/multimanager.py` (ФА) изолирован от `Core/browser.py` (ФБ). ФВ реализована после успешного smoke-теста ФА+ФБ (smoke-тест пройден ✅). ФД — следующая фаза.
 
 -------------------------------
 ## 11. Открытые вопросы — РЕШЕНЫ (2026-07-09)
