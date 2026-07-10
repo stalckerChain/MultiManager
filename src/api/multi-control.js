@@ -1,9 +1,6 @@
 const express = require('express');
 const { exec } = require('child_process');
 const { promisify } = require('util');
-const fs = require('fs');
-const path = require('path');
-const os = require('os');
 const { controller } = require('../multi-control');
 const { cdpManager } = require('../multi-control/cdp-manager');
 const { inputCapture, windowTracker } = require('../os-input');
@@ -531,13 +528,7 @@ public class WinFocus {
 "@
 [WinFocus]::Focus(${pid})
 `;
-      const tmpFile = path.join(os.tmpdir(), `mm_focus_${Date.now()}_${Math.random().toString(36).slice(2)}.ps1`);
-      fs.writeFileSync(tmpFile, ps, 'utf-8');
-      try {
-        await execAsync(`powershell -ExecutionPolicy Bypass -File "${tmpFile}"`);
-      } finally {
-        try { fs.unlinkSync(tmpFile); } catch {}
-      }
+      await execAsync(`powershell -NoProfile -ExecutionPolicy Bypass -EncodedCommand ${Buffer.from(ps, 'utf16le').toString('base64')}`);
     }
   } catch (err) {
     logger.error({ err: err.message, pid }, 'Error focusing window by PID');

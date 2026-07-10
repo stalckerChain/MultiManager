@@ -18,6 +18,7 @@ The project is built as a monorepo (Full-Stack Desktop Application):
 - **Localization (i18n):** Full on-the-fly language switching via `i18next` (English, Русский, 简体中文).
 - **Theme Switcher:** Dynamic theme switching (Dark / Light / System) via CSS variables.
 - **WebSocket:** Real-time broadcasting of profile statuses and logs from Core Engine to the GUI.
+> **PowerShell invocation:** All PowerShell calls (`Get-RunningWindows`, `Move-Window`, `Set-WindowFocus`) use `-EncodedCommand` (Base64 UTF‑16LE) instead of temp files, bypassing Execution Policy and ASR rules.
 
 ---
 

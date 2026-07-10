@@ -1,6 +1,5 @@
-import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
-import path from 'path';
-import fs from 'fs';
+import { describe, it, expect } from 'vitest';
+import { readFileSync } from 'fs';
 
 vi.mock('../../src/db/index.js', () => ({
   getDatabase: vi.fn(() => ({})),
@@ -19,20 +18,6 @@ vi.mock('../../src/logger.js', () => ({
 }));
 
 describe('Window Arranger', () => {
-  let originalWriteSync;
-  let originalUnlinkSync;
-
-  beforeEach(() => {
-    vi.clearAllMocks();
-    originalWriteSync = fs.writeFileSync;
-    originalUnlinkSync = fs.unlinkSync;
-  });
-
-  afterEach(() => {
-    fs.writeFileSync = originalWriteSync;
-    fs.unlinkSync = originalUnlinkSync;
-  });
-
   it('router содержит все роуты', async () => {
     const mod = await import('../../src/api/window-arranger.js');
     expect(mod.default).toBeDefined();
@@ -48,241 +33,109 @@ describe('Window Arranger', () => {
     expect(paths).not.toContain('/cascade/grouped');
   });
 
-  describe('Temp file uniqueness (race condition fix)', () => {
-    it('каждый вызов создаёт уникальный temp-файл', async () => {
-      const writtenFiles = [];
-      fs.writeFileSync = vi.fn((filePath) => {
-        writtenFiles.push(filePath);
-      });
-      fs.unlinkSync = vi.fn();
-
-      const mod = await import('../../src/api/window-arranger.js');
-      const expressMod = await import('express');
-      const app = expressMod.default();
-      app.use(mod.default);
-
-      const http = await import('http');
-      const server = http.createServer(app);
-      await new Promise(r => server.listen(0, r));
-      const port = server.address().port;
-
-      try {
-        await Promise.all([
-          fetch(`http://127.0.0.1:${port}/windows`),
-          fetch(`http://127.0.0.1:${port}/windows`),
-        ]);
-
-        expect(writtenFiles.length).toBeGreaterThanOrEqual(2);
-        const uniqueFiles = new Set(writtenFiles.map(f => path.basename(f)));
-        expect(uniqueFiles.size).toBeGreaterThanOrEqual(2);
-      } finally {
-        server.close();
-      }
+  describe('Source code checks (no mocking needed)', () => {
+    it('использует -EncodedCommand вместо -File и temp-файлов', () => {
+      const content = readFileSync(
+        new URL('../../src/api/window-arranger.js', import.meta.url),
+        'utf-8'
+      );
+      // Should use -EncodedCommand
+      expect(content).toContain('-EncodedCommand');
+      // Should NOT use -File
+      expect(content).not.toContain('-File "');
+      // Should NOT create temp files
+      expect(content).not.toContain('mm_windows_');
+      expect(content).not.toContain('mm_move_');
+      expect(content).not.toContain('mm_focus_');
+      expect(content).not.toContain('writeFileSync');
+      expect(content).not.toContain('unlinkSync');
+      // Has the Base64 encoding helper
+      expect(content).toContain('toPSEncoded');
+      expect(content).toContain("Buffer.from(script, 'utf16le').toString('base64')");
     });
 
-    it('temp-файл удаляется после выполнения', async () => {
-      fs.writeFileSync = vi.fn();
-      fs.unlinkSync = vi.fn();
-
-      const mod = await import('../../src/api/window-arranger.js');
-      const expressMod = await import('express');
-      const app = expressMod.default();
-      app.use(mod.default);
-
-      const http = await import('http');
-      const server = http.createServer(app);
-      await new Promise(r => server.listen(0, r));
-      const port = server.address().port;
-
-      try {
-        await fetch(`http://127.0.0.1:${port}/windows`);
-
-        expect(fs.writeFileSync).toHaveBeenCalled();
-        expect(fs.unlinkSync).toHaveBeenCalled();
-      } finally {
-        server.close();
-      }
+    it('WIN_GET_WINDOWS_PS скрипт содержит pidOnly и enum-функции', () => {
+      const content = readFileSync(
+        new URL('../../src/api/window-arranger.js', import.meta.url),
+        'utf-8'
+      );
+      expect(content).toContain('pidOnly');
+      expect(content).toContain('EnumWindows');
+      expect(content).toContain('IsWindowVisible');
+      expect(content).toContain('GetWindowRect');
+      expect(content).toContain('GetWindowThreadProcessId');
     });
 
-    it('temp-файл удаляется даже при ошибке PowerShell', async () => {
-      fs.writeFileSync = vi.fn();
-      fs.unlinkSync = vi.fn();
-
-      const mod = await import('../../src/api/window-arranger.js');
-      const expressMod = await import('express');
-      const app = expressMod.default();
-      app.use(mod.default);
-
-      const http = await import('http');
-      const server = http.createServer(app);
-      await new Promise(r => server.listen(0, r));
-      const port = server.address().port;
-
-      try {
-        const res = await fetch(`http://127.0.0.1:${port}/windows`);
-        expect(res.ok).toBe(true);
-
-        expect(fs.writeFileSync).toHaveBeenCalled();
-        expect(fs.unlinkSync).toHaveBeenCalled();
-      } finally {
-        server.close();
-      }
-    });
-  });
-
-  describe('PowerShell script content', () => {
-    it('скрипт содержит pidOnly параметр', async () => {
-      let writtenContent = '';
-      fs.writeFileSync = vi.fn((_, content) => { writtenContent = content; });
-      fs.unlinkSync = vi.fn();
-
-      const mod = await import('../../src/api/window-arranger.js');
-      const expressMod = await import('express');
-      const app = expressMod.default();
-      app.use(mod.default);
-
-      const http = await import('http');
-      const server = http.createServer(app);
-      await new Promise(r => server.listen(0, r));
-      const port = server.address().port;
-
-      try {
-        await fetch(`http://127.0.0.1:${port}/windows`);
-
-        expect(writtenContent).toContain('pidOnly');
-        expect(writtenContent).toContain('EnumWindows');
-        expect(writtenContent).toContain('IsWindowVisible');
-        expect(writtenContent).toContain('GetWindowRect');
-        expect(writtenContent).toContain('GetWindowThreadProcessId');
-      } finally {
-        server.close();
-      }
+    it('WIN_GET_WINDOWS_PS использует pipe-разделитель для вывода', () => {
+      const content = readFileSync(
+        new URL('../../src/api/window-arranger.js', import.meta.url),
+        'utf-8'
+      );
+      expect(content).toContain('handle + "|" + pid + "|" + title');
     });
 
-    it('скрипт использует pipe-разделитель для вывода', async () => {
-      let writtenContent = '';
-      fs.writeFileSync = vi.fn((_, content) => { writtenContent = content; });
-      fs.unlinkSync = vi.fn();
-
-      const mod = await import('../../src/api/window-arranger.js');
-      const expressMod = await import('express');
-      const app = expressMod.default();
-      app.use(mod.default);
-
-      const http = await import('http');
-      const server = http.createServer(app);
-      await new Promise(r => server.listen(0, r));
-      const port = server.address().port;
-
-      try {
-        await fetch(`http://127.0.0.1:${port}/windows`);
-
-        expect(writtenContent).toContain('handle + "|" + pid + "|" + title');
-      } finally {
-        server.close();
-      }
-    });
-
-    it('moveWindow содержит MoveWindow DllImport', async () => {
-      const { readFileSync } = await import('fs');
+    it('moveWindow содержит MoveWindow DllImport и toPSEncoded', () => {
       const content = readFileSync(
         new URL('../../src/api/window-arranger.js', import.meta.url),
         'utf-8'
       );
       expect(content).toContain('MoveWindow');
       expect(content).toContain('DllImport("user32.dll")] public static extern bool MoveWindow');
-      expect(content).toContain('mm_move_');
+      expect(content).toContain('toPSEncoded');
     });
 
-    it('focusWindow содержит SetForegroundWindow DllImport', async () => {
-      const { readFileSync } = await import('fs');
+    it('focusWindow содержит SetForegroundWindow DllImport и toPSEncoded', () => {
       const content = readFileSync(
         new URL('../../src/api/window-arranger.js', import.meta.url),
         'utf-8'
       );
       expect(content).toContain('SetForegroundWindow');
       expect(content).toContain('DllImport("user32.dll")] public static extern bool SetForegroundWindow');
-      expect(content).toContain('mm_focus_');
+      expect(content).toContain('toPSEncoded');
+    });
+
+    it('PID-only скрипт содержит _pidOnly и !_pidOnly флаги', () => {
+      const content = readFileSync(
+        new URL('../../src/api/window-arranger.js', import.meta.url),
+        'utf-8'
+      );
+      expect(content).toContain('pidOnly');
+      expect(content).toContain('!_pidOnly');
+      expect(content).toContain('static bool _pidOnly = false');
+    });
+
+    it('fallback по заголовку содержит chrome/chromium/MultiManager', () => {
+      const content = readFileSync(
+        new URL('../../src/api/window-arranger.js', import.meta.url),
+        'utf-8'
+      );
+      expect(content).toContain('chrome');
+      expect(content).toContain('chromium');
+      expect(content).toContain('MultiManager');
+      expect(content).toContain('Cloak');
+    });
+
+    it('PID-only логика: _pidOnly = pidOnly и пропуск fallback', () => {
+      const content = readFileSync(
+        new URL('../../src/api/window-arranger.js', import.meta.url),
+        'utf-8'
+      );
+      expect(content).toContain('} else if (!_pidOnly) {');
+      expect(content).toContain('_pidOnly = pidOnly');
     });
   });
 
-  describe('PID-only filtering logic', () => {
-    it('PID-only скрипт содержит _pidOnly и !_pidOnly флаги', async () => {
-      let writtenContent = '';
-      fs.writeFileSync = vi.fn((_, content) => { writtenContent = content; });
-      fs.unlinkSync = vi.fn();
-
-      const mod = await import('../../src/api/window-arranger.js');
-      const expressMod = await import('express');
-      const app = expressMod.default();
-      app.use(mod.default);
-
-      const http = await import('http');
-      const server = http.createServer(app);
-      await new Promise(r => server.listen(0, r));
-      const port = server.address().port;
-
-      try {
-        await fetch(`http://127.0.0.1:${port}/windows`);
-
-        expect(writtenContent).toContain('pidOnly');
-        expect(writtenContent).toContain('!_pidOnly');
-        expect(writtenContent).toContain('static bool _pidOnly = false');
-      } finally {
-        server.close();
-      }
-    });
-
-    it('fallback по заголовку содержит chrome/chromium/MultiManager', async () => {
-      let writtenContent = '';
-      fs.writeFileSync = vi.fn((_, content) => { writtenContent = content; });
-      fs.unlinkSync = vi.fn();
-
-      const mod = await import('../../src/api/window-arranger.js');
-      const expressMod = await import('express');
-      const app = expressMod.default();
-      app.use(mod.default);
-
-      const http = await import('http');
-      const server = http.createServer(app);
-      await new Promise(r => server.listen(0, r));
-      const port = server.address().port;
-
-      try {
-        await fetch(`http://127.0.0.1:${port}/windows`);
-
-        expect(writtenContent).toContain('chrome');
-        expect(writtenContent).toContain('chromium');
-        expect(writtenContent).toContain('MultiManager');
-        expect(writtenContent).toContain('Cloak');
-      } finally {
-        server.close();
-      }
-    });
-
-    it('PID-only логика: when _pidOnly true, fallback по заголовку пропускается', async () => {
-      let writtenContent = '';
-      fs.writeFileSync = vi.fn((_, content) => { writtenContent = content; });
-      fs.unlinkSync = vi.fn();
-
-      const mod = await import('../../src/api/window-arranger.js');
-      const expressMod = await import('express');
-      const app = expressMod.default();
-      app.use(mod.default);
-
-      const http = await import('http');
-      const server = http.createServer(app);
-      await new Promise(r => server.listen(0, r));
-      const port = server.address().port;
-
-      try {
-        await fetch(`http://127.0.0.1:${port}/windows`);
-
-        expect(writtenContent).toContain('} else if (!_pidOnly) {');
-        expect(writtenContent).toContain('_pidOnly = pidOnly');
-      } finally {
-        server.close();
-      }
+  describe('multi-control.js также использует -EncodedCommand', () => {
+    it('не содержит -File, writeFileSync или unlinkSync', () => {
+      const content = readFileSync(
+        new URL('../../src/api/multi-control.js', import.meta.url),
+        'utf-8'
+      );
+      expect(content).not.toContain('-File "');
+      expect(content).not.toContain('writeFileSync');
+      expect(content).not.toContain('unlinkSync');
+      expect(content).toContain('-EncodedCommand');
+      expect(content).toContain("Buffer.from(ps, 'utf16le').toString('base64')");
     });
   });
 });

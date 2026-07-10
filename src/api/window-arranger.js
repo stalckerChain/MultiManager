@@ -1,12 +1,15 @@
 const express = require('express');
 const { exec } = require('child_process');
 const { promisify } = require('util');
-const fs = require('fs');
-const path = require('path');
 const { getDatabase, createProfileQueries } = require('../db');
 const { logger } = require('../logger');
 
 const execAsync = promisify(exec);
+
+function toPSEncoded(script) {
+  return Buffer.from(script, 'utf16le').toString('base64');
+}
+
 const router = express.Router();
 
 async function getScreenSize() {
@@ -171,10 +174,8 @@ async function getRunningWindows() {
       const psWithPids = WIN_GET_WINDOWS_PS
         .replace('@@TARGETPIDS@@', targetPids.map(p => `'${p}'`).join(','))
         .replace('@@PIDONLY@@', pidOnly ? '$true' : '$false');
-      const tmpFile = path.join(require('os').tmpdir(), `mm_windows_${Date.now()}_${Math.random().toString(36).slice(2)}.ps1`);
-      fs.writeFileSync(tmpFile, psWithPids, 'utf-8');
       try {
-        const { stdout, stderr } = await execAsync(`powershell -ExecutionPolicy Bypass -File "${tmpFile}"`);
+        const { stdout, stderr } = await execAsync(`powershell -NoProfile -ExecutionPolicy Bypass -EncodedCommand ${toPSEncoded(psWithPids)}`);
         logger.info({ stdoutLen: stdout.length, stderr: stderr || '', targetPids, pidOnly }, 'Window arranger: PowerShell result');
         if (stdout.trim()) {
           const lines = stdout.trim().split('\n').filter(Boolean);
@@ -194,8 +195,6 @@ async function getRunningWindows() {
         }
       } catch (err) {
         logger.error({ err: err.message }, 'Window arranger: PowerShell failed');
-      } finally {
-        try { fs.unlinkSync(tmpFile); } catch {}
       }
     } else if (platform === 'darwin') {
       const script = `
@@ -257,13 +256,7 @@ public class WinAPI {
 "@
 [WinAPI]::MoveWindow([IntPtr]${handle}, ${x}, ${y}, ${width}, ${height}, $true)
 `;
-      const tmpFile = path.join(require('os').tmpdir(), `mm_move_${Date.now()}_${Math.random().toString(36).slice(2)}.ps1`);
-      fs.writeFileSync(tmpFile, ps, 'utf-8');
-      try {
-        await execAsync(`powershell -ExecutionPolicy Bypass -File "${tmpFile}"`);
-      } finally {
-        try { fs.unlinkSync(tmpFile); } catch {}
-      }
+      await execAsync(`powershell -NoProfile -ExecutionPolicy Bypass -EncodedCommand ${toPSEncoded(ps)}`);
     } else if (platform === 'darwin') {
       const safeWindowId = windowId.replace(/"/g, '\\"');
       const positionScript = `tell application "System Events" to set position of window 1 of process "${safeWindowId}" to {${x}, ${y}}`;
@@ -299,13 +292,7 @@ public class WinAPI {
 "@
 [WinAPI]::SetForegroundWindow([IntPtr]${handle})
 `;
-      const tmpFile = path.join(require('os').tmpdir(), `mm_focus_${Date.now()}_${Math.random().toString(36).slice(2)}.ps1`);
-      fs.writeFileSync(tmpFile, ps, 'utf-8');
-      try {
-        await execAsync(`powershell -ExecutionPolicy Bypass -File "${tmpFile}"`);
-      } finally {
-        try { fs.unlinkSync(tmpFile); } catch {}
-      }
+      await execAsync(`powershell -NoProfile -ExecutionPolicy Bypass -EncodedCommand ${toPSEncoded(ps)}`);
     }
   } catch (err) {
     logger.error({ err: err.message }, 'Error focusing window');
