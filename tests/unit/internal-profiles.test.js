@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach, vi } from 'vitest';
-import internalRouter from '../../src/api/internal.js';
+import { router as internalRouter } from '../../src/api/internal.js';
 
 function parseRange(rangeStr) {
   if (!rangeStr || typeof rangeStr !== 'string') return null;

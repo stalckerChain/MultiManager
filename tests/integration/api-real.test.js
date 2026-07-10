@@ -63,6 +63,10 @@ beforeAll(async () => {
 
   setToken(TEST_TOKEN);
   db = initDatabase();
+
+  db.prepare("INSERT OR REPLACE INTO system_config (key, value, updated_at) VALUES ('stAuto0_path', ?, CURRENT_TIMESTAMP)").run(process.cwd());
+  db.prepare("INSERT OR REPLACE INTO system_config (key, value, updated_at) VALUES ('python_path', ?, CURRENT_TIMESTAMP)").run(process.platform === 'win32' ? 'cmd.exe' : 'echo');
+
   await new Promise(resolve => { server = app.listen(PORT, '127.0.0.1', resolve); });
 });
 

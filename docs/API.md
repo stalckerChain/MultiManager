@@ -905,7 +905,7 @@ Human-like ввод текста через CDP. Имитирует реальн
 
 ### POST /api/tasks/:id/run
 
-Запустить задачу вручную. Создаёт запись выполнения для каждого профиля.
+Запустить задачу вручную. Требует настроенных `stAuto0_path` и `python_path` в Settings. Spawn'ит Python для каждого профиля, пишет логи, обновляет статус выполнения.
 
 **Ответ (200):**
 ```json
@@ -916,12 +916,12 @@ Human-like ввод текста через CDP. Имитирует реальн
   "script_name": "concrete",
   "profiles_count": 5,
   "executions": [
-    { "executionId": 1, "profileId": "uuid", "profileName": "Profile 1", "status": "running", "scriptName": "concrete" }
+    { "executionId": 1, "profileId": "uuid", "profileName": "Profile 1", "status": "running", "scriptName": "concrete", "logFile": "/path/to/tasks/log.log" }
   ]
 }
 ```
 
-**Ответ (400):** `{ "error": "Задача неактивна" }` / `{ "error": "Нет профилей для выполнения задачи" }`
+**Ответ (400):** `{ "error": "Задача неактивна" }` / `{ "error": "stAuto0_path не настроен" }` / `{ "error": "python_path не настроен" }` / `{ "error": "Нет профилей для выполнения задачи" }` / `{ "error": "Неверный формат range" }`
 **Ответ (404):** `{ "error": "Задача не найдена" }`
 
 ---

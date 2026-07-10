@@ -641,16 +641,17 @@ async function waitForSelectorHidden(ws, sessionId, selector, timeout = 10000) {
   throw new Error(`Timeout waiting for selector to hide: ${selector}`);
 }
 
+const ZERION_EXTENSION_ID = 'klghhnkeealcohjjanjjdaeeggmfmlpl';
+
 async function zerionLogin(port, password) {
-  const ZERION_ID = 'klghhnkeealcohjjanjjdaeeggmfmlpl';
-  const LOGIN_URL = `chrome-extension://${ZERION_ID}/popup.8e8f209b.html?windowType=dialog#/login`;
+  const LOGIN_URL = `chrome-extension://${ZERION_EXTENSION_ID}/popup.8e8f209b.html?windowType=dialog#/login`;
 
   const ws = await createBrowserWs(port);
   try {
     const { targetInfos } = await cdpCallRaw(ws, 'Target.getTargets');
     let targetId = null;
     if (targetInfos) {
-      const existing = targetInfos.find(t => t.url && t.url.includes(ZERION_ID));
+      const existing = targetInfos.find(t => t.url && t.url.includes(ZERION_EXTENSION_ID));
       if (existing) targetId = existing.targetId;
     }
 

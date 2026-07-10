@@ -5,7 +5,7 @@
 
 > **Принцип маркировки:** ✅ уже есть в коде stAuto0 | ❌ к реализации/изменению | ⚠️ будет удалено/переписано.
 > **Расположение stAuto0:** `C:\Users\stalcker\AI\stAuto0` (отдельный проект, отдельный git).
-> **Статус аудита (2026-07-10):** миграция stAuto0 — **~100%** (ФГ ✅, ФА ✅, ФБ ✅, ФВ ✅, ФД ✅). MultiManager **Ф1–Ф5 ✅ готовы** к стыковке; **Ф6 — частично** (CRUD задач и tail-терминал готовы, но spawn Python-исполнения в `POST /api/tasks/:id/run` НЕ реализован — см. §9.1, §12). Открытые вопросы Q1–Q5 — **РЕШЕНЫ** (см. §11). Детальный аудит реализации — см. **§12**.
+> **Статус аудита (2026-07-10):** миграция stAuto0 — **~100%** (ФГ ✅, ФА ✅, ФБ ✅, ФВ ✅, ФД ✅). MultiManager **Ф1–Ф6 ✅ готовы** к стыковке. Открытые вопросы Q1–Q5 — **РЕШЕНЫ** (см. §11). Детальный аудит реализации — см. **§12**.
 -------------------------------
 
 ## 1. Контекст stAuto0 (что есть сейчас — аудит 2026-07-07)
@@ -395,13 +395,16 @@ python scripts/migrate_profile_dirs.py
 - stdout/stderr → `logs/task_{task_id}_{timestamp}.log` (путь в `task_executions.log_file_path`).
 - Встроенный терминал GUI (MultiManager Ф6) tail'ит этот файл.
 
-> **⚠️ АУДИТ 2026-07-10 — выше описано ЦЕЛЕВОЕ поведение, текущая реализация НЕ полностью ему соответствует.** `POST /api/tasks/:id/run` (`src/api/tasks.js:94-133`) сейчас:
-> - создаёт записи `task_executions` со статусом `'running'` и возвращает `{status:'started'}`;
-> - **НЕ spawn'ит** `python main.py` (в `tasks.js` нет `require('child_process')`, не передаются `cwd`/`--project`/`--range`/`--log-name`);
-> - `task_executions.log_file_path` **всегда `null`** (`createExecution` зовётся с дефолтом, `updateExecutionStatus` определён, но нигде не вызывается → status/exit_code не обновляются);
-> - встроенный терминал (`gui/src/main/pty.js`) только tail'ит файл по **вручную введённому** пути — не связан с задачами.
->
-> Следствие: **без-GUI ферма (§9.3) пока невозможна** — внешний триггер получит `started`, но Python не запустится. Ручной/CLI запуск (`python main.py ...` поверх живого Core) работает корректно: Ф1–Ф5 + все фазы stAuto0 стыкуются. Задача реализации spawn-ядра Ф6 — **открыта**.
+> **✅ АУДИТ 2026-07-10 — spawn-ядро Ф6 РЕАЛИЗОВАНО.** `POST /api/tasks/:id/run` (`src/api/tasks.js:99-186`) spawn'ит `python main.py` через `child_process.spawn`:
+> - читает `stAuto0_path` и `python_path` из `system_config` (настройки автоматизации);
+> - парсит `task.params.range` для фильтрации профилей (если не задан — все профили);
+> - создаёт лог-файл `task_{taskId}_{profileId}_{timestamp}.log` в `%APPDATA%/CloakManager/logs/tasks/`;
+> - передаёт `--project`, `--range`, `--log-name`, `--token` в Python;
+> - пишет stdout/stderr в лог через `fs.createWriteStream`;
+> - по `exit` вызывает `updateExecutionStatus` (success/failed + exit_code);
+> - по `error` вызывает `updateExecutionStatus` (failed, -1);
+> - если настройки не заданы — возвращает 400 с сообщением;
+> - `log_file_path` сохраняется в БД, терминал привязан через кнопку "View Log" в GUI.
 
 ### 9.2. Конфигурация в Settings MultiManager (Ф5)
 - Поле «Путь к stAuto0» (cwd для spawn).
@@ -488,16 +491,18 @@ python scripts/migrate_profile_dirs.py
 | Ф3 backup | ✅ | `src/backup/index.js` — hot backup + rolling window (коммит `6e29a46`). |
 | **Ф4 Profiles/Browser (критичная точка стыковки)** | ✅ | `POST /api/browser/:id/start` возвращает **настоящий** `ws_endpoint` — НЕ заглушка (`src/api/browser.js:415-421`). cdpPort ловится из stderr регексом `/DevTools listening on ws:\/\/127\.0\.0\.1:(\d+)/` (`browser.js:346-349`). `GET /api/internal/profiles?range=` отдаёт **расшифрованные секреты + готовую `connection_string` прокси** (`src/api/internal.js:46-63`). `POST /api/profiles/batch` генерирует fingerprint автоматически. `POST /api/browser/:id/stop` — tree-kill (SIGTERM→SIGKILL). |
 | Ф5 Settings | ✅ | `stAuto0_path`, `python_path`, список проектов из `projects/*.py` (`src/api/settings.js:91-128`, GUI `Settings.vue:73-86`). |
-| **Ф6 Tasks/Scheduler+терминал** | 🔴 **частично** | CRUD задач ✅; tail-терминал ✅; **НО spawn Python-исполнения НЕ реализован** (см. §9.1). |
+| **Ф6 Tasks/Scheduler+терминал** | ✅ | CRUD задач ✅; tail-терминал ✅; spawn Python-исполнения ✅ (`child_process.spawn` с `--project`, `--range`, `--log-name`, `--token`, логи в `logs/tasks/`, `updateExecutionStatus` по exit/error). Терминал привязан к задачам через кнопку "View Log". |
 
-**Отклонения/недочёты MultiManager:**
-- **Ф6 spawn-ядро отсутствует** (главное): `POST /api/tasks/:id/run` (`src/api/tasks.js:94-133`) не запускает `python main.py`, не передаёт `cwd`/`--project`/`--range`/`--log-name`; `task_executions.log_file_path` всегда `null`; `updateExecutionStatus` определён, но нигде не вызывается. Терминал не привязан к задачам.
-- Невалидный `range` в `GET /api/internal/profiles` отдаёт **все профили** без фильтрации (`src/api/internal.js:37-42`: `parseRange('abc')` → null → `getAll()`), вместо `400` как заявлено в `docs/API.md`.
+**Отклонения/недочёты MultiManager (исправлены):**
+- ~~**Ф6 spawn-ядро отсутствует**~~ — ✅ реализовано (spawn, логи, updateExecutionStatus, привязка терминала).
+- ~~**Невалидный `range`**~~ — ✅ возвращает 400 (`src/api/internal.js:35-38`).
+- ~~**`src/api/auth.js` timingSafeEqual**~~ — ✅ добавлен `crypto.timingSafeEqual`.
+
+**Остаётся:**
 - `POST /api/browser/:id/zerion-login` хардкодит `popup.8e8f209b.html` (`src/api/browser.js:646`) — хрупко к версии расширения Zerion.
-- `src/api/auth.js:20` сравнивает токен через `===`, не `timingSafeEqual` — теоретическая timing-уязвимость (малокритично на localhost).
 
 ### 12.3. Итог по стыковке
-**Ручной/CLI запуск** (`python main.py --project=... --range=... --token=...` поверх живого MultiManager Core) — **работает**: Ф1–Ф5 MultiManager и все фазы stAuto0 стыкуются корректно, `ws_endpoint` реальный, секреты и прокси приходят готовыми.
-**Автоматическое исполнение по расписанию** (Tasks Manager → cron/Task Scheduler → `POST /api/tasks/:id/run`) — **не работает** до реализации spawn-ядра Ф6 (создаётся запись БД со статусом `'running'`, Python не запускается, логи не пишутся).
+**Ручной/CLI запуск** (`python main.py --project=... --range=... --token=...` поверх живого MultiManager Core) — **работает**: Ф1–Ф6 MultiManager и все фазы stAuto0 стыкуются корректно, `ws_endpoint` реальный, секреты и прокси приходят готовыми.
+**Автоматическое исполнение по расписанию** (Tasks Manager → cron/Task Scheduler → `POST /api/tasks/:id/run`) — **работает**: Core spawn'ит Python, пишет логи, обновляет статус и exit_code в `task_executions`. Терминал привязан через кнопку "View Log".
 
 -------------------------------

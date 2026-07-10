@@ -178,7 +178,8 @@
         "failed": "失败"
       },
       "empty": "暂无执行记录",
-      "noLog": "无日志文件"
+      "noLog": "无日志文件",
+      "viewLog": "查看日志"
     },
     "status": {
       "active": "启用",

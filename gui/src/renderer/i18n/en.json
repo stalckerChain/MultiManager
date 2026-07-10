@@ -178,7 +178,8 @@
         "failed": "Failed"
       },
       "empty": "No executions yet",
-      "noLog": "No log file"
+      "noLog": "No log file",
+      "viewLog": "View Log"
     },
     "status": {
       "active": "Active",

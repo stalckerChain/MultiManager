@@ -98,7 +98,9 @@
         <a-table-column :title="t('tasks.executions.columns.startedAt')" data-index="last_run_at" key="startedAt" />
         <a-table-column :title="t('tasks.executions.columns.logFile')" key="logFile">
           <template #default="{ record }">
-            <span v-if="record.log_file_path" class="text-xs text-slate-400">{{ record.log_file_path }}</span>
+            <a-button v-if="record.log_file_path" size="small" type="link" @click="openLog(record.log_file_path)">
+              {{ t('tasks.executions.viewLog') }}
+            </a-button>
             <span v-else class="text-slate-500">{{ t('tasks.executions.noLog') }}</span>
           </template>
         </a-table-column>
@@ -235,6 +237,14 @@ async function handleRun(id) {
     message.success(t('tasks.notifications.runStarted'));
   } catch (err) {
     message.error(err.message || t('common.error'));
+  }
+}
+
+async function openLog(filePath) {
+  if (window.electronAPI) {
+    window.electronAPI.ptyStart(filePath);
+  } else {
+    window.open('file://' + filePath);
   }
 }
 

@@ -32,7 +32,10 @@ router.get('/profiles', (req, res) => {
   const profileQueries = createProfileQueries(db);
   const proxyQueries = createProxyQueries(db);
 
-  const rangeNames = parseRange(req.query.range);
+  const rangeNames = req.query.range ? parseRange(req.query.range) : null;
+  if (req.query.range && !rangeNames) {
+    return res.status(400).json({ error: 'Invalid range format. Use e.g. 001-010' });
+  }
 
   let profiles;
   if (rangeNames) {
@@ -87,4 +90,4 @@ router.get('/profiles', (req, res) => {
   res.json(result);
 });
 
-module.exports = router;
+module.exports = { router, parseRange };
