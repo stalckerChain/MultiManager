@@ -88,7 +88,10 @@
     "fromStore": "From Chrome Web Store",
     "storeModalTitle": "Install from Chrome Web Store",
     "storePlaceholder": "Paste Chrome Web Store URL or Extension ID",
-    "empty": "No extensions installed"
+    "empty": "No extensions installed",
+    "assignAll": "Assign to all profiles",
+    "assignAllSuccess": "Assigned to {{count}} profile(s)",
+    "assignAllConfirm": "Assign this extension to all profiles?"
   },
   "settings": {
     "title": "Settings",

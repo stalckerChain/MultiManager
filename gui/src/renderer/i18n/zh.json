@@ -88,7 +88,10 @@
     "fromStore": "从 Chrome Web Store",
     "storeModalTitle": "从 Chrome Web Store 安装",
     "storePlaceholder": "粘贴 Chrome Web Store 链接或扩展 ID",
-    "empty": "未安装扩展"
+    "empty": "未安装扩展",
+    "assignAll": "分配给所有账户",
+    "assignAllSuccess": "已分配给 {{count}} 个账户",
+    "assignAllConfirm": "将此扩展分配给所有账户？"
   },
   "settings": {
     "title": "设置",

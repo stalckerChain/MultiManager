@@ -63,11 +63,18 @@
 
         <div class="flex items-center justify-between">
           <a-switch v-model:checked="ext.enabled" @change="toggleExtension(ext)" />
-          <a-popconfirm title="Remove this extension?" @confirm="removeExtension(ext)">
-            <a-button size="small" type="text" danger>
-              <DeleteOutlined />
-            </a-button>
-          </a-popconfirm>
+          <div class="flex items-center gap-1">
+            <a-popconfirm :title="t('extensions.assignAllConfirm')" @confirm="assignExtension(ext)">
+              <a-button size="small" type="link" class="text-xs text-blue-400 hover:text-blue-300">
+                {{ t('extensions.assignAll') }}
+              </a-button>
+            </a-popconfirm>
+            <a-popconfirm title="Remove this extension?" @confirm="removeExtension(ext)">
+              <a-button size="small" type="text" danger>
+                <DeleteOutlined />
+              </a-button>
+            </a-popconfirm>
+          </div>
         </div>
       </div>
     </div>
@@ -194,6 +201,18 @@ async function toggleExtension(ext) {
     await client.post(`/api/extensions/${ext.id}/toggle`);
   } catch {
     ext.enabled = !ext.enabled;
+  }
+}
+
+async function assignExtension(ext) {
+  const hide = message.loading('Assigning...', 0);
+  try {
+    const { data } = await client.post(`/api/extensions/${ext.id}/assign-all`);
+    hide();
+    message.success(t('extensions.assignAllSuccess', { count: data.assigned }));
+  } catch (err) {
+    hide();
+    message.error(err.message || 'Failed to assign');
   }
 }
 

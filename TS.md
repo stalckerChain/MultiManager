@@ -283,6 +283,7 @@ Python: `connect_over_cdp("http://127.0.0.1:9331")`.
 ### 9.4. Cookie Manager ⚠️ ЧАСТИЧНО (`gui/src/renderer/views/CookieImportModal.vue`)
 - Drag-and-drop + пре-валидатор — ❌ (ToDo.md §2).
 ### 9.5. Extensions Manager ✅ РЕАЛИЗОВАНО (`gui/src/renderer/views/Extensions.vue`)
+- На каждой карточке расширения кнопка «Назначить всем профилям» → `POST /api/extensions/:id/assign-all`.
 
 ### 9.6. Мониторинг логов и статуса API ✅ РЕАЛИЗОВАНО
 - Панель разработчика: бегущая строка core.log. ✅ `gui/src/renderer/components/LogPanel.vue`

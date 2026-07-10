@@ -88,7 +88,10 @@
     "fromStore": "Из Chrome Web Store",
     "storeModalTitle": "Установка из Chrome Web Store",
     "storePlaceholder": "Вставьте ссылку из Chrome Web Store или ID расширения",
-    "empty": "Расширения не установлены"
+    "empty": "Расширения не установлены",
+    "assignAll": "Назначить всем профилям",
+    "assignAllSuccess": "Назначено {{count}} профилям",
+    "assignAllConfirm": "Назначить это расширение всем профилям?"
   },
   "settings": {
     "title": "Настройки",
