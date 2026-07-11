@@ -55,10 +55,32 @@ async function getScreenSize() {
       const match = stdout.match(/(\d+)x(\d+)/);
       return match ? { width: parseInt(match[1]), height: parseInt(match[2]) } : { width: 1920, height: 1080 };
     } else if (platform === 'win32') {
-      const ps = `[System.Windows.Forms.Screen]::PrimaryScreen.WorkingArea | Select-Object Width, Height, X, Y | ConvertTo-Json`;
-      const { stdout } = await runPowerShellScript(ps);
-      const data = JSON.parse(stdout);
-      return { width: data.Width || 1920, height: data.Height || 1080, x: data.X || 0, y: data.Y || 0 };
+      // Primary: System.Windows.Forms.WorkingArea (с явной загрузкой сборки)
+      try {
+        const ps = `Add-Type -AssemblyName System.Windows.Forms; [System.Windows.Forms.Screen]::PrimaryScreen.WorkingArea | Select-Object Width, Height, X, Y | ConvertTo-Json`;
+        const { stdout } = await runPowerShellScript(ps);
+        const data = JSON.parse(stdout);
+        if (data.Width && data.Height) {
+          return { width: data.Width, height: data.Height, x: data.X || 0, y: data.Y || 0 };
+        }
+      } catch {}
+      // Fallback: Win32 SystemParametersInfo(SPI_GETWORKAREA) — не требует сборки
+      try {
+        const ps = `Add-Type @"
+using System;
+using System.Runtime.InteropServices;
+public class WA {
+    [DllImport("user32.dll")] public static extern bool SystemParametersInfo(uint a, uint b, ref RECT c, uint d);
+    public struct RECT { public int L,T,R,B; }
+    public static string G() { RECT r=new RECT(); SystemParametersInfo(0x30,0,ref r,0); return r.L+"|"+r.T+"|"+(r.R-r.L)+"|"+(r.B-r.T); }
+}
+"@; [WA]::G()`;
+        const { stdout } = await runPowerShellScript(ps);
+        const parts = stdout.trim().split('|').map(Number);
+        if (parts.length === 4) {
+          return { width: parts[2] || 1920, height: parts[3] || 1080, x: parts[0] || 0, y: parts[1] || 0 };
+        }
+      } catch {}
     }
   } catch {}
 

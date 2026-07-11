@@ -134,6 +134,25 @@ describe('Window Arranger', () => {
       expect(content).not.toContain('powershell -Command');
       expect(content).not.toContain("execAsync('powershell");
     });
+
+    it('getScreenSize на Windows явно загружает System.Windows.Forms', () => {
+      const content = readFileSync(
+        new URL('../../src/api/window-arranger.js', import.meta.url),
+        'utf-8'
+      );
+      expect(content).toContain("Add-Type -AssemblyName System.Windows.Forms; [System.Windows.Forms.Screen]::PrimaryScreen.WorkingArea");
+    });
+
+    it('getScreenSize имеет fallback через Win32 SystemParametersInfo(SPI_GETWORKAREA)', () => {
+      const content = readFileSync(
+        new URL('../../src/api/window-arranger.js', import.meta.url),
+        'utf-8'
+      );
+      expect(content).toContain('SystemParametersInfo');
+      expect(content).toContain('DllImport("user32.dll")');
+      expect(content).toContain('0x30'); // SPI_GETWORKAREA
+      expect(content).toContain('public static string G()');
+    });
   });
 
   describe('multi-control.js также использует spawn + -EncodedCommand', () => {
