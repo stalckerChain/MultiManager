@@ -18,6 +18,7 @@
 - **国际化（i18n）：** 通过 `i18next` 实现完整的热切换语言支持（English、Русский、简体中文）。
 - **主题切换：** 通过 CSS 变量动态切换主题（深色/浅色/跟随系统）。
 - **WebSocket：** 将 Core 引擎的配置文件状态和日志实时广播到 GUI。
+> **PowerShell 调用：** 所有 PowerShell 调用（`Get-RunningWindows`、`Move-Window`、`Set-WindowFocus`、`FocusByPID`）均使用 `spawn('powershell', ['-EncodedCommand', ...])` — 通过 Base64 UTF‑16LE 编码直接调用 PowerShell（不经过 `cmd.exe` / 临时文件 / stdin），绕过 Execution Policy、ASR 规则以及命令行长度限制（~8191 字符）。
 
 ---
 

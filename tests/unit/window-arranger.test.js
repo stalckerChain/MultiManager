@@ -34,24 +34,23 @@ describe('Window Arranger', () => {
   });
 
   describe('Source code checks (no mocking needed)', () => {
-    it('использует -EncodedCommand вместо -File и temp-файлов', () => {
+    it('использует spawn + -EncodedCommand (Base64 UTF-16LE), не -File/-Command-', () => {
       const content = readFileSync(
         new URL('../../src/api/window-arranger.js', import.meta.url),
         'utf-8'
       );
-      // Should use -EncodedCommand
-      expect(content).toContain('-EncodedCommand');
-      // Should NOT use -File
+      expect(content).toContain('toPSEncoded');
+      expect(content).toContain("-EncodedCommand");
+      expect(content).toContain("Buffer.from(script, 'utf16le').toString('base64')");
+      // Should NOT use -File or temp files
       expect(content).not.toContain('-File "');
-      // Should NOT create temp files
       expect(content).not.toContain('mm_windows_');
       expect(content).not.toContain('mm_move_');
       expect(content).not.toContain('mm_focus_');
       expect(content).not.toContain('writeFileSync');
       expect(content).not.toContain('unlinkSync');
-      // Has the Base64 encoding helper
-      expect(content).toContain('toPSEncoded');
-      expect(content).toContain("Buffer.from(script, 'utf16le').toString('base64')");
+      // Should NOT use stdin (`-Command -`) — подавляет stdout при Add-Type
+      expect(content).not.toContain("'-Command', '-'");
     });
 
     it('WIN_GET_WINDOWS_PS скрипт содержит pidOnly и enum-функции', () => {
@@ -74,27 +73,27 @@ describe('Window Arranger', () => {
       expect(content).toContain('handle + "|" + pid + "|" + title');
     });
 
-    it('moveWindow содержит MoveWindow DllImport и toPSEncoded', () => {
+    it('moveWindow содержит MoveWindow DllImport и runPowerShellScript', () => {
       const content = readFileSync(
         new URL('../../src/api/window-arranger.js', import.meta.url),
         'utf-8'
       );
       expect(content).toContain('MoveWindow');
       expect(content).toContain('DllImport("user32.dll")] public static extern bool MoveWindow');
-      expect(content).toContain('toPSEncoded');
+      expect(content).toContain('runPowerShellScript');
     });
 
-    it('focusWindow содержит SetForegroundWindow DllImport и toPSEncoded', () => {
+    it('focusWindow содержит SetForegroundWindow DllImport и runPowerShellScript', () => {
       const content = readFileSync(
         new URL('../../src/api/window-arranger.js', import.meta.url),
         'utf-8'
       );
       expect(content).toContain('SetForegroundWindow');
       expect(content).toContain('DllImport("user32.dll")] public static extern bool SetForegroundWindow');
-      expect(content).toContain('toPSEncoded');
+      expect(content).toContain('runPowerShellScript');
     });
 
-    it('PID-only скрипт содержит _pidOnly и !_pidOnly флаги', () => {
+    it('PID-only скрипт содержит _pidOnly и !_pidOnly флаги, без @(...) обёртки', () => {
       const content = readFileSync(
         new URL('../../src/api/window-arranger.js', import.meta.url),
         'utf-8'
@@ -102,6 +101,7 @@ describe('Window Arranger', () => {
       expect(content).toContain('pidOnly');
       expect(content).toContain('!_pidOnly');
       expect(content).toContain('static bool _pidOnly = false');
+      expect(content).toContain("$pidOnly = @@PIDONLY@@");
     });
 
     it('fallback по заголовку содержит chrome/chromium/MultiManager', () => {
@@ -125,17 +125,18 @@ describe('Window Arranger', () => {
     });
   });
 
-  describe('multi-control.js также использует -EncodedCommand', () => {
-    it('не содержит -File, writeFileSync или unlinkSync', () => {
+  describe('multi-control.js также использует spawn + -EncodedCommand', () => {
+    it('содержит toPSEncoded/-EncodedCommand, не содержит -File/-Command-', () => {
       const content = readFileSync(
         new URL('../../src/api/multi-control.js', import.meta.url),
         'utf-8'
       );
+      expect(content).toContain('toPSEncoded');
+      expect(content).toContain('-EncodedCommand');
       expect(content).not.toContain('-File "');
+      expect(content).not.toContain("'-Command', '-'");
       expect(content).not.toContain('writeFileSync');
       expect(content).not.toContain('unlinkSync');
-      expect(content).toContain('-EncodedCommand');
-      expect(content).toContain("Buffer.from(ps, 'utf16le').toString('base64')");
     });
   });
 });

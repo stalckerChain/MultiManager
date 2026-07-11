@@ -1,13 +1,42 @@
 const express = require('express');
-const { exec } = require('child_process');
+const { exec, spawn } = require('child_process');
 const { promisify } = require('util');
 const { getDatabase, createProfileQueries } = require('../db');
 const { logger } = require('../logger');
 
 const execAsync = promisify(exec);
 
+// PowerShell через spawn + -EncodedCommand (Base64 UTF-16LE).
+//
+// Две причины, почему именно так:
+// 1) Нельзя `-Command -` (чтение скрипта из stdin): при наличии Add-Type
+//    с here-string (@"..."@) PowerShell молча возвращает пустой stdout без
+//    ошибки. -EncodedCommand обходит это.
+// 2) Нельзя execAsync (cmd.exe /c): командная строка Windows ограничена
+//    ~8191 символами, а encoded-скрипт поиска окон ~9760. spawn вызывает
+//    powershell.exe напрямую через CreateProcess (лимит 32767 символов).
+//
+// Дополнительно -EncodedCommand bypass'ит Execution Policy и ASR rules
+// (без temp .ps1 файлов).
 function toPSEncoded(script) {
   return Buffer.from(script, 'utf16le').toString('base64');
+}
+
+function runPowerShellScript(script) {
+  return new Promise((resolve, reject) => {
+    const child = spawn('powershell', [
+      '-NoProfile', '-ExecutionPolicy', 'Bypass', '-EncodedCommand', toPSEncoded(script),
+    ], { stdio: ['ignore', 'pipe', 'pipe'] });
+    let stdout = '';
+    let stderr = '';
+    child.stdout.on('data', d => { stdout += d; });
+    child.stderr.on('data', d => { stderr += d; });
+    child.on('error', reject);
+    child.on('close', code => {
+      if (code === 0) resolve({ stdout, stderr });
+      else reject(new Error(`PowerShell exited with code ${code}: ${stderr || 'unknown error'}`));
+    });
+  });
 }
 
 const router = express.Router();
@@ -127,7 +156,7 @@ public class WinHelper {
 "@
 
 $pids = @(@@TARGETPIDS@@)
-$pidOnly = @(@@PIDONLY@@)
+$pidOnly = @@PIDONLY@@
 [WinHelper]::FindWindows($pids, $pidOnly)
 `;
 
@@ -175,8 +204,8 @@ async function getRunningWindows() {
         .replace('@@TARGETPIDS@@', targetPids.map(p => `'${p}'`).join(','))
         .replace('@@PIDONLY@@', pidOnly ? '$true' : '$false');
       try {
-        const { stdout, stderr } = await execAsync(`powershell -NoProfile -ExecutionPolicy Bypass -EncodedCommand ${toPSEncoded(psWithPids)}`);
-        logger.info({ stdoutLen: stdout.length, stderr: stderr || '', targetPids, pidOnly }, 'Window arranger: PowerShell result');
+        const { stdout } = await runPowerShellScript(psWithPids);
+        logger.info({ stdoutLen: stdout.length, targetPids, pidOnly }, 'Window arranger: PowerShell result');
         if (stdout.trim()) {
           const lines = stdout.trim().split('\n').filter(Boolean);
           for (const line of lines) {
@@ -256,7 +285,7 @@ public class WinAPI {
 "@
 [WinAPI]::MoveWindow([IntPtr]${handle}, ${x}, ${y}, ${width}, ${height}, $true)
 `;
-      await execAsync(`powershell -NoProfile -ExecutionPolicy Bypass -EncodedCommand ${toPSEncoded(ps)}`);
+      await runPowerShellScript(ps);
     } else if (platform === 'darwin') {
       const safeWindowId = windowId.replace(/"/g, '\\"');
       const positionScript = `tell application "System Events" to set position of window 1 of process "${safeWindowId}" to {${x}, ${y}}`;
@@ -292,7 +321,7 @@ public class WinAPI {
 "@
 [WinAPI]::SetForegroundWindow([IntPtr]${handle})
 `;
-      await execAsync(`powershell -NoProfile -ExecutionPolicy Bypass -EncodedCommand ${toPSEncoded(ps)}`);
+      await runPowerShellScript(ps);
     }
   } catch (err) {
     logger.error({ err: err.message }, 'Error focusing window');

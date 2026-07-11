@@ -1,5 +1,5 @@
 const express = require('express');
-const { exec } = require('child_process');
+const { exec, spawn } = require('child_process');
 const { promisify } = require('util');
 const { controller } = require('../multi-control');
 const { cdpManager } = require('../multi-control/cdp-manager');
@@ -9,6 +9,31 @@ const { getDatabase, createProfileQueries } = require('../db');
 const { logger } = require('../logger');
 
 const execAsync = promisify(exec);
+
+// PowerShell через spawn + -EncodedCommand — см. подробный комментарий
+// в window-arranger.js. Кратко: Add-Type + here-string ломается при чтении
+// скрипта из stdin (`-Command -`), а execAsync упирается в лимит длины
+// командной строки cmd.exe (~8191 символов) для больших encoded-скриптов.
+function toPSEncoded(script) {
+  return Buffer.from(script, 'utf16le').toString('base64');
+}
+
+function runPowerShellScript(script) {
+  return new Promise((resolve, reject) => {
+    const child = spawn('powershell', [
+      '-NoProfile', '-ExecutionPolicy', 'Bypass', '-EncodedCommand', toPSEncoded(script),
+    ], { stdio: ['ignore', 'pipe', 'pipe'] });
+    let stdout = '';
+    let stderr = '';
+    child.stdout.on('data', d => { stdout += d; });
+    child.stderr.on('data', d => { stderr += d; });
+    child.on('error', reject);
+    child.on('close', code => {
+      if (code === 0) resolve({ stdout, stderr });
+      else reject(new Error(`PowerShell exited with code ${code}: ${stderr || 'unknown error'}`));
+    });
+  });
+}
 
 const router = express.Router();
 
@@ -528,7 +553,7 @@ public class WinFocus {
 "@
 [WinFocus]::Focus(${pid})
 `;
-      await execAsync(`powershell -NoProfile -ExecutionPolicy Bypass -EncodedCommand ${Buffer.from(ps, 'utf16le').toString('base64')}`);
+      await runPowerShellScript(ps);
     }
   } catch (err) {
     logger.error({ err: err.message, pid }, 'Error focusing window by PID');
