@@ -13,13 +13,31 @@ const { getExtensionsDir } = require('./extensions');
 const { humanType } = require('../typing');
 const { hasMasterKey, getMasterKey } = require('../crypto');
 
+function toPSEncoded(script) {
+  return Buffer.from(script, 'utf16le').toString('base64');
+}
+
+function runPowerShellScript(script) {
+  return new Promise((resolve, reject) => {
+    const child = spawn('powershell', [
+      '-NoProfile', '-ExecutionPolicy', 'Bypass', '-EncodedCommand', toPSEncoded(script),
+    ], { stdio: ['ignore', 'pipe', 'pipe'] });
+    let stdout = '';
+    let stderr = '';
+    child.stdout.on('data', d => { stdout += d; });
+    child.stderr.on('data', d => { stderr += d; });
+    child.on('error', reject);
+    child.on('close', code => {
+      if (code === 0) resolve({ stdout, stderr });
+      else reject(new Error(`PowerShell exited with code ${code}: ${stderr || 'unknown error'}`));
+    });
+  });
+}
+
 const router = express.Router();
 
 async function findWindowByPid(targetPid) {
   if (process.platform !== 'win32') return null;
-  const { exec } = require('child_process');
-  const { promisify } = require('util');
-  const execAsync = promisify(exec);
 
   const ps = `
 Add-Type @"
@@ -55,7 +73,7 @@ if ($found) { $found }
 `;
 
   try {
-    const { stdout } = await execAsync(ps);
+    const { stdout } = await runPowerShellScript(ps);
     const result = stdout.trim();
     return result || null;
   } catch {

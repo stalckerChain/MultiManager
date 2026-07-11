@@ -123,6 +123,17 @@ describe('Window Arranger', () => {
       expect(content).toContain('} else if (!_pidOnly) {');
       expect(content).toContain('_pidOnly = pidOnly');
     });
+
+    it('getScreenSize использует runPowerShellScript, не execAsync(powershell -Command)', () => {
+      const content = readFileSync(
+        new URL('../../src/api/window-arranger.js', import.meta.url),
+        'utf-8'
+      );
+      expect(content).toContain('getScreenSize');
+      expect(content).toContain('runPowerShellScript(ps)');
+      expect(content).not.toContain('powershell -Command');
+      expect(content).not.toContain("execAsync('powershell");
+    });
   });
 
   describe('multi-control.js также использует spawn + -EncodedCommand', () => {

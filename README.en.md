@@ -18,7 +18,7 @@ The project is built as a monorepo (Full-Stack Desktop Application):
 - **Localization (i18n):** Full on-the-fly language switching via `i18next` (English, Русский, 简体中文).
 - **Theme Switcher:** Dynamic theme switching (Dark / Light / System) via CSS variables.
 - **WebSocket:** Real-time broadcasting of profile statuses and logs from Core Engine to the GUI.
-> **PowerShell invocation:** All PowerShell calls (`Get-RunningWindows`, `Move-Window`, `Set-WindowFocus`, `FocusByPID`) use `spawn('powershell', ['-EncodedCommand', ...])` — Base64 UTF‑16LE encoding via direct PowerShell invocation (no `cmd.exe` / temp files / stdin), bypassing Execution Policy, ASR rules, and the cmdline length limit (~8191 chars).
+> **PowerShell invocation:** All PowerShell calls (`Get-RunningWindows`, `Move-Window`, `Set-WindowFocus`, `FocusByPID`, `FindWindowByPid`) use `spawn('powershell', ['-EncodedCommand', ...])` — Base64 UTF‑16LE encoding via direct PowerShell invocation (no `cmd.exe` / temp files / stdin), bypassing Execution Policy, ASR rules, and the cmdline length limit (~8191 chars). `getScreenSize` was also migrated from `execAsync(powershell -Command)` to `spawn` + `-EncodedCommand`.
 
 ---
 
