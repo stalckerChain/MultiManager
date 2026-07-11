@@ -76,7 +76,10 @@ MultiManager/
 │       │   ├── index.js      # Window creation, IPC handlers, lifecycle
 │       │   ├── tray.js       # System tray (context menu)
 │       │   ├── core-manager.js # Core engine fork, dynamic port allocation
-│       │   └── updater.js    # Auto-updates via electron-updater
+│       │   ├── browser-manager.js # CloakBrowser check/install
+│       │   ├── keyboard-hooks.js # OS-level keyboard hooks
+│       │   ├── updater.js    # Auto-updates via electron-updater
+│       │   └── pty.js        # PTY terminal (IPC tail -f)
 │       ├── preload/          # Isolated IPC context bridge
 │       │   └── index.js      # Exposes electronAPI (getPort, getToken, quitApp, events)
 │       ├── shared/
@@ -91,28 +94,30 @@ MultiManager/
 │           │   ├── en.json   # English
 │           │   ├── ru.json   # Русский
 │           │   └── zh.json   # 简体中文
-│           ├── stores/       # Pinia Stores
+│           ├── stores/       # Pinia (app, profiles, proxies, browser, tasks)
 │           │   ├── app.js    # Global application state
 │           │   ├── profiles.js # Profiles state
 │           │   ├── proxies.js  # Proxies state
-│           │   └── browser.js  # Browser state
+│           │   ├── browser.js  # Browser state
+│           │   └── tasks.js    # Tasks state
 │           ├── views/        # Screens
 │           │   ├── Profiles.vue
 │           │   ├── Proxies.vue
 │           │   ├── WindowArranger.vue
 │           │   ├── Extensions.vue
+│           │   ├── Tasks.vue
 │           │   ├── Settings.vue
 │           │   ├── ProfileModal.vue
 │           │   └── CookieImportModal.vue
-│           ├── components/   # Reusable components
+│           ├── components/   # Layout, StatusBar, LogPanel, Terminal, BrowserDownload, AccountsTab, WalletsTab
 │           │   ├── Layout.vue
 │           │   ├── StatusBar.vue
 │           │   ├── LogPanel.vue
 │           │   ├── AccountsTab.vue
 │           │   └── WalletsTab.vue
-│           ├── composables/  # Vue Composables
+│           ├── composables/  # useTheme, useWebSocket
 │           └── api/          # HTTP client for Core requests
-└── tests/                    # Vitest (551 tests)
+└── tests/                    # Vitest (558 tests)
     ├── unit/                 # 24 files: auth, proxy, fingerprint, typing, crypto, tasks, etc.
     └── integration/          # 5 files: SQLite WAL, API, lifecycle, proxy, extensions
 ```
@@ -170,7 +175,7 @@ Upon successful proxy validation and fingerprint generation, the Core Engine lau
   "status": "success",
   "profile_id": "8f3b201a-cb41-4c12-8671-50e50f3b4d11",
   "pid": 14208,
-  "ws_endpoint": "ws://127.0.0.1:3000/devtools/browser/8f3b201a-cb41-4c12-8671-50e50f3b4d11"
+  "ws_endpoint": "http://127.0.0.1:9331"
 }
 ```
 
@@ -183,7 +188,7 @@ import asyncio
 from playwright.async_api import async_playwright
 
 async def run_ai_agent():
-    ws_endpoint = "ws://127.0.0.1:3000/devtools/browser/8f3b201a-cb41-4c12-8671-50e50f3b4d11"
+    ws_endpoint = "http://127.0.0.1:9331"
 
     async with async_playwright() as p:
         browser = await p.chromium.connect_over_cdp(ws_endpoint)
@@ -203,7 +208,7 @@ asyncio.run(run_ai_agent())
 To bypass bot detection (Cloudflare/Google), the AI agent sends text through a special Core Engine endpoint that simulates typos and delays:
 
 ```
-POST http://127.0.0.1:{PORT}/api/multi-control/keyboard/type
+POST http://127.0.0.1:{PORT}/api/browser/{profile_id}/type
 ```
 ```json
 {
@@ -262,7 +267,7 @@ All isolated user data is stored at:
 ### System Directory Structure:
 
 - `app.db` — SQLite database in WAL mode. Profiles (30 columns, AES-256-GCM), proxies, cookies, tasks (tasks/task_executions), system_config.
-- `profiles_data/` — Isolated Chromium session folders (`BrowserData/` for each account: Cookies, LocalStorage, Cache).
+- `profiles/{UUID}/BrowserData/` — Isolated Chromium session folders (Cookies, LocalStorage, Cache).
 - `extensions/` — Installed Chrome extensions.
 - `logs/core.log` — General system logs (Pino JSON).
 - `logs/profile_[ID].log` — Individual automation session telemetry.
@@ -271,7 +276,7 @@ All isolated user data is stored at:
 
 ## Testing
 
-The project includes 27 test files (524 tests) based on **Vitest**:
+The project includes 30 test files (558 tests) based on **Vitest**:
 
 | Test | Type | Description |
 |------|------|-------------|

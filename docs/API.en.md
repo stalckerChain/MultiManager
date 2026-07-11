@@ -885,7 +885,7 @@ Get task execution history.
 
 ### POST /api/tasks/:id/run
 
-Run task manually. Creates an execution record for each profile.
+Run task manually. Requires `stAuto0Path` and `pythonPath` configured in Settings. Spawns Python for each profile, writes logs, updates execution status.
 
 **Response (200):**
 ```json
@@ -896,12 +896,12 @@ Run task manually. Creates an execution record for each profile.
   "script_name": "concrete",
   "profiles_count": 5,
   "executions": [
-    { "executionId": 1, "profileId": "uuid", "profileName": "Profile 1", "status": "running", "scriptName": "concrete" }
+    { "executionId": 1, "profileId": "uuid", "profileName": "Profile 1", "status": "running", "scriptName": "concrete", "logFile": "/path/to/tasks/log.log" }
   ]
 }
 ```
 
-**Response (400):** `{ "error": "Task is not active" }` / `{ "error": "No profiles to run the task" }`
+**Response (400):** `{ "error": "Task is not active" }` / `{ "error": "stAuto0_path is not configured" }` / `{ "error": "python_path is not configured" }` / `{ "error": "No profiles to run the task" }` / `{ "error": "Invalid range format" }`
 **Response (404):** `{ "error": "Task not found" }`
 
 ---
@@ -1200,8 +1200,9 @@ Get automation settings (scripts and projects directory paths).
 **Response (200):**
 ```json
 {
-  "scripts_dir": "",
-  "projects_dir": ""
+  "stAuto0Path": "",
+  "pythonPath": "",
+  "availableProjects": []
 }
 ```
 
@@ -1214,8 +1215,8 @@ Update automation settings.
 **Request Body:**
 ```json
 {
-  "scripts_dir": "/path/to/scripts",
-  "projects_dir": "/path/to/projects"
+  "stAuto0Path": "/path/to/stAuto0",
+  "pythonPath": "/path/to/python"
 }
 ```
 

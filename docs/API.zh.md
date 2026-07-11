@@ -1178,8 +1178,9 @@ Authorization: Bearer <token>
 **响应 (200)：**
 ```json
 {
-  "scripts_dir": "",
-  "projects_dir": ""
+  "stAuto0Path": "",
+  "pythonPath": "",
+  "availableProjects": []
 }
 ```
 
@@ -1192,8 +1193,8 @@ Authorization: Bearer <token>
 **请求体：**
 ```json
 {
-  "scripts_dir": "/path/to/scripts",
-  "projects_dir": "/path/to/projects"
+  "stAuto0Path": "/path/to/stAuto0",
+  "pythonPath": "/path/to/python"
 }
 ```
 
