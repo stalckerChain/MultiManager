@@ -1,7 +1,7 @@
 -------------------------------
 ## SOFTWARE REQUIREMENTS SPECIFICATION (SRS) / ТЕХНИЧЕСКОЕ ЗАДАНИЕ
 ## AI-Driven Web Automation Platform на базе антидетект-браузера (MVP аналог AdsPower + ферма автоматизации)
-**Версия системы:** 1.2.1 | **Multi-Control:** 0.13.0 | **Дата ревизии:** 2026-07-08 | **Ф6:** 2026-07-08 ✅
+**Версия системы:** 2.0.0 | **Multi-Control:** 0.13.0 | **Дата ревизии:** 2026-07-13 | **Ф7 Automation Matrix:** 🚧
 
 > **Принцип маркировки:** ✅ РЕАЛИЗОВАНО в коде | ⚠️ ЧАСТИЧНО | ❌ НЕ РЕАЛИЗОВАНО (в ТЗ, но в коде нет). Каждое утверждение о статусе подкреплено ссылкой на реальный файл аудита.
 > **Спутник-документ:** [TS_INTEGRATION.md](./TS_INTEGRATION.md) — миграция Python-фреймворка stAuto0 на интеграцию с MultiManager.
@@ -106,6 +106,56 @@
 
 > **«Tasks как контейнер» (решение #10):** код самих проектов (Concrete, Paragraph и др.) живёт в `stAuto0/projects/*.py`. MultiManager хранит только мета (script_name, params JSON, schedule). Планировщик может менять параметры задачи без правки Python-кода.
 
+### 3.4. Новые таблицы Automation Matrix 🚧 (Roadmap Ф7)
+
+**`projects`** — проекты/скрипты из stAuto0:
+| Колонка | Тип | Назначение |
+|---------|-----|-----------|
+| `name` | TEXT PK | Имя файла без .py (concrete, allscale...) |
+| `display_name` | TEXT | Человеческое название (Concrete Points) |
+| `module_path` | TEXT | Путь модуля для динамического импорта |
+| `class_name` | TEXT | Имя класса Python |
+| `is_active` | INTEGER | 1/0 — возможность временно отключить проект |
+| `default_config` | TEXT JSON | Параметры по умолчанию (referral_codes и т.д.) |
+| `created_at`, `updated_at` | DATETIME | |
+
+Синхронизируются из `{stAuto0_path}/projects/*.py` через `POST /api/projects/sync`.
+
+**`project_profile_config`** — матрица отметок Проекты×Профили:
+| Колонка | Тип | Назначение |
+|---------|-----|-----------|
+| `project_name` | TEXT FK → projects(name) | |
+| `profile_id` | TEXT FK → profiles(id) | |
+| `is_enabled` | INTEGER | 0/1 — чекбокс в матрице |
+| `config_override` | TEXT JSON | Переопределение параметров для конкретной пары |
+
+**`runs`** — групповая задача (batch запуск):
+| Колонка | Тип | Назначение |
+|---------|-----|-----------|
+| `id` | TEXT UUIDv4 PK | |
+| `name` | TEXT | Имя запуска |
+| `status` | TEXT | pending \| running \| completed \| partial \| cancelled |
+| `parallel_limit` | INTEGER | Максимум одновременных аккаунтов |
+| `total_tasks` | INTEGER | Всего клеток в этом run |
+| `completed_tasks` | INTEGER | Выполнено |
+| `success_tasks` / `failed_tasks` | INTEGER | Успешно / с ошибками |
+| `started_at`, `completed_at`, `created_at` | DATETIME | |
+
+**`run_tasks`** — каждая клетка матрицы в рамках конкретного run:
+| Колонка | Тип | Назначение |
+|---------|-----|-----------|
+| `id` | INTEGER PK AUTOINCREMENT | |
+| `run_id` | TEXT FK → runs(id) | |
+| `project_name` | TEXT FK → projects(name) | |
+| `profile_id` | TEXT FK → profiles(id) | |
+| `status` | TEXT | pending \| running \| success \| failed |
+| `exit_code` | INTEGER | Код выхода Python |
+| `log_file_path` | TEXT | Путь к логу |
+| `attempts` | INTEGER | Сколько попыток заняло |
+| `started_at`, `completed_at` | DATETIME | |
+
+> Старые таблицы `tasks`/`task_executions` сохраняются для обратной совместимости.
+
 ### 3.4. Порт Core (исправление расхождения)
 GUI передаёт порт бэкенду через **env-переменную `PORT=N`** ✅ `gui/src/main/core-manager.js:60`, а не через CLI `--port=N`, как утверждал старый TS.md §3.2. `--api-token=` передаётся как CLI-аргумент. ✅ `gui/src/main/core-manager.js:70-71`
 
@@ -196,9 +246,9 @@ GUI передаёт порт бэкенду через **env-переменну
 | `/api/internal/profiles` | GET | **Выборка аккаунтов для Python.** Query `?range=001-010` разворачивается в `auto_001..auto_010`. Возвращает массив JSON со всеми Web3-метриками, почтами, соцсетями, прокси (готовая строка `host:port:user:pass`). | ✅ `src/api/internal.js` |
 | `/api/browser/:id/type` | POST | Human-like typing через CDP (обёртка над `humanType()`). Тело `{text}`. | ✅ `src/api/browser.js:587-630` |
 | `/api/browser/:id/zerion-login` | POST | Авто-логин Zerion (логика перенесена из `stAuto0/Core/browser.py::login_zerion`). | ✅ `src/api/browser.js` |
-| `/api/tasks/:id/run` | POST | Триггер внешнего планировщика. | ✅ `src/api/tasks.js` |
+| `/api/tasks/:id/run` | POST | Триггер внешнего планировщика (legacy). | ✅ `src/api/tasks.js` |
 | `/api/profiles/batch` | POST | Массовый импорт для Wallet Factory (1 транзакция вместо N запросов). Тело `{accounts: [...]}`. | ✅ `src/api/profiles.js:24-81` |
-| `/api/tasks` | CRUD | Управление задачами (UI Tasks Manager). | ✅ `src/api/tasks.js` |
+| `/api/tasks` | CRUD | Управление задачами (legacy UI Tasks Manager). | ✅ `src/api/tasks.js` |
 
 > **`/api/internal/profiles` минует часть шифрования:** Python-агенту нужен cleartext для работы. Этот endpoint защищён тем же Bearer-token, но логируется как `[INTERNAL]` для аудита.
 
@@ -218,11 +268,28 @@ Zerion ID: `klghhnkeealcohjjanjjdaeeggmfmlpl`. Flow:
 ### 4.15. Cloud Sync ❌ ЗАМОРОЖЕНО
 Подробности в [ToDo.md](./ToDo.md) §6.
 
+### 4.16. Endpoints Automation Matrix 🚧 (Roadmap Ф7)
+
+| Endpoint | Метод | Назначение |
+|----------|-------|-----------|
+| `/api/projects` | GET | Список проектов |
+| `/api/projects/sync` | POST | Сканировать `stAuto0/projects/*.py`, обновить БД |
+| `/api/projects/:name` | PUT | Обновить настройки проекта |
+| `/api/matrix` | GET | Вся матрица (проекты, профили, отметки) |
+| `/api/matrix` | PUT | Batch-обновление чекбоксов |
+| `/api/runs` | GET | Список запусков (пагинация) |
+| `/api/runs` | POST | Создать новый run из текущих отметок |
+| `/api/runs/:id` | GET | Run + run_tasks (цветная матрица) |
+| `/api/runs/:id/start` | POST | Запустить выполнение |
+| `/api/runs/:id/cancel` | POST | Отменить выполнение |
+| `/api/internal/runs/:id/task-status` | POST | Callback от stAuto0 — обновить статус клетки |
+
 -------------------------------
 ## 5. Стратегия логирования ✅ РЕАЛИЗОВАНО
 - **Системный лог `logs/core.log`:** запуск API, ошибки SQLite, генерация токенов, общие сбои. Dev → pino-pretty. ✅ `src/logger/index.js`
 - **Лог профиля `logs/profile_[ID].log`:** изолированный файл (ротация прокси, Proxy Checker, ошибки запуска, сессии автоматизации). Запись синхронная (`pino.destination({ sync: true })`) — гарантированный сброс на диск без задержек. ✅ `src/api/browser.js:10` (`createProfileLogger`)
 - **Лог задачи** (новый ✅ Roadmap Ф4): `logs/task_{task_id}_{timestamp}.log` — stdout/stderr spawn'нутого Python. Путь пишется в `task_executions.log_file_path`. Tail'ится встроенным терминалом GUI (§9.5). API готов, терминал ✅ (Ф6).
+- **Лог run** (✅ Roadmap Ф7): `logs/runs/{run_id}/{profile_name}.log` — stdout/stderr spawn'нутого Python для Automation Matrix. Путь пишется в `run_tasks.log_file_path`.
 
 -------------------------------
 ## 6. Стратегия тестирования ✅ РЕАЛИЗОВАНО
@@ -307,6 +374,12 @@ Python: `connect_over_cdp("http://127.0.0.1:9331")`.
 - i18next, English (default) / Русский / 简体中文. Ключи `t('...')`. Выбор сохраняется в SQLite. ✅ `gui/src/renderer/i18n/`
 - Коды ошибок бэкенда (`ERR_PROXY_REFUSED`) локализуются на фронтенде.
 
+### 9.10. Automation Matrix 🚧 (Roadmap Ф7)
+- **Матрица** (`AutomationMatrix.vue`): таблица Проекты (колонки) × Профили (строки) с чекбоксами на пересечениях. Фильтр профилей. Кнопка «Создать задачу» → создаёт run.
+- **Задачи** (`AutomationRuns.vue`): список созданных runs со статусами. Раскрываемая цветная матрица: ⚪=pending, 🔵=running, 🟢=success, 🔴=failed. Кнопки «Выполнить» и «Отмена».
+- **История** (`AutomationHistory.vue`): выполненные runs с ленивой подгрузкой (infinite scroll/pagination).
+- Pinia store: `stores/automation.js` — fetchMatrix, updateMatrix, createRun, startRun, fetchRuns, fetchRun.
+
 ## 10. Системная интеграция
 ### 10.1. Темизация ✅ РЕАЛИЗОВАНО (`gui/src/renderer/composables/useTheme.js`)
 ### 10.2. Автозапуск Core и конфликты портов ✅ РЕАЛИЗОВАНО (`gui/src/main/core-manager.js:42-49` — инкрементный поиск 3000–3100)
@@ -329,11 +402,12 @@ Python: `connect_over_cdp("http://127.0.0.1:9331")`.
 | **Ф4** | **✅ Все endpoints:** `/api/browser/:id/type`, `/api/profiles/batch`, `ws_endpoint`, `/api/internal/profiles`, `/api/browser/:id/zerion-login`, `/api/tasks/:id/run`, `/api/tasks` CRUD. | `src/api/browser.js`, `src/api/profiles.js`, `src/api/internal.js`, `src/api/tasks.js` | Ф1, Ф2 |
 | **Ф5** | **✅ ProfileModal** вкладки (Аккаунты + Кошельки). **✅ Settings** crypto/automation. **✅ Экран Tasks Manager.** | `gui/src/renderer/views/ProfileModal.vue`, `gui/src/renderer/views/Tasks.vue`, `gui/src/renderer/views/Settings.vue` | Ф1, Ф2, Ф4 |
 | **Ф6** | **✅ Терминал xterm.js + child_process.** | `gui/package.json`, `gui/src/main/pty.js`, `gui/src/renderer/components/Terminal.vue`, `tests/unit/pty.test.js` | Ф4 |
+| **Ф7** | **🚧 Automation Matrix:** Проекты, Матрица, Runs, RunExecutor. Новые таблицы `projects`, `project_profile_config`, `runs`, `run_tasks`. Endpoints `/api/projects`, `/api/matrix`, `/api/runs`. GUI: 3 страницы (Матрица, Задачи, История). stAuto0: `run()` → bool, `--run-id`, callback статуса. Параллельный spawn с лимитом. | `src/db/schema.js`, `src/db/queries.js`, `src/api/projects.js`, `src/api/matrix.js`, `src/api/runs.js`, `src/api/internal-runs.js`, `src/executor/index.js`, `gui/.../AutomationMatrix.vue`, `gui/.../AutomationRuns.vue`, `gui/.../AutomationHistory.vue`, `gui/.../stores/automation.js` + stAuto0: `base.py`, `browser.py`, `multimanager.py`, `main.py` | Ф4, Ф5, Ф6 |
 
 > **Параллельный трек (TS_INTEGRATION.md):** миграция stAuto0 идёт фазами ФА–ФД и стыкуется с MultiManager Ф1–Ф4 (API-контракт).
 
 -------------------------------
-## 12. Сводная таблица статусов (аудит 2026-07-08, Ф3 ✅, Ф6 ✅)
+## 12. Сводная таблица статусов (аудит 2026-07-13, Ф7 🚧)
 
 | # | Фича | В ТЗ | В коде | Приоритет |
 |---|------|------|--------|-----------|
@@ -349,21 +423,29 @@ Python: `connect_over_cdp("http://127.0.0.1:9331")`.
 | 10 | `POST /api/tasks/:id/run` | ✅ | ✅ `src/api/tasks.js` | Ф4 ✅ |
 | 11 | `POST /api/profiles/batch` | ✅ | ✅ `src/api/profiles.js:24-81` | Ф4 ✅ |
 | 12 | Исправление `ws_endpoint` | ✅ | ✅ `src/api/browser.js:377-419` | Ф4 ✅ |
-| 13 | ProfileModal вкладки (акки/кошельки) | ✅ | ✅ `gui/src/renderer/components/AccountsTab.vue`, `WalletsTab.vue` | Ф5 ✅ |
-| 14 | Экран Tasks Manager | ✅ | ✅ `gui/src/renderer/views/Tasks.vue`, `gui/src/renderer/stores/tasks.js` | Ф5 ✅ |
-| 15 | Встроенный терминал | ✅ | ✅ `gui/src/main/pty.js`, `gui/src/renderer/components/Terminal.vue` | Ф6 ✅ |
-| 16 | Settings: crypto + automation | ✅ | ✅ `gui/src/renderer/views/Settings.vue`, `src/api/settings.js` | Ф5 ✅ |
-| 17 | Cookie drag-and-drop + валидатор | ✅ | ⚠️ | ToDo §2 |
-| 18 | Window Arranger cross-platform | ✅ | ⚠️ (Windows-only) | ToDo §4 |
-| 19 | Migration Wizard (AdsPower) | ❌ заморожено | ❌ | ToDo §5 |
-| 20 | Cloud Sync | ❌ заморожено | ❌ | ToDo §6 |
-| 21 | Multi-Control v0.13.0 | ✅ | ✅ | — |
-| 22 | Fingerprint Generator | ✅ | ✅ | — |
-| 23 | Proxy Manager + ротация | ✅ | ✅ | — |
-| 24 | Extensions Manager | ✅ | ✅ | — |
-| 25 | Anti-Zombie процесс-контроль | ✅ | ✅ | — |
-| 26 | Очистка кэша | ✅ | ✅ | — |
-| 27 | i18n / Темизация / Tray / Auto-update | ✅ | ✅ | — |
-| 28 | Порт через env `PORT` (не `--port`) | ⚠️ док | ✅ факт | Ф4 док. |
+| 13 | ProfileModal вкладки (акки/кошельки) | ✅ | ✅ `gui/.../AccountsTab.vue`, `WalletsTab.vue` | Ф5 ✅ |
+| 14 | Экран Tasks Manager | ✅ | ✅ `gui/.../Tasks.vue`, `stores/tasks.js` | Ф5 ✅ |
+| 15 | Встроенный терминал | ✅ | ✅ `gui/.../pty.js`, `Terminal.vue` | Ф6 ✅ |
+| 16 | Settings: crypto + automation | ✅ | ✅ `gui/.../Settings.vue`, `src/api/settings.js` | Ф5 ✅ |
+| 17 | БД: таблицы projects/project_profile_config/runs/run_tasks | 🚧 | ❌ | Ф7 🚧 |
+| 18 | `/api/projects` (CRUD + sync) | 🚧 | ❌ | Ф7 🚧 |
+| 19 | `/api/matrix` (GET + PUT) | 🚧 | ❌ | Ф7 🚧 |
+| 20 | `/api/runs` (CRUD + start/cancel) | 🚧 | ❌ | Ф7 🚧 |
+| 21 | `/api/internal/runs/:id/task-status` | 🚧 | ❌ | Ф7 🚧 |
+| 22 | RunExecutor (parallel spawn) | 🚧 | ❌ | Ф7 🚧 |
+| 23 | GUI: Automation Matrix / Runs / History | 🚧 | ❌ | Ф7 🚧 |
+| 24 | stAuto0: run()→bool, --run-id, callback | 🚧 | ❌ | Ф7 🚧 |
+| 25 | Cookie drag-and-drop + валидатор | ✅ | ⚠️ | ToDo §2 |
+| 26 | Window Arranger cross-platform | ✅ | ⚠️ (Windows-only) | ToDo §4 |
+| 27 | Migration Wizard (AdsPower) | ❌ заморожено | ❌ | ToDo §5 |
+| 28 | Cloud Sync | ❌ заморожено | ❌ | ToDo §6 |
+| 29 | Multi-Control v0.13.0 | ✅ | ✅ | — |
+| 30 | Fingerprint Generator | ✅ | ✅ | — |
+| 31 | Proxy Manager + ротация | ✅ | ✅ | — |
+| 32 | Extensions Manager | ✅ | ✅ | — |
+| 33 | Anti-Zombie процесс-контроль | ✅ | ✅ | — |
+| 34 | Очистка кэша | ✅ | ✅ | — |
+| 35 | i18n / Темизация / Tray / Auto-update | ✅ | ✅ | — |
+| 36 | Порт через env `PORT` (не `--port`) | ⚠️ док | ✅ факт | Ф4 док. |
 
 -------------------------------
