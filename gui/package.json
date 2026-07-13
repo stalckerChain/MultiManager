@@ -55,7 +55,8 @@
       "dist/**/*",
       "src/main/**/*",
       "src/preload/**/*",
-      "backend/**/*"
+      "backend/**/*",
+      "resources/**/*"
     ],
     "extraResources": [
       {
