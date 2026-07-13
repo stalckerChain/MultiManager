@@ -3,6 +3,9 @@
     <div class="flex items-center justify-between mb-4">
       <h1 class="text-xl font-bold">{{ t('automation.matrix') }}</h1>
       <div class="flex items-center gap-3">
+        <a-button :loading="syncing" @click="handleSyncProjects">
+          <ReloadOutlined /> {{ t('settings.syncProjects') }}
+        </a-button>
         <a-input
           v-model:value="searchQuery"
           :placeholder="t('automation.searchProfile')"
@@ -19,9 +22,6 @@
 
     <div v-if="projects.length === 0" class="text-center py-16 text-slate-400">
       <p class="mb-4">{{ t('automation.noProjects') }}</p>
-      <a-button type="primary" :loading="syncing" @click="handleSyncProjects">
-        <ReloadOutlined class="mr-1" /> {{ t('settings.syncProjects') }}
-      </a-button>
     </div>
 
     <div v-else class="overflow-auto">
@@ -210,7 +210,15 @@ async function handleCreateRun() {
   }
 }
 
-onMounted(() => {
-  store.fetchMatrix();
+onMounted(async () => {
+  await store.fetchMatrix();
+  // Auto-sync if no projects found — maybe user saved path but never synced
+  if (store.projects.length === 0) {
+    try {
+      await handleSyncProjects();
+    } catch {
+      // silent — user will see the Sync button and empty state
+    }
+  }
 });
 </script>
