@@ -78,14 +78,22 @@
         <a-form-item :label="t('settings.pythonPath')">
           <a-input v-model:value="automation.pythonPath" :placeholder="t('settings.pythonPathPlaceholder')" />
         </a-form-item>
-        <a-form-item v-if="automation.availableProjects.length > 0" :label="t('settings.availableProjects')">
+        <a-form-item :label="t('settings.parallelLimit')" :help="t('settings.parallelLimitHelp')">
+          <a-input-number v-model:value="automation.parallelLimit" :min="1" :max="20" class="w-full" />
+        </a-form-item>
+        <a-form-item v-if="automation.availableProjects && automation.availableProjects.length > 0" :label="t('settings.availableProjects')">
           <div class="flex flex-wrap gap-1">
             <a-tag v-for="proj in automation.availableProjects" :key="proj">{{ proj }}</a-tag>
           </div>
         </a-form-item>
-        <a-button type="primary" :loading="savingAutomation" @click="saveAutomationSettings">
-          {{ t('settings.saveAutomation') }}
-        </a-button>
+        <div class="flex gap-2">
+          <a-button type="primary" :loading="savingAutomation" @click="saveAutomationSettings">
+            {{ t('settings.saveAutomation') }}
+          </a-button>
+          <a-button :loading="syncingProjects" @click="handleSyncProjects">
+            {{ t('settings.syncProjects') }}
+          </a-button>
+        </div>
       </a-form>
     </a-card>
 
@@ -107,6 +115,7 @@ import { ref, onMounted } from 'vue';
 import { EyeOutlined, EyeInvisibleOutlined } from '@ant-design/icons-vue';
 import { useTranslation } from 'i18next-vue';
 import { useAppStore } from '../stores/app.js';
+import { useAutomationStore } from '../stores/automation.js';
 import client from '../api/client.js';
 import { message } from 'ant-design-vue';
 
@@ -132,9 +141,11 @@ const changingPassword = ref(false);
 const automation = ref({
   stAuto0Path: '',
   pythonPath: '',
+  parallelLimit: 2,
   availableProjects: [],
 });
 const savingAutomation = ref(false);
+const syncingProjects = ref(false);
 
 function handleThemeChange() {
   appStore.setTheme(theme.value);
@@ -224,12 +235,27 @@ async function saveAutomationSettings() {
     await client.put('/api/settings/automation', {
       stAuto0Path: automation.value.stAuto0Path,
       pythonPath: automation.value.pythonPath,
+      parallelLimit: automation.value.parallelLimit,
     });
     message.success(t('settings.automationSaved'));
   } catch (err) {
     message.error(err.message);
   } finally {
     savingAutomation.value = false;
+  }
+}
+
+async function handleSyncProjects() {
+  syncingProjects.value = true;
+  try {
+    const autoStore = useAutomationStore();
+    const result = await autoStore.syncProjects();
+    message.success(t('settings.syncProjectsResult', { added: result.added || 0, removed: result.removed || 0 }));
+    await fetchAutomation();
+  } catch (err) {
+    message.error(err.message);
+  } finally {
+    syncingProjects.value = false;
   }
 }
 

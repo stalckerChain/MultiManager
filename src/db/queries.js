@@ -398,6 +398,244 @@ function createSystemConfigQueries(db) {
   };
 }
 
+function createProjectQueries(db) {
+  const insert = db.prepare(`
+    INSERT INTO projects (name, display_name, module_path, class_name, is_active, default_config)
+    VALUES (?, ?, ?, ?, ?, ?)
+  `);
+  const getByNameStmt = db.prepare('SELECT * FROM projects WHERE name = ?');
+  const getAllStmt = db.prepare('SELECT * FROM projects ORDER BY name');
+  const getActiveStmt = db.prepare('SELECT * FROM projects WHERE is_active = 1 ORDER BY name');
+  const deleteByName = db.prepare('DELETE FROM projects WHERE name = ?');
+  const updateStmt = db.prepare(`
+    UPDATE projects SET
+      display_name = COALESCE(?, display_name),
+      module_path = COALESCE(?, module_path),
+      class_name = COALESCE(?, class_name),
+      is_active = COALESCE(?, is_active),
+      default_config = COALESCE(?, default_config),
+      updated_at = CURRENT_TIMESTAMP
+    WHERE name = ?
+  `);
+
+  return {
+    sync(projects) {
+      const syncTx = db.transaction((items) => {
+        const existing = getAllStmt.all().map(r => r.name);
+        const incoming = items.map(i => i.name);
+
+        // Деактивируем проекты, которых больше нет в файлах
+        for (const name of existing) {
+          if (!incoming.includes(name)) {
+            updateStmt.run(null, null, null, 0, null, name);
+          }
+        }
+
+        // Добавляем или обновляем новые проекты
+        for (const item of items) {
+          const existingRow = getByNameStmt.get(item.name);
+          if (existingRow) {
+            updateStmt.run(
+              item.display_name || null,
+              item.module_path || null,
+              item.class_name || null,
+              1,
+              item.default_config || null,
+              item.name
+            );
+          } else {
+            insert.run(
+              item.name,
+              item.display_name || '',
+              item.module_path || '',
+              item.class_name || '',
+              1,
+              item.default_config || '{}'
+            );
+          }
+        }
+      });
+      syncTx(projects);
+    },
+
+    getAll() {
+      return getAllStmt.all();
+    },
+
+    getByName(name) {
+      return getByNameStmt.get(name);
+    },
+
+    update(name, data) {
+      updateStmt.run(
+        data.display_name !== undefined ? data.display_name : null,
+        data.module_path !== undefined ? data.module_path : null,
+        data.class_name !== undefined ? data.class_name : null,
+        data.is_active !== undefined ? (data.is_active ? 1 : 0) : null,
+        data.default_config !== undefined ? data.default_config : null,
+        name
+      );
+      return getByNameStmt.get(name);
+    },
+
+    getActive() {
+      return getActiveStmt.all();
+    },
+  };
+}
+
+function createMatrixQueries(db) {
+  const getAllStmt = db.prepare('SELECT * FROM project_profile_config ORDER BY project_name, profile_id');
+  const getByProjectStmt = db.prepare('SELECT * FROM project_profile_config WHERE project_name = ?');
+  const getByProfileStmt = db.prepare('SELECT * FROM project_profile_config WHERE profile_id = ?');
+  const getEnabledStmt = db.prepare('SELECT * FROM project_profile_config WHERE is_enabled = 1');
+  const upsert = db.prepare(`
+    INSERT INTO project_profile_config (project_name, profile_id, is_enabled, config_override)
+    VALUES (?, ?, ?, ?)
+    ON CONFLICT(project_name, profile_id) DO UPDATE SET
+      is_enabled = excluded.is_enabled,
+      config_override = COALESCE(excluded.config_override, project_profile_config.config_override)
+  `);
+
+  return {
+    getAll() {
+      return getAllStmt.all();
+    },
+
+    batchUpdate(entries) {
+      const batchTx = db.transaction((items) => {
+        for (const entry of items) {
+          upsert.run(
+            entry.project_name,
+            entry.profile_id,
+            entry.is_enabled !== undefined ? (entry.is_enabled ? 1 : 0) : 0,
+            entry.config_override || '{}'
+          );
+        }
+      });
+      batchTx(entries);
+    },
+
+    getByProject(projectName) {
+      return getByProjectStmt.all(projectName);
+    },
+
+    getByProfile(profileId) {
+      return getByProfileStmt.all(profileId);
+    },
+
+    getEnabledPairs() {
+      return getEnabledStmt.all();
+    },
+  };
+}
+
+function createRunQueries(db) {
+  const insert = db.prepare(`
+    INSERT INTO runs (id, name, status, parallel_limit, total_tasks, completed_tasks, success_tasks, failed_tasks, started_at, completed_at)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+  `);
+  const getByIdStmt = db.prepare('SELECT * FROM runs WHERE id = ?');
+  const getAllStmt = db.prepare('SELECT * FROM runs ORDER BY created_at DESC LIMIT ? OFFSET ?');
+  const countAll = db.prepare('SELECT COUNT(*) as total FROM runs');
+  const updateStatusStmt = db.prepare('UPDATE runs SET status = ?, started_at = COALESCE(?, started_at), completed_at = COALESCE(?, completed_at) WHERE id = ?');
+  const incrementCompletedStmt = db.prepare(`
+    UPDATE runs SET
+      completed_tasks = completed_tasks + 1,
+      success_tasks = success_tasks + CASE WHEN ? THEN 1 ELSE 0 END,
+      failed_tasks = failed_tasks + CASE WHEN ? THEN 0 ELSE 1 END
+    WHERE id = ?
+  `);
+
+  return {
+    create(data) {
+      const id = data.id || uuidv4();
+      insert.run(
+        id,
+        data.name || '',
+        data.status || 'pending',
+        data.parallel_limit || 2,
+        data.total_tasks || 0,
+        data.completed_tasks || 0,
+        data.success_tasks || 0,
+        data.failed_tasks || 0,
+        data.started_at || null,
+        data.completed_at || null
+      );
+      return getByIdStmt.get(id);
+    },
+
+    getById(id) {
+      return getByIdStmt.get(id);
+    },
+
+    getAll(page = 1, limit = 20) {
+      const offset = (page - 1) * limit;
+      const items = getAllStmt.all(limit, offset);
+      const { total } = countAll.get();
+      return { items, total, page, limit };
+    },
+
+    updateStatus(id, status, startedAt = null, completedAt = null) {
+      updateStatusStmt.run(status, startedAt, completedAt, id);
+      return getByIdStmt.get(id);
+    },
+
+    incrementCompleted(id, success) {
+      incrementCompletedStmt.run(success ? 1 : 0, success ? 1 : 0, id);
+    },
+  };
+}
+
+function createRunTaskQueries(db) {
+  const insert = db.prepare(`
+    INSERT INTO run_tasks (run_id, project_name, profile_id, status, exit_code, log_file_path, attempts, started_at, completed_at)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+  `);
+  const getByRunIdStmt = db.prepare('SELECT * FROM run_tasks WHERE run_id = ?');
+  const getByProfileStmt = db.prepare('SELECT * FROM run_tasks WHERE run_id = ? AND profile_id = ?');
+  const updateStatusStmt = db.prepare(`
+    UPDATE run_tasks SET status = ?, exit_code = ?, log_file_path = COALESCE(?, log_file_path), attempts = COALESCE(?, attempts), completed_at = CASE WHEN ? IS NOT NULL THEN CURRENT_TIMESTAMP ELSE completed_at END
+    WHERE id = ?
+  `);
+  const getByIdStmt = db.prepare('SELECT * FROM run_tasks WHERE id = ?');
+
+  return {
+    batchInsert(runId, pairs) {
+      const ids = [];
+      const batchTx = db.transaction((items) => {
+        for (const pair of items) {
+          const result = insert.run(
+            runId,
+            pair.project_name,
+            pair.profile_id,
+            'pending',
+            null, null, null, null, null
+          );
+          ids.push(result.lastInsertRowid);
+        }
+        // Обновляем total_tasks в runs
+        db.prepare('UPDATE runs SET total_tasks = (SELECT COUNT(*) FROM run_tasks WHERE run_id = ?) WHERE id = ?').run(runId, runId);
+      });
+      batchTx(pairs);
+      return ids;
+    },
+
+    getByRunId(runId) {
+      return getByRunIdStmt.all(runId);
+    },
+
+    updateStatus(id, status, exitCode = null, logPath = null, attempts = null) {
+      updateStatusStmt.run(status, exitCode, logPath, attempts, status === 'success' || status === 'failed' ? 1 : null, id);
+      return getByIdStmt.get(id);
+    },
+
+    getByProfile(runId, profileId) {
+      return getByProfileStmt.all(runId, profileId);
+    },
+  };
+}
+
 module.exports = {
   createProfileQueries,
   createProxyQueries,
@@ -405,4 +643,8 @@ module.exports = {
   createLogQueries,
   createTaskQueries,
   createSystemConfigQueries,
+  createProjectQueries,
+  createMatrixQueries,
+  createRunQueries,
+  createRunTaskQueries,
 };

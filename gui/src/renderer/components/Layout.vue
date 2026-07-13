@@ -10,6 +10,11 @@
           <a-menu-item key="tasks">{{ t('nav.tasks') }}</a-menu-item>
           <a-menu-item key="arranger">Window Arranger</a-menu-item>
           <a-menu-item key="extensions">{{ t('nav.extensions') }}</a-menu-item>
+          <a-sub-menu key="automation" :title="t('nav.automation')">
+            <a-menu-item key="automation/matrix">{{ t('automation.matrix') }}</a-menu-item>
+            <a-menu-item key="automation/runs">{{ t('automation.runs') }}</a-menu-item>
+            <a-menu-item key="automation/history">{{ t('automation.history') }}</a-menu-item>
+          </a-sub-menu>
         </a-menu>
       </div>
       <div class="flex items-center gap-3 no-drag">
@@ -68,7 +73,7 @@ const route = useRoute();
 const appStore = useAppStore();
 const { connected } = useWebSocket();
 
-const selectedKeys = computed(() => [route.name]);
+const selectedKeys = computed(() => [route.path.replace(/^\//, '') || 'profiles']);
 
 const languageLabel = computed(() => {
   const labels = { en: 'EN', ru: 'RU', zh: '中文' };
@@ -76,7 +81,9 @@ const languageLabel = computed(() => {
 });
 
 function handleMenuClick({ key }) {
-  router.push(`/${key}`);
+  if (key !== 'automation') {
+    router.push(`/${key}`);
+  }
 }
 
 function handleLanguageChange({ key }) {

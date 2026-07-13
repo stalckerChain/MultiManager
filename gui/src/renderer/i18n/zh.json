@@ -7,7 +7,8 @@
     "proxies": "代理",
     "tasks": "任务",
     "extensions": "扩展",
-    "settings": "设置"
+    "settings": "设置",
+    "automation": "自动化"
   },
   "profiles": {
     "title": "配置文件管理器",
@@ -131,7 +132,57 @@
     "pythonPathPlaceholder": "Python 可执行文件路径",
     "availableProjects": "可用项目",
     "saveAutomation": "保存自动化设置",
-    "automationSaved": "自动化设置已保存"
+    "automationSaved": "自动化设置已保存",
+    "syncProjects": "同步项目",
+    "syncProjectsSuccess": "项目同步成功",
+    "syncProjectsResult": "已添加: {{added}}, 已移除: {{removed}}",
+    "parallelLimit": "并行限制",
+    "parallelLimitHelp": "同时运行的配置文件最大数量"
+  },
+  "automation": {
+    "title": "自动化",
+    "matrix": "矩阵",
+    "runs": "任务",
+    "history": "历史",
+    "createRun": "创建任务",
+    "runName": "任务名称",
+    "runNamePlaceholder": "输入任务名称",
+    "parallelLimit": "并行限制",
+    "cancel": "取消",
+    "create": "创建",
+    "start": "启动",
+    "stop": "停止",
+    "log": "日志",
+    "noProjects": "未找到项目。请先在设置中同步项目。",
+    "noProfiles": "没有可用的配置文件。",
+    "searchProfile": "搜索配置文件...",
+    "noCellsSelected": "未选择任何单元格。请至少选择一个矩阵单元格。",
+    "runCreated": "任务创建成功",
+    "runStarted": "任务已启动",
+    "runCancelled": "任务已取消",
+    "status": {
+      "pending": "等待中",
+      "running": "运行中",
+      "completed": "已完成",
+      "partial": "部分完成",
+      "cancelled": "已取消",
+      "success": "成功",
+      "failed": "失败"
+    },
+    "columns": {
+      "profile": "配置文件",
+      "project": "项目",
+      "name": "名称",
+      "date": "日期",
+      "status": "状态",
+      "progress": "进度",
+      "actions": "操作"
+    },
+    "runsTitle": "任务",
+    "runsEmpty": "暂无任务。请从矩阵创建。",
+    "historyTitle": "历史",
+    "historyEmpty": "暂无已完成的任务。",
+    "loadMore": "加载更多"
   },
   "tasks": {
     "title": "任务管理器",

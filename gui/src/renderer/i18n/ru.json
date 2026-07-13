@@ -7,7 +7,8 @@
     "proxies": "Прокси",
     "tasks": "Задачи",
     "extensions": "Расширения",
-    "settings": "Настройки"
+    "settings": "Настройки",
+    "automation": "Автоматизация"
   },
   "profiles": {
     "title": "Менеджер профилей",
@@ -131,7 +132,57 @@
     "pythonPathPlaceholder": "Путь к python",
     "availableProjects": "Доступные проекты",
     "saveAutomation": "Сохранить настройки автоматизации",
-    "automationSaved": "Настройки автоматизации сохранены"
+    "automationSaved": "Настройки автоматизации сохранены",
+    "syncProjects": "Синхронизировать проекты",
+    "syncProjectsSuccess": "Проекты синхронизированы",
+    "syncProjectsResult": "Добавлено: {{added}}, удалено: {{removed}}",
+    "parallelLimit": "Лимит параллельности",
+    "parallelLimitHelp": "Макс. количество одновременно запущенных профилей"
+  },
+  "automation": {
+    "title": "Автоматизация",
+    "matrix": "Матрица",
+    "runs": "Задачи",
+    "history": "История",
+    "createRun": "Создать задачу",
+    "runName": "Имя задачи",
+    "runNamePlaceholder": "Введите имя задачи",
+    "parallelLimit": "Лимит параллельности",
+    "cancel": "Отмена",
+    "create": "Создать",
+    "start": "Запустить",
+    "stop": "Остановить",
+    "log": "Лог",
+    "noProjects": "Проекты не найдены. Сначала синхронизируйте проекты в Настройках.",
+    "noProfiles": "Нет доступных профилей.",
+    "searchProfile": "Поиск профилей...",
+    "noCellsSelected": "Ни одной ячейки не выбрано. Отметьте хотя бы одну ячейку в матрице.",
+    "runCreated": "Задача создана",
+    "runStarted": "Задача запущена",
+    "runCancelled": "Задача отменена",
+    "status": {
+      "pending": "Ожидает",
+      "running": "Выполняется",
+      "completed": "Завершена",
+      "partial": "Частично",
+      "cancelled": "Отменена",
+      "success": "Успешно",
+      "failed": "Ошибка"
+    },
+    "columns": {
+      "profile": "Профиль",
+      "project": "Проект",
+      "name": "Название",
+      "date": "Дата",
+      "status": "Статус",
+      "progress": "Прогресс",
+      "actions": "Действия"
+    },
+    "runsTitle": "Задачи",
+    "runsEmpty": "Задач пока нет. Создайте из Матрицы.",
+    "historyTitle": "История",
+    "historyEmpty": "Завершённых задач пока нет.",
+    "loadMore": "Загрузить ещё"
   },
   "tasks": {
     "title": "Менеджер задач",

@@ -13,6 +13,10 @@ const fingerprintRouter = require('../api/fingerprint');
 const { router: internalRouter } = require('../api/internal');
 const tasksRouter = require('../api/tasks');
 const settingsRouter = require('../api/settings');
+const { createProjectsRouter } = require('../api/projects');
+const { createMatrixRouter } = require('../api/matrix');
+const { createRunsRouter } = require('../api/runs');
+const { createInternalRunsRouter } = require('../api/internal-runs');
 const { setupWebSocket } = require('./websocket');
 
 const app = express();
@@ -36,6 +40,10 @@ app.use('/api/fingerprint', fingerprintRouter);
 app.use('/api/internal', internalRouter);
 app.use('/api/tasks', tasksRouter);
 app.use('/api/settings', settingsRouter);
+app.use('/api/projects', createProjectsRouter());
+app.use('/api/matrix', createMatrixRouter());
+app.use('/api/runs', createRunsRouter());
+app.use('/api/internal/runs', createInternalRunsRouter());
 
 app.use((err, req, res, next) => {
   logger.error({ err: err.message, stack: err.stack }, 'Unhandled server error');

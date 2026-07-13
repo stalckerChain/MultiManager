@@ -94,6 +94,7 @@ router.get('/automation', (req, res) => {
 
   const stAuto0Path = configQueries.get('stAuto0_path') || '';
   const pythonPath = configQueries.get('python_path') || 'python3';
+  const parallelLimit = parseInt(configQueries.get('parallel_limit'), 10) || 2;
 
   let availableProjects = [];
   if (stAuto0Path) {
@@ -111,19 +112,20 @@ router.get('/automation', (req, res) => {
     }
   }
 
-  res.json({ stAuto0Path, pythonPath, availableProjects });
+  res.json({ stAuto0Path, pythonPath, parallelLimit, availableProjects });
 });
 
 router.put('/automation', (req, res) => {
-  const { stAuto0Path, pythonPath } = req.body;
+  const { stAuto0Path, pythonPath, parallelLimit } = req.body;
 
   const db = getDatabase();
   const configQueries = createSystemConfigQueries(db);
 
   if (stAuto0Path !== undefined) configQueries.set('stAuto0_path', stAuto0Path);
   if (pythonPath !== undefined) configQueries.set('python_path', pythonPath);
+  if (parallelLimit !== undefined) configQueries.set('parallel_limit', String(parallelLimit));
 
-  logger.info({ stAuto0Path, pythonPath }, 'Настройки автоматизации сохранены');
+  logger.info({ stAuto0Path, pythonPath, parallelLimit }, 'Настройки автоматизации сохранены');
   res.json({ status: 'success' });
 });
 

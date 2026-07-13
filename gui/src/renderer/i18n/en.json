@@ -7,7 +7,8 @@
     "proxies": "Proxies",
     "tasks": "Tasks",
     "extensions": "Extensions",
-    "settings": "Settings"
+    "settings": "Settings",
+    "automation": "Automation"
   },
   "profiles": {
     "title": "Profile Manager",
@@ -131,7 +132,57 @@
     "pythonPathPlaceholder": "Path to python executable",
     "availableProjects": "Available Projects",
     "saveAutomation": "Save Automation Settings",
-    "automationSaved": "Automation settings saved"
+    "automationSaved": "Automation settings saved",
+    "syncProjects": "Sync Projects",
+    "syncProjectsSuccess": "Projects synced successfully",
+    "syncProjectsResult": "Added: {{added}}, removed: {{removed}}",
+    "parallelLimit": "Parallel Limit",
+    "parallelLimitHelp": "Max number of profiles running simultaneously"
+  },
+  "automation": {
+    "title": "Automation",
+    "matrix": "Matrix",
+    "runs": "Runs",
+    "history": "History",
+    "createRun": "Create Run",
+    "runName": "Run Name",
+    "runNamePlaceholder": "Enter run name",
+    "parallelLimit": "Parallel Limit",
+    "cancel": "Cancel",
+    "create": "Create",
+    "start": "Start",
+    "stop": "Stop",
+    "log": "Log",
+    "noProjects": "No projects found. Sync projects in Settings first.",
+    "noProfiles": "No profiles available.",
+    "searchProfile": "Search profiles...",
+    "noCellsSelected": "No cells selected. Check at least one cell in the matrix.",
+    "runCreated": "Run created successfully",
+    "runStarted": "Run started",
+    "runCancelled": "Run cancelled",
+    "status": {
+      "pending": "Pending",
+      "running": "Running",
+      "completed": "Completed",
+      "partial": "Partial",
+      "cancelled": "Cancelled",
+      "success": "Success",
+      "failed": "Failed"
+    },
+    "columns": {
+      "profile": "Profile",
+      "project": "Project",
+      "name": "Name",
+      "date": "Date",
+      "status": "Status",
+      "progress": "Progress",
+      "actions": "Actions"
+    },
+    "runsTitle": "Runs",
+    "runsEmpty": "No runs yet. Create one from the Matrix.",
+    "historyTitle": "History",
+    "historyEmpty": "No completed runs yet.",
+    "loadMore": "Load More"
   },
   "tasks": {
     "title": "Tasks Manager",

@@ -1744,52 +1744,53 @@ describe('automation store', () => {
 
 ## Part 7: Порядок реализации
 
-### Шаг 1: Database (schema + queries) — ~2-3ч
+### Шаг 1: Database (schema + queries) — ✅ ВЫПОЛНЕНО
 - [x] 1.1. Добавить таблицы в `schema.js`
-- [x] 1.2. Реализовать `createProjectQueries`
-- [x] 1.3. Реализовать `createMatrixQueries`
-- [x] 1.4. Реализовать `createRunQueries`
-- [x] 1.5. Реализовать `createRunTaskQueries`
+- [x] 1.2. Implement `createProjectQueries`
+- [x] 1.3. Implement `createMatrixQueries`
+- [x] 1.4. Implement `createRunQueries`
+- [x] 1.5. Implement `createRunTaskQueries`
 - [x] 1.6. Миграция `migrateTables()`
-- [x] 1.7. Экспорт из `queries.js`
-- [x] **Тесты:** `schema-automation.test.js`, `queries-automation.test.js`, `migration-automation.test.js`
+- [x] 1.7. Export from `queries.js`
+- [x] **Tests:** `schema-automation. Test .js`, `queries-automation. Test .js`, `migration-automation. Test .js` (31/31 passed)
 
-### Шаг 2: Backend API — ~3-4ч
-- [x] 2.1. `/api/projects` — роут + sync из stAuto0
+### Шаг 2: Backend API — ✅ ВЫПОЛНЕНО
+- [x] 2.1. `/api/projects` — route + sync from stAuto0
 - [x] 2.2. `/api/matrix` — GET + batch PUT
 - [x] 2.3. `/api/runs` — CRUD + start/cancel
 - [x] 2.4. `/api/internal/runs` — callback task-status
 - [x] 2.5. Подключить роуты в `app.js`
-- [x] **Тесты:** `projects-api.test.js`, `matrix-api.test.js`, `runs-api.test.js`, `internal-runs-api.test.js`
+- [x] **Tests:** `projects-api.test.js`, `matrix-api.test.js`, `runs-api.test.js`, `internal-runs-api.test.js` (33/33 passed)
 
-### Шаг 3: Execution Engine — ~2ч
-- [x] 3.1. `src/executor/index.js` — RunExecutor с семафором
-- [x] 3.2. Stub: пока spawn с аргументами без интеграции колбэка (callback добавится на шаге 5)
-- [x] **Тесты:** `executor.test.js`
+### Шаг 3: Execution Engine — ✅ ВЫПОЛНЕНО
+- [x] 3.1. `src/executor/index.js` — RunExecutor with semaphore
+- [x] 3.2. Stub: spawn with arguments (callback will be added on step 5)
+- [x] 3.3. Интеграция executor в роут `/api/runs/:id/start` и `/api/runs/:id/cancel`
+- [x] **Tests:** `executor.test.js` (5/5 passed)
 
-### Шаг 4: GUI — ~4-5ч
-- [x] 4.1. AutomationMatrix.vue (матрица с чекбоксами)
-- [x] 4.2. AutomationRuns.vue (список runs + цветная матрица)
+### Шаг 4: GUI — ✅ ВЫПОЛНЕНО
+- [x] 4.1. AutomationMatrix.vue (matrix with checkboxes)
+- [x] 4.2. AutomationRuns.vue (list of runs + colour matrix)
 - [x] 4.3. AutomationHistory.vue (lazy load)
 - [x] 4.4. Pinia store `automation.js`
-- [x] 4.5. Router + боковое меню
-- [x] 4.6. Settings — кнопка sync + parallel_limit
-- [x] **Тесты:** `gui-automation-store.test.js`
+- [x] 4.5. Router + sidebar menu
+- [x] 4.6. Settings — sync button + parallel_limit
+- [x] **Tests:** `gui-automation-store.test.js` (13/13 passed)
 
-### Шаг 5: stAuto0 интеграция — ~2ч
-- [x] 5.1. `base.py` — `run()` возвращает bool
-- [x] 5.2. `browser.py` — `run_project()` возвращает bool
+### Шаг 5: stAuto0 integration — ✅ ВЫПОЛНЕНО
+- [x] 5.1. `base.py` — `run()` returns bool
+- [x] 5.2. `browser.py` — `run_project()` returns bool
 - [x] 5.3. `multimanager.py` — `report_task_status()`
-- [x] 5.4. `main.py` — `--run-id` + колбэк после каждого проекта
-- [x] **Тесты:** `test_project_run.py`, `test_multimanager_client.py`, `test_main_args.py`
+- [x] 5.4. `main.py` — `--run-id` + callback after each project
+- [x] **Tests:** `test_project_run.py`, `test_multimanager_client.py`, `test_main_args.py` (10/10 passed)
 
-### Шаг 6: Интеграционный тест — ~1ч
-- [x] 6.1. `automation-full-cycle.test.js` — полный цикл: sync → matrix → create → start
+### Шаг 6: Integration test — ✅ ВЫПОЛНЕНО
+- [x] 6.1. `tests/integration/automation-full-cycle.test.js` — full cycle: sync → matrix → create → run (5/5 passed)
 
-### Шаг 7: Документация — ~1ч
-- [x] 7.1. Обновить README.md
-- [x] 7.2. Обновить TS.md (раздел Automation Matrix)
-- [x] 7.3. Обновить API.md (новые endpoints)
+### Шаг 7: Документация — ✅ ВЫПОЛНЕНО
+- [x] 7.1. Update README.md
+- [x] 7.2. Update TS.md (Automation Matrix section)
+- [x] 7.3. Update API.md (new endpoints)
 
 ---
 

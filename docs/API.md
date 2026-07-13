@@ -1244,6 +1244,308 @@ Human-like ввод текста через CDP. Имитирует реальн
 
 ---
 
+## Проекты (Automation Matrix)
+
+### GET /api/projects
+
+Список всех проектов, синхронизированных из `stAuto0/projects/*.py`.
+
+**Ответ (200):**
+```json
+[
+  {
+    "name": "concrete",
+    "display_name": "concrete",
+    "module_path": "projects.concrete",
+    "class_name": "",
+    "is_active": 1,
+    "default_config": "{}",
+    "created_at": "2026-07-13 12:00:00",
+    "updated_at": "2026-07-13 12:00:00"
+  }
+]
+```
+
+---
+
+### POST /api/projects/sync
+
+Сканировать директорию `stAuto0/projects/*.py`, добавить новые проекты, деактивировать удалённые. Игнорирует `__init__.py`, `base.py`, `loader.py`.
+
+**Ответ (200):**
+```json
+{
+  "added": 2,
+  "removed": 0,
+  "total": 5
+}
+```
+
+**Ответ (400):** `{ "error": "stAuto0_path not configured" }`
+
+---
+
+### GET /api/projects/:name
+
+Получить один проект с его профилями из матрицы.
+
+**Ответ (200):**
+```json
+{
+  "name": "concrete",
+  "display_name": "Concrete Points",
+  "is_active": 1,
+  "profiles": [
+    { "project_name": "concrete", "profile_id": "uuid", "is_enabled": 1 }
+  ]
+}
+```
+
+**Ответ (404):** `{ "error": "Project not found" }`
+
+---
+
+### PUT /api/projects/:name
+
+Обновить настройки проекта (display_name, is_active, default_config, module_path, class_name).
+
+**Тело запроса:**
+```json
+{
+  "display_name": "Concrete Points",
+  "is_active": 1,
+  "default_config": "{\"referral_code\": \"ABC\"}"
+}
+```
+
+**Ответ (200):** Обновлённый объект проекта
+
+**Ответ (404):** `{ "error": "Project not found" }`
+
+---
+
+## Матрица (Matrix)
+
+### GET /api/matrix
+
+Вся матрица Проекты×Профили: проекты, профили и отметки (чекбоксы).
+
+**Ответ (200):**
+```json
+{
+  "projects": [
+    { "name": "concrete", "display_name": "concrete", "is_active": 1 }
+  ],
+  "profiles": [
+    { "id": "uuid", "number": 1, "name": "auto_001", "status": "stopped" }
+  ],
+  "matrix": [
+    {
+      "project_name": "concrete",
+      "profile_id": "uuid",
+      "is_enabled": 1,
+      "config_override": "{}",
+      "profile_name": "auto_001",
+      "project_display": "concrete"
+    }
+  ]
+}
+```
+
+---
+
+### PUT /api/matrix
+
+Batch-обновление отметок матрицы. Транзакция: все изменения applied атомарно.
+
+**Тело запроса:**
+```json
+{
+  "entries": [
+    { "project_name": "concrete", "profile_id": "uuid", "is_enabled": 1 },
+    { "project_name": "allscale", "profile_id": "uuid", "is_enabled": 0 }
+  ]
+}
+```
+
+**Ответ (200):**
+```json
+{
+  "updated": 2
+}
+```
+
+**Ответ (400):** `{ "error": "Each entry requires project_name and profile_id" }`
+
+---
+
+## Запуски (Runs)
+
+### GET /api/runs
+
+Список запусков с пагинацией. Результаты сортируются по `created_at DESC`.
+
+**Параметры:** `?page=1&limit=20`
+
+**Ответ (200):**
+```json
+{
+  "items": [
+    {
+      "id": "uuid",
+      "name": "Run 2026-07-13 12:00",
+      "status": "pending",
+      "parallel_limit": 2,
+      "total_tasks": 5,
+      "completed_tasks": 0,
+      "success_tasks": 0,
+      "failed_tasks": 0,
+      "started_at": null,
+      "completed_at": null,
+      "created_at": "2026-07-13 12:00:00"
+    }
+  ],
+  "total": 1,
+  "page": 1,
+  "limit": 20
+}
+```
+
+---
+
+### POST /api/runs
+
+Создать новый run из текущих отмеченных клеток матрицы (`is_enabled=1`).
+
+**Тело запроса:**
+```json
+{
+  "name": "Daily run 2026-07-13",
+  "parallel_limit": 3
+}
+```
+
+Если `name` не указан — генерируется авто: `"Run 2026-07-13 12:00"`.
+
+**Ответ (201):**
+```json
+{
+  "run_id": "uuid",
+  "tasks_created": 10,
+  "name": "Daily run 2026-07-13"
+}
+```
+
+**Ответ (400):** `{ "error": "No enabled entries in matrix" }`
+
+---
+
+### GET /api/runs/:id
+
+Получить run со всеми run_tasks.
+
+**Ответ (200):**
+```json
+{
+  "id": "uuid",
+  "name": "Daily run",
+  "status": "running",
+  "parallel_limit": 2,
+  "total_tasks": 5,
+  "completed_tasks": 2,
+  "success_tasks": 2,
+  "failed_tasks": 0,
+  "tasks": [
+    {
+      "id": 1,
+      "run_id": "uuid",
+      "project_name": "concrete",
+      "profile_id": "uuid",
+      "status": "success",
+      "exit_code": 0,
+      "log_file_path": "logs/runs/uuid/auto_001.log",
+      "attempts": 1,
+      "started_at": "2026-07-13 12:00:00",
+      "completed_at": "2026-07-13 12:05:00"
+    }
+  ]
+}
+```
+
+**Ответ (404):** `{ "error": "Run not found" }`
+
+---
+
+### POST /api/runs/:id/start
+
+Запустить выполнение run. Только для `pending` статуса. Запускает RunExecutor, который spawn'ит Python-процессы для каждого профиля с параллельным лимитом.
+
+**Ответ (200):**
+```json
+{
+  "status": "started",
+  "run_id": "uuid"
+}
+```
+
+**Ответ (400):** `{ "error": "Only pending runs can be started" }`
+**Ответ (404):** `{ "error": "Run not found" }`
+
+---
+
+### POST /api/runs/:id/cancel
+
+Отменить выполнение run. Убивает активные процессы (SIGTERM → SIGKILL), помечает все running/pending задачи как `failed`, устанавливает статус run = `cancelled`.
+
+**Ответ (200):**
+```json
+{
+  "status": "cancelled",
+  "run_id": "uuid"
+}
+```
+
+**Ответ (404):** `{ "error": "Run not found" }`
+
+---
+
+## Internal API (Callback от stAuto0)
+
+### POST /api/internal/runs/:id/task-status
+
+Callback endpoint для stAuto0. Обновляет статус одной клетки (project + profile) внутри run. Доступен только с localhost. Аутентифицируется тем же Bearer-токеном.
+
+**Тело запроса:**
+```json
+{
+  "project_name": "concrete",
+  "profile_name": "auto_001",
+  "status": "success",
+  "attempts": 2
+}
+```
+
+**Статусы:** `success`, `failed`, `running`
+
+**Логика:**
+- Находит `run_task` по `run_id + project_name + profile_name (→ profile_id)`
+- Обновляет `status`, `exit_code`, `attempts`, `completed_at`
+- Инкрементирует счётчики run (`completed_tasks`, `success_tasks`/`failed_tasks`)
+- Если все задачи завершены → run.status = `completed` (или `partial` при наличии ошибок)
+
+**Ответ (200):**
+```json
+{
+  "ok": true
+}
+```
+
+**Ответ (400):** `{ "error": "project_name, profile_name and status are required" }`
+**Ответ (404):** `{ "error": "Run not found" }` / `{ "error": "Task not found" }`
+**Ответ (403):** `{ "error": "Only localhost allowed" }`
+
+---
+
 ## Статусы профиля
 
 | Статус | Описание |
