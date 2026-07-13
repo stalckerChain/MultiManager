@@ -1,8 +1,8 @@
-# MultiManager v2.0.0 (Automation Matrix ✅)
+# MultiManager v2.0.1 (Automation Matrix ✅)
 
 AI-Driven Web Automation Platform — кроссплатформенный антидетект-браузер с интеграцией Python-фреймворка автоматизации, графическим интерфейсом и локальным REST API / WebSocket для автономных ИИ-агентов (аналог AdsPower) на базе C++ ядра CloakBrowser.
 
-> **Полная спецификация:** [TS.md](./TS.md) (MultiManager v2.0.0) + [TS_INTEGRATION.md](./TS_INTEGRATION.md) (stAuto0 интеграция).
+> **Полная спецификация:** [TS.md](./TS.md) (MultiManager v1.1.0) + [TS_INTEGRATION.md](./TS_INTEGRATION.md) (stAuto0 интеграция).
 > **Фазы Roadmap:** Ф1–Ф4 ✅, Ф5 ✅, Ф6 ✅, **Ф7 ✅ (Automation Matrix)** — подробный план [TASK.md](./TASK.md).
 
 ## Архитектура и Технологический Стек
@@ -117,9 +117,9 @@ MultiManager/
 │           ├── components/   # Layout, StatusBar, LogPanel, Terminal, BrowserDownload, AccountsTab, WalletsTab
 │           ├── composables/  # useTheme, useWebSocket
 │           └── api/          # HTTP-клиент к Core
-└── tests/                    # Vitest (563 теста, 31 файл)
-    ├── unit/                 # 24 файла: auth, proxy, fingerprint, typing, crypto, tasks, pty, etc.
-    └── integration/          # 5 файлов: SQLite WAL, API, lifecycle, proxy, tasks API
+└── tests/                    # Vitest (645 тестов, 40 файлов)
+    ├── unit/                 # 32 файла: auth, proxy, fingerprint, typing, crypto, tasks, pty, automation, etc.
+    └── integration/          # 8 файлов: SQLite WAL, API, lifecycle, proxy, tasks API, automation-full-cycle
 ```
 
 ---
@@ -145,11 +145,13 @@ node src/index.js --api-token=YOUR_SECRET_TOKEN
 # Порт через env: PORT=3005 node src/index.js --api-token=YOUR_SECRET_TOKEN
 ```
 
-### Сборка Windows Installer
+### Сборка Windows Installer / Portable
 
 ```bash
-cd gui && npm install && npm run electron:build
-# Результат: gui/release/MultiManager Setup 1.0.0.exe
+cd gui && npm install && npm run build
+# Результат: gui/release/
+#   MultiManager Setup 1.x.x.exe  — NSIS installer
+#   MultiManager 1.x.x.exe        — Portable (single file)
 ```
 
 ### CloakBrowser

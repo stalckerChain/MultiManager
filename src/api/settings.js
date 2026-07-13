@@ -1,10 +1,20 @@
 const express = require('express');
 const fs = require('fs');
 const path = require('path');
+const os = require('os');
 const { getDatabase } = require('../db');
-const { createSystemConfigQueries, createProfileQueries, createProjectQueries } = require('../db/queries');
+const { createSystemConfigQueries, createProfileQueries, createProjectQueries, createMatrixQueries } = require('../db/queries');
 const { hasMasterKey, getMasterKeySource, getRecoveryKey, clearRecoveryKey, setupPasswordMode, unlockWithPassword, rotateKey, generateMasterKey, generateRecoveryKey, setMasterKey, clearMasterKey } = require('../crypto');
 const { logger } = require('../logger');
+
+function resolvePath(p) {
+  if (!p || typeof p !== 'string') return '';
+  p = p.trim();
+  if (p.startsWith('~')) {
+    p = path.join(os.homedir(), p.slice(1));
+  }
+  return path.resolve(p);
+}
 
 const router = express.Router();
 
@@ -94,14 +104,15 @@ router.get('/automation', (req, res) => {
   const db = getDatabase();
   const configQueries = createSystemConfigQueries(db);
 
-  const stAuto0Path = configQueries.get('stAuto0_path') || '';
-  const pythonPath = configQueries.get('python_path') || 'python3';
+  const rawPath = configQueries.get('stAuto0_path') || '';
+  const rawPython = configQueries.get('python_path') || '';
+
+  const stAuto0Path = resolvePath(rawPath);
+  const pythonPath = resolvePath(rawPython);
   const parallelLimit = parseInt(configQueries.get('parallel_limit'), 10) || 2;
 
   let availableProjects = [];
   if (stAuto0Path) {
-    const fs = require('fs');
-    const path = require('path');
     const projectsDir = path.join(stAuto0Path, 'projects');
     try {
       if (fs.existsSync(projectsDir)) {
@@ -118,13 +129,16 @@ router.get('/automation', (req, res) => {
 });
 
 router.put('/automation', (req, res) => {
-  const { stAuto0Path, pythonPath, parallelLimit } = req.body;
+  let { stAuto0Path, pythonPath, parallelLimit } = req.body;
 
   const db = getDatabase();
   const configQueries = createSystemConfigQueries(db);
 
-  if (stAuto0Path !== undefined) configQueries.set('stAuto0_path', stAuto0Path);
-  if (pythonPath !== undefined) configQueries.set('python_path', pythonPath);
+  stAuto0Path = resolvePath(stAuto0Path) || resolvePath('~/AI/stAuto0');
+  pythonPath = resolvePath(pythonPath) || resolvePath('~/AI/stAuto0/venv/Scripts/python.exe');
+
+  configQueries.set('stAuto0_path', stAuto0Path);
+  configQueries.set('python_path', pythonPath);
   if (parallelLimit !== undefined) configQueries.set('parallel_limit', String(parallelLimit));
 
   // Auto-sync projects when stAuto0 path is saved
@@ -151,6 +165,24 @@ router.put('/automation', (req, res) => {
         syncResult.removed = existing.filter(p => !incomingNames.includes(p.name) && p.is_active).length;
 
         projectQueries.sync(files);
+
+        // Auto-populate matrix entries for all profiles
+        const profiles = createProfileQueries(db).getAll();
+        const matrix = createMatrixQueries(db);
+        if (profiles.length > 0) {
+          const entries = [];
+          for (const proj of files) {
+            for (const prof of profiles) {
+              entries.push({
+                project_name: proj.name,
+                profile_id: prof.id,
+                is_enabled: 0,
+              });
+            }
+          }
+          matrix.batchUpdate(entries);
+        }
+
         syncResult.total = projectQueries.getAll().length;
 
         logger.info(`Auto-sync: ${syncResult.added} added, ${syncResult.removed} removed`);

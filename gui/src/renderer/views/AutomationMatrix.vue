@@ -20,7 +20,16 @@
       </div>
     </div>
 
-    <div v-if="projects.length === 0" class="text-center py-16 text-slate-400">
+    <div v-if="store.error" class="text-center py-8 text-red-400">
+      <p class="mb-2">{{ t('common.error') }}: {{ store.error }}</p>
+      <a-button @click="store.fetchMatrix()">{{ t('common.retry') }}</a-button>
+    </div>
+
+    <div v-else-if="store.profiles.length === 0 && !store.loading" class="text-center py-16 text-slate-400">
+      <p class="mb-4">{{ t('automation.noProfiles') }}</p>
+    </div>
+
+    <div v-else-if="projects.length === 0 && !store.loading" class="text-center py-16 text-slate-400">
       <p class="mb-4">{{ t('automation.noProjects') }}</p>
     </div>
 
@@ -212,13 +221,9 @@ async function handleCreateRun() {
 
 onMounted(async () => {
   await store.fetchMatrix();
-  // Auto-sync if no projects found — maybe user saved path but never synced
-  if (store.projects.length === 0) {
-    try {
-      await handleSyncProjects();
-    } catch {
-      // silent — user will see the Sync button and empty state
-    }
+  // Auto-sync if no projects found
+  if (store.projects.length === 0 && !store.error) {
+    await handleSyncProjects();
   }
 });
 </script>

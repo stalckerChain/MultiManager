@@ -2,7 +2,7 @@ const express = require('express');
 const fs = require('fs');
 const path = require('path');
 const { getDatabase } = require('../db');
-const { createProjectQueries, createMatrixQueries, createSystemConfigQueries } = require('../db/queries');
+const { createProjectQueries, createMatrixQueries, createProfileQueries, createSystemConfigQueries } = require('../db/queries');
 
 function createProjectsRouter(opts = {}) {
   const router = express.Router();
@@ -53,6 +53,23 @@ function createProjectsRouter(opts = {}) {
     const removed = existing.filter(p => !incomingNames.includes(p.name) && p.is_active);
 
     getProjects().sync(files);
+
+    // Auto-populate matrix entries for all profiles after sync
+    const profiles = createProfileQueries(getDb()).getAll();
+    const matrix = createMatrixQueries(getDb());
+    if (profiles.length > 0) {
+      const entries = [];
+      for (const proj of files) {
+        for (const prof of profiles) {
+          entries.push({
+            project_name: proj.name,
+            profile_id: prof.id,
+            is_enabled: 0,
+          });
+        }
+      }
+      matrix.batchUpdate(entries);
+    }
 
     res.json({ added: added.length, removed: removed.length, total: getProjects().getAll().length });
   });

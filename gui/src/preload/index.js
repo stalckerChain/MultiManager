@@ -6,6 +6,8 @@ contextBridge.exposeInMainWorld('electronAPI', {
   quitApp: () => ipcRenderer.invoke('quit-app'),
   hooksStart: () => ipcRenderer.invoke('hooks:start'),
   hooksStop: () => ipcRenderer.invoke('hooks:stop'),
+  selectFolder: () => ipcRenderer.invoke('dialog:select-folder'),
+  selectFile: (filters) => ipcRenderer.invoke('dialog:select-file', filters),
   onNavigate: (callback) => ipcRenderer.on('navigate', (event, route) => callback(route)),
   onUpdateAvailable: (callback) => ipcRenderer.on('update-available', (event, info) => callback(info)),
   onUpdateDownloaded: (callback) => ipcRenderer.on('update-downloaded', (event, info) => callback(info)),

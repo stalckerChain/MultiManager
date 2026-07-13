@@ -9,9 +9,11 @@ export const useAutomationStore = defineStore('automation', () => {
   const runs = ref([]);
   const currentRun = ref(null);
   const loading = ref(false);
+  const error = ref(null);
 
   async function fetchMatrix() {
     loading.value = true;
+    error.value = null;
     try {
       const { data } = await client.get('/api/matrix');
       projects.value = data.projects || [];
@@ -19,6 +21,7 @@ export const useAutomationStore = defineStore('automation', () => {
       matrix.value = data.matrix || [];
     } catch (err) {
       console.error('[Automation] fetchMatrix failed:', err.message || err);
+      error.value = err.message || 'Unknown error';
       projects.value = [];
       profiles.value = [];
       matrix.value = [];
@@ -88,7 +91,7 @@ export const useAutomationStore = defineStore('automation', () => {
   }
 
   return {
-    matrix, projects, profiles, runs, currentRun, loading,
+    matrix, projects, profiles, runs, currentRun, loading, error,
     fetchMatrix, updateMatrix, createRun, fetchRuns, fetchRun,
     startRun, cancelRun, fetchProjects, syncProjects,
   };

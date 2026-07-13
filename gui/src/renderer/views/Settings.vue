@@ -73,10 +73,20 @@
     <a-card :title="t('settings.automation')" class="mb-4 max-w-lg">
       <a-form layout="vertical">
         <a-form-item :label="t('settings.stAuto0Path')">
-          <a-input v-model:value="automation.stAuto0Path" :placeholder="t('settings.stAuto0PathPlaceholder')" />
+          <div class="flex gap-2">
+            <a-input v-model:value="automation.stAuto0Path" :placeholder="t('settings.stAuto0PathPlaceholder')" class="flex-1" />
+            <a-button @click="browseStAuto0">
+              <FolderOpenOutlined />
+            </a-button>
+          </div>
         </a-form-item>
         <a-form-item :label="t('settings.pythonPath')">
-          <a-input v-model:value="automation.pythonPath" :placeholder="t('settings.pythonPathPlaceholder')" />
+          <div class="flex gap-2">
+            <a-input v-model:value="automation.pythonPath" :placeholder="t('settings.pythonPathPlaceholder')" class="flex-1" />
+            <a-button @click="browsePython">
+              <FolderOpenOutlined />
+            </a-button>
+          </div>
         </a-form-item>
         <a-form-item :label="t('settings.parallelLimit')" :help="t('settings.parallelLimitHelp')">
           <a-input-number v-model:value="automation.parallelLimit" :min="1" :max="20" class="w-full" />
@@ -112,7 +122,7 @@
 
 <script setup>
 import { ref, onMounted } from 'vue';
-import { EyeOutlined, EyeInvisibleOutlined } from '@ant-design/icons-vue';
+import { EyeOutlined, EyeInvisibleOutlined, FolderOpenOutlined } from '@ant-design/icons-vue';
 import { useTranslation } from 'i18next-vue';
 import { useAppStore } from '../stores/app.js';
 import { useAutomationStore } from '../stores/automation.js';
@@ -253,9 +263,25 @@ async function handleSyncProjects() {
     message.success(t('settings.syncProjectsResult', { added: result.added || 0, removed: result.removed || 0 }));
     await fetchAutomation();
   } catch (err) {
-    message.error(err.message);
+    message.error(err.message || t('common.error'));
   } finally {
     syncingProjects.value = false;
+  }
+}
+
+async function browseStAuto0() {
+  if (!window.electronAPI?.selectFolder) return;
+  const dir = await window.electronAPI.selectFolder();
+  if (dir) {
+    automation.value.stAuto0Path = dir;
+  }
+}
+
+async function browsePython() {
+  if (!window.electronAPI?.selectFile) return;
+  const file = await window.electronAPI.selectFile([{ name: 'Python', extensions: ['exe', 'bat', 'cmd'] }]);
+  if (file) {
+    automation.value.pythonPath = file;
   }
 }
 

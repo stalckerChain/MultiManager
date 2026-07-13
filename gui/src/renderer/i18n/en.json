@@ -257,6 +257,7 @@
     "loading": "Loading...",
     "noData": "No data",
     "success": "Success",
-    "error": "Error"
+    "error": "Error",
+    "retry": "Retry"
   }
 }
