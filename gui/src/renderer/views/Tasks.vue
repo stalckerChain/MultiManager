@@ -58,7 +58,16 @@
           <a-input v-model:value="form.name" :placeholder="t('tasks.form.namePlaceholder')" />
         </a-form-item>
         <a-form-item :label="t('tasks.form.scriptName')" required>
-          <a-input v-model:value="form.script_name" :placeholder="t('tasks.form.scriptNamePlaceholder')" />
+          <div class="flex gap-2">
+            <a-select v-model:value="form.script_name" :placeholder="t('tasks.form.scriptNamePlaceholder')" :loading="projectsLoading" class="flex-1">
+              <a-select-option v-for="p in availableProjects" :key="p.name" :value="p.name">
+                {{ p.display_name || p.name }}
+              </a-select-option>
+            </a-select>
+            <a-button size="small" :loading="projectsLoading" @click="fetchProjects">
+              <ReloadOutlined />
+            </a-button>
+          </div>
         </a-form-item>
         <a-form-item :label="t('tasks.form.scheduleType')" required>
           <a-select v-model:value="form.schedule_type">
@@ -117,11 +126,14 @@ import { ref, computed, reactive, watch } from 'vue';
 import { useTranslation } from 'i18next-vue';
 import { useTasksStore } from '../stores/tasks.js';
 import { useAppStore } from '../stores/app.js';
+import { useAutomationStore } from '../stores/automation.js';
 import { message } from 'ant-design-vue';
+import { ReloadOutlined } from '@ant-design/icons-vue';
 
 const { t } = useTranslation();
 const tasksStore = useTasksStore();
 const appStore = useAppStore();
+const autoStore = useAutomationStore();
 
 const search = ref('');
 const modalOpen = ref(false);
@@ -130,6 +142,8 @@ const editingTask = ref(null);
 const executionsOpen = ref(false);
 const executions = ref([]);
 const executionsLoading = ref(false);
+const availableProjects = ref([]);
+const projectsLoading = ref(false);
 
 const form = reactive({
   name: '',
@@ -262,8 +276,21 @@ async function showExecutions(task) {
 watch(() => appStore.initialized, (ready) => {
   if (ready) {
     tasksStore.fetchAll().catch(() => {});
+    fetchProjects();
   }
 }, { immediate: true });
+
+async function fetchProjects() {
+  projectsLoading.value = true;
+  try {
+    const data = await autoStore.fetchProjects();
+    availableProjects.value = Array.isArray(data) ? data : [];
+  } catch {
+    availableProjects.value = [];
+  } finally {
+    projectsLoading.value = false;
+  }
+}
 </script>
 
 <style scoped>

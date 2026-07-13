@@ -18,7 +18,10 @@
     </div>
 
     <div v-if="projects.length === 0" class="text-center py-16 text-slate-400">
-      {{ t('automation.noProjects') }}
+      <p class="mb-4">{{ t('automation.noProjects') }}</p>
+      <a-button type="primary" :loading="syncing" @click="handleSyncProjects">
+        <ReloadOutlined class="mr-1" /> {{ t('settings.syncProjects') }}
+      </a-button>
     </div>
 
     <div v-else class="overflow-auto">
@@ -77,6 +80,7 @@ import { ref, computed, onMounted } from 'vue';
 import { useRouter } from 'vue-router';
 import { useTranslation } from 'i18next-vue';
 import { message } from 'ant-design-vue';
+import { ReloadOutlined } from '@ant-design/icons-vue';
 import { useAutomationStore } from '../stores/automation.js';
 
 const { t } = useTranslation();
@@ -88,6 +92,7 @@ const showCreateModal = ref(false);
 const creating = ref(false);
 const newRunName = ref('');
 const newRunParallelLimit = ref(2);
+const syncing = ref(false);
 
 const columns = computed(() => {
   const cols = [
@@ -142,6 +147,19 @@ function isChecked(profileId, projectName) {
 function toggleCell(profileId, projectName) {
   const key = getCellKey(profileId, projectName);
   selectedCells.value[key] = !isChecked(profileId, projectName);
+}
+
+async function handleSyncProjects() {
+  syncing.value = true;
+  try {
+    const result = await store.syncProjects();
+    message.success(t('settings.syncProjectsResult', { added: result.added || 0, removed: result.removed || 0 }));
+    await store.fetchMatrix();
+  } catch (err) {
+    message.error(err.message || t('common.error'));
+  } finally {
+    syncing.value = false;
+  }
 }
 
 function getEnabledEntries() {
