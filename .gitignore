@@ -21,3 +21,4 @@ tmp/
 build/
 .opencode/
 .mimocode/
+_dream_inspect.js

@@ -1,4 +1,4 @@
-# MultiManager v2.0.1 (Automation Matrix ✅)
+# MultiManager v1.2.0 (Automation Matrix ✅)
 
 AI-Driven Web Automation Platform — кроссплатформенный антидетект-браузер с интеграцией Python-фреймворка автоматизации, графическим интерфейсом и локальным REST API / WebSocket для автономных ИИ-агентов (аналог AdsPower) на базе C++ ядра CloakBrowser.
 

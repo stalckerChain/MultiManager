@@ -1,6 +1,7 @@
 const express = require('express');
 const fs = require('fs');
 const path = require('path');
+const os = require('os');
 const { getDatabase } = require('../db');
 const { createProjectQueries, createMatrixQueries, createProfileQueries, createSystemConfigQueries } = require('../db/queries');
 
@@ -24,7 +25,8 @@ function createProjectsRouter(opts = {}) {
   });
 
   router.post('/sync', (req, res) => {
-    const stAuto0Path = getCfg().get('stAuto0_path');
+    const defaultPath = path.join(os.homedir(), 'AI', 'stAuto0');
+    const stAuto0Path = getCfg().get('stAuto0_path') || defaultPath;
 
     if (!stAuto0Path) {
       return res.status(400).json({ error: 'stAuto0_path not configured' });

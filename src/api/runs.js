@@ -1,5 +1,7 @@
 const express = require('express');
 const { spawn } = require('child_process');
+const path = require('path');
+const os = require('os');
 const { getDatabase } = require('../db');
 const { createRunQueries, createRunTaskQueries, createMatrixQueries, createSystemConfigQueries, createProfileQueries } = require('../db/queries');
 const { RunExecutor } = require('../executor');
@@ -77,9 +79,11 @@ function createRunsRouter(opts = {}) {
 
     const profileQueries = createProfileQueries(getDb());
     const cfg = getCfg();
+    const defaultStAuto0 = path.join(os.homedir(), 'AI', 'stAuto0');
+    const defaultPython = path.join(os.homedir(), 'AI', 'stAuto0', 'venv', 'Scripts', 'python.exe');
     const executor = new RunExecutor(run, {
-      stAuto0Path: cfg.get('stAuto0_path') || '',
-      pythonPath: cfg.get('python_path') || 'python',
+      stAuto0Path: cfg.get('stAuto0_path') || defaultStAuto0,
+      pythonPath: cfg.get('python_path') || defaultPython,
       apiToken: req.headers.authorization?.replace('Bearer ', '') || '',
       mmPort: req.socket.localPort || process.env.PORT || 3000,
       spawn,

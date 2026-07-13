@@ -107,8 +107,11 @@ router.get('/automation', (req, res) => {
   const rawPath = configQueries.get('stAuto0_path') || '';
   const rawPython = configQueries.get('python_path') || '';
 
-  const stAuto0Path = resolvePath(rawPath);
-  const pythonPath = resolvePath(rawPython);
+  const defaultStAuto0 = path.join(os.homedir(), 'AI', 'stAuto0');
+  const defaultPython = path.join(os.homedir(), 'AI', 'stAuto0', 'venv', 'Scripts', 'python.exe');
+
+  const stAuto0Path = resolvePath(rawPath) || resolvePath(defaultStAuto0);
+  const pythonPath = resolvePath(rawPython) || resolvePath(defaultPython);
   const parallelLimit = parseInt(configQueries.get('parallel_limit'), 10) || 2;
 
   let availableProjects = [];

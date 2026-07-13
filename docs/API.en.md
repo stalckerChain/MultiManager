@@ -901,7 +901,7 @@ Run task manually. Requires `stAuto0Path` and `pythonPath` configured in Setting
 }
 ```
 
-**Response (400):** `{ "error": "Task is not active" }` / `{ "error": "stAuto0_path is not configured" }` / `{ "error": "python_path is not configured" }` / `{ "error": "No profiles to run the task" }` / `{ "error": "Invalid range format" }`
+**Response (400):** `{ "error": "Task is not active" }` / `{ "error": "No profiles to run the task" }` / `{ "error": "Invalid range format" }`
 **Response (404):** `{ "error": "Task not found" }`
 
 ---
@@ -1197,12 +1197,17 @@ Get recovery key (requires master password).
 
 Get automation settings (scripts and projects directory paths).
 
+If paths are not configured in the database, default values are used:
+- `stAuto0Path`: `~/AI/stAuto0` (on Windows: `C:\Users\<user>\AI\stAuto0`)
+- `pythonPath`: `~/AI/stAuto0/venv/Scripts/python.exe` (on Windows)
+
 **Response (200):**
 ```json
 {
-  "stAuto0Path": "",
-  "pythonPath": "",
-  "availableProjects": []
+  "stAuto0Path": "C:\\Users\\stalcker\\AI\\stAuto0",
+  "pythonPath": "C:\\Users\\stalcker\\AI\\stAuto0\\venv\\Scripts\\python.exe",
+  "parallelLimit": 2,
+  "availableProjects": ["concrete", "allscale", ...]
 }
 ```
 
@@ -1210,17 +1215,24 @@ Get automation settings (scripts and projects directory paths).
 
 ### PUT /api/settings/automation
 
-Update automation settings.
+Update automation settings. If paths are not provided, default values are used (`~/AI/stAuto0` and `~/AI/stAuto0/venv/Scripts/python.exe`).
 
 **Request Body:**
 ```json
 {
   "stAuto0Path": "/path/to/stAuto0",
-  "pythonPath": "/path/to/python"
+  "pythonPath": "/path/to/python",
+  "parallelLimit": 3
 }
 ```
 
-**Response (200):** Updated settings
+**Response (200):**
+```json
+{
+  "status": "success",
+  "syncResult": { "added": 2, "removed": 0, "total": 5 }
+}
+```
 
 ---
 

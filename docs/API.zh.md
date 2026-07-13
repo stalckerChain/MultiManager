@@ -1175,12 +1175,17 @@ Authorization: Bearer <token>
 
 获取自动化设置（脚本和项目目录路径）。
 
+如果数据库中未配置路径，将使用默认值：
+- `stAuto0Path`: `~/AI/stAuto0`（Windows 上为 `C:\Users\<user>\AI\stAuto0`）
+- `pythonPath`: `~/AI/stAuto0/venv/Scripts/python.exe`（Windows 上）
+
 **响应 (200)：**
 ```json
 {
-  "stAuto0Path": "",
-  "pythonPath": "",
-  "availableProjects": []
+  "stAuto0Path": "C:\\Users\\stalcker\\AI\\stAuto0",
+  "pythonPath": "C:\\Users\\stalcker\\AI\\stAuto0\\venv\\Scripts\\python.exe",
+  "parallelLimit": 2,
+  "availableProjects": ["concrete", "allscale", ...]
 }
 ```
 
@@ -1188,17 +1193,24 @@ Authorization: Bearer <token>
 
 ### PUT /api/settings/automation
 
-更新自动化设置。
+更新自动化设置。如果未提供路径，将使用默认值（`~/AI/stAuto0` 和 `~/AI/stAuto0/venv/Scripts/python.exe`）。
 
 **请求体：**
 ```json
 {
   "stAuto0Path": "/path/to/stAuto0",
-  "pythonPath": "/path/to/python"
+  "pythonPath": "/path/to/python",
+  "parallelLimit": 3
 }
 ```
 
-**响应 (200)：** 更新后的设置
+**响应 (200)：**
+```json
+{
+  "status": "success",
+  "syncResult": { "added": 2, "removed": 0, "total": 5 }
+}
+```
 
 ---
 

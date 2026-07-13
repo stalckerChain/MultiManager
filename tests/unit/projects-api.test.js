@@ -110,9 +110,17 @@ describe('POST /api/projects/sync', () => {
     app = setupApi(db);
   });
 
-  it('returns 400 if stAuto0_path not configured', async () => {
+  it('uses default stAuto0_path when not configured', async () => {
+    vi.spyOn(require('fs'), 'readdirSync').mockReturnValue(['concrete.py']);
+    vi.spyOn(require('fs'), 'existsSync').mockReturnValue(true);
+
     const res = await request(app).post('/api/projects/sync');
-    expect(res.status).toBe(400);
+    expect(res.status).toBe(200);
+    expect(res.body.added).toBe(1);
+    expect(res.body.total).toBe(1);
+
+    const projects = createProjectQueries(db);
+    expect(projects.getByName('concrete')).toBeTruthy();
   });
 
   it('scans projects directory and adds new projects', async () => {

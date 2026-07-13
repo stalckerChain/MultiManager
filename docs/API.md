@@ -905,7 +905,7 @@ Human-like ввод текста через CDP. Имитирует реальн
 
 ### POST /api/tasks/:id/run
 
-Запустить задачу вручную. Требует настроенных `stAuto0_path` и `python_path` в Settings. Spawn'ит Python для каждого профиля, пишет логи, обновляет статус выполнения.
+Запустить задачу вручную. Если `stAuto0_path` и `python_path` не настроены, используются дефолтные значения (`~/AI/stAuto0` и `~/AI/stAuto0/venv/Scripts/python.exe`). Spawn'ит Python для каждого профиля, пишет логи, обновляет статус выполнения.
 
 **Ответ (200):**
 ```json
@@ -921,7 +921,7 @@ Human-like ввод текста через CDP. Имитирует реальн
 }
 ```
 
-**Ответ (400):** `{ "error": "Задача неактивна" }` / `{ "error": "stAuto0_path не настроен" }` / `{ "error": "python_path не настроен" }` / `{ "error": "Нет профилей для выполнения задачи" }` / `{ "error": "Неверный формат range" }`
+**Ответ (400):** `{ "error": "Задача неактивна" }` / `{ "error": "Нет профилей для выполнения задачи" }` / `{ "error": "Неверный формат range" }`
 **Ответ (404):** `{ "error": "Задача не найдена" }`
 
 ---
@@ -1217,12 +1217,17 @@ Human-like ввод текста через CDP. Имитирует реальн
 
 Получить настройки автоматизации (пути к директориям скриптов и проектов).
 
+Если пути не настроены в БД, используются дефолтные значения:
+- `stAuto0Path`: `~/AI/stAuto0` (на Windows: `C:\Users\<user>\AI\stAuto0`)
+- `pythonPath`: `~/AI/stAuto0/venv/Scripts/python.exe` (на Windows)
+
 **Ответ (200):**
 ```json
 {
-  "stAuto0Path": "",
-  "pythonPath": "",
-  "availableProjects": []
+  "stAuto0Path": "C:\\Users\\stalcker\\AI\\stAuto0",
+  "pythonPath": "C:\\Users\\stalcker\\AI\\stAuto0\\venv\\Scripts\\python.exe",
+  "parallelLimit": 2,
+  "availableProjects": ["concrete", "allscale", ...]
 }
 ```
 
@@ -1230,17 +1235,24 @@ Human-like ввод текста через CDP. Имитирует реальн
 
 ### PUT /api/settings/automation
 
-Обновить настройки автоматизации.
+Обновить настройки автоматизации. Если пути не указаны, используются дефолтные значения (`~/AI/stAuto0` и `~/AI/stAuto0/venv/Scripts/python.exe`).
 
 **Тело запроса:**
 ```json
 {
   "stAuto0Path": "/path/to/stAuto0",
-  "pythonPath": "/path/to/python"
+  "pythonPath": "/path/to/python",
+  "parallelLimit": 3
 }
 ```
 
-**Ответ (200):** Обновленные настройки
+**Ответ (200):**
+```json
+{
+  "status": "success",
+  "syncResult": { "added": 2, "removed": 0, "total": 5 }
+}
+```
 
 ---
 
@@ -1270,7 +1282,7 @@ Human-like ввод текста через CDP. Имитирует реальн
 
 ### POST /api/projects/sync
 
-Сканировать директорию `stAuto0/projects/*.py`, добавить новые проекты, деактивировать удалённые. Игнорирует `__init__.py`, `base.py`, `loader.py`.
+Сканировать директорию `stAuto0/projects/*.py`, добавить новые проекты, деактивировать удалённые. Игнорирует `__init__.py`, `base.py`, `loader.py`. Если `stAuto0_path` не настроен, используется дефолтный путь `~/AI/stAuto0`.
 
 **Ответ (200):**
 ```json
@@ -1280,8 +1292,6 @@ Human-like ввод текста через CDP. Имитирует реальн
   "total": 5
 }
 ```
-
-**Ответ (400):** `{ "error": "stAuto0_path not configured" }`
 
 ---
 

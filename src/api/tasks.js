@@ -2,6 +2,7 @@ const express = require('express');
 const { v4: uuidv4 } = require('uuid');
 const { spawn } = require('child_process');
 const path = require('path');
+const os = require('os');
 const fs = require('fs');
 const { getDatabase } = require('../db');
 const { createTaskQueries, createProfileQueries, createSystemConfigQueries } = require('../db/queries');
@@ -106,8 +107,10 @@ router.post('/:id/run', async (req, res) => {
   if (!task) return res.status(404).json({ error: 'Задача не найдена' });
   if (!task.is_active) return res.status(400).json({ error: 'Задача неактивна' });
 
-  const stAuto0Path = configQueries.get('stAuto0_path');
-  const pythonPath = configQueries.get('python_path');
+  const defaultStAuto0 = path.join(os.homedir(), 'AI', 'stAuto0');
+  const defaultPython = path.join(os.homedir(), 'AI', 'stAuto0', 'venv', 'Scripts', 'python.exe');
+  const stAuto0Path = configQueries.get('stAuto0_path') || defaultStAuto0;
+  const pythonPath = configQueries.get('python_path') || defaultPython;
   if (!stAuto0Path) return res.status(400).json({ error: 'stAuto0_path не настроен' });
   if (!pythonPath) return res.status(400).json({ error: 'python_path не настроен' });
 

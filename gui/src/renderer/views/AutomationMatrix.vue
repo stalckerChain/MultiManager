@@ -29,7 +29,7 @@
       <p class="mb-4">{{ t('automation.noProfiles') }}</p>
     </div>
 
-    <div v-else-if="projects.length === 0 && !store.loading" class="text-center py-16 text-slate-400">
+    <div v-else-if="store.projects.length === 0 && !store.loading" class="text-center py-16 text-slate-400">
       <p class="mb-4">{{ t('automation.noProjects') }}</p>
     </div>
 
