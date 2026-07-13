@@ -24,8 +24,7 @@ const antTheme = computed(() => ({
   algorithm: appStore.theme === 'dark' ? theme.darkAlgorithm : theme.defaultAlgorithm,
 }));
 
-onMounted(async () => {
-  await appStore.init();
+onMounted(() => {
   initTheme();
 });
 </script>
