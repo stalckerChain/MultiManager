@@ -98,8 +98,13 @@ async function createWindow() {
   log('INFO', 'createWindow: token ready');
 
   const windowTitle = isDev ? `MultiManager v${appVersion} (dev)` : `MultiManager v${appVersion}`;
+const iconPath = path.join(__dirname, '..', '..', 'resources', 'icon.ico');
+if (process.platform === 'win32') {
+  app.setAppUserModelId('com.multimanager.gui');
+}
 
   mainWindow = new BrowserWindow({
+    icon: iconPath,
     width: 1400,
     height: 900,
     minWidth: 1024,
