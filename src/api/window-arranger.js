@@ -63,7 +63,9 @@ async function getScreenSize() {
         if (data.Width && data.Height) {
           return { width: data.Width, height: data.Height, x: data.X || 0, y: data.Y || 0 };
         }
-      } catch {}
+      } catch (err) {
+        logger.debug({ error: err.message }, 'Window arranger: System.Windows.Forms не доступен, fallback');
+      }
       // Fallback: Win32 SystemParametersInfo(SPI_GETWORKAREA) — не требует сборки
       try {
         const ps = `Add-Type @"
@@ -80,9 +82,13 @@ public class WA {
         if (parts.length === 4) {
           return { width: parts[2] || 1920, height: parts[3] || 1080, x: parts[0] || 0, y: parts[1] || 0 };
         }
-      } catch {}
+      } catch (err) {
+        logger.debug({ error: err.message }, 'Window arranger: SystemParametersInfo fallback не удался');
+      }
     }
-  } catch {}
+  } catch (err) {
+    logger.debug({ error: err.message }, 'Window arranger: getScreenSize fallback на дефолт');
+  }
 
   return { width: 1920, height: 1080 };
 }
@@ -218,7 +224,9 @@ async function getRunningWindows() {
             x: get('X'), y: get('Y'),
             width: get('WIDTH'), height: get('HEIGHT'),
           });
-        } catch {}
+        } catch (err) {
+          logger.debug({ pid, error: err.message }, 'Window arranger: ошибка получения геометрии окна');
+        }
       }
     } else if (platform === 'win32') {
       const pidOnly = targetPids.length > 0;

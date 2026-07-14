@@ -94,18 +94,18 @@ describe('getLocale', () => {
     fs.rmSync(tmpDir, { recursive: true, force: true });
   });
 
-  it('возвращает null при отсутствии _locales', () => {
-    expect(getLocale(tmpDir)).toBeNull();
+  it('возвращает null при отсутствии _locales', async () => {
+    expect(await getLocale(tmpDir)).toBeNull();
   });
 
-  it('возвращает en если доступна английская локаль', () => {
+  it('возвращает en если доступна английская локаль', async () => {
     fs.mkdirSync(path.join(tmpDir, '_locales', 'en'), { recursive: true });
-    expect(getLocale(tmpDir)).toBe('en');
+    expect(await getLocale(tmpDir)).toBe('en');
   });
 
-  it('возвращает первую доступную локаль если en нет', () => {
+  it('возвращает первую доступную локаль если en нет', async () => {
     fs.mkdirSync(path.join(tmpDir, '_locales', 'ru'), { recursive: true });
-    expect(getLocale(tmpDir)).toBe('ru');
+    expect(await getLocale(tmpDir)).toBe('ru');
   });
 });
 
@@ -120,43 +120,43 @@ describe('resolveMSG', () => {
     fs.rmSync(tmpDir, { recursive: true, force: true });
   });
 
-  it('возвращает исходную строку если нет MSG-плейсхолдера', () => {
-    expect(resolveMSG('Normal Name', tmpDir)).toBe('Normal Name');
+  it('возвращает исходную строку если нет MSG-плейсхолдера', async () => {
+    expect(await resolveMSG('Normal Name', tmpDir)).toBe('Normal Name');
   });
 
-  it('возвращает null для null', () => {
-    expect(resolveMSG(null, tmpDir)).toBeNull();
+  it('возвращает null для null', async () => {
+    expect(await resolveMSG(null, tmpDir)).toBeNull();
   });
 
-  it('резолвит __MSG_appName__ из messages.json', () => {
+  it('резолвит __MSG_appName__ из messages.json', async () => {
     const localesDir = path.join(tmpDir, '_locales', 'en');
     fs.mkdirSync(localesDir, { recursive: true });
     fs.writeFileSync(
       path.join(localesDir, 'messages.json'),
       JSON.stringify({ appName: { message: 'Zerion Wallet' } })
     );
-    expect(resolveMSG('__MSG_appName__', tmpDir)).toBe('Zerion Wallet');
+    expect(await resolveMSG('__MSG_appName__', tmpDir)).toBe('Zerion Wallet');
   });
 
-  it('резолвит __MSG_appDesc__ в описании', () => {
+  it('резолвит __MSG_appDesc__ в описании', async () => {
     const localesDir = path.join(tmpDir, '_locales', 'en');
     fs.mkdirSync(localesDir, { recursive: true });
     fs.writeFileSync(
       path.join(localesDir, 'messages.json'),
       JSON.stringify({ appDesc: { message: 'A crypto wallet' } })
     );
-    expect(resolveMSG('__MSG_appDesc__', tmpDir)).toBe('A crypto wallet');
+    expect(await resolveMSG('__MSG_appDesc__', tmpDir)).toBe('A crypto wallet');
   });
 
-  it('возвращает исходную строку если ключ отсутствует в messages.json', () => {
+  it('возвращает исходную строку если ключ отсутствует в messages.json', async () => {
     const localesDir = path.join(tmpDir, '_locales', 'en');
     fs.mkdirSync(localesDir, { recursive: true });
     fs.writeFileSync(path.join(localesDir, 'messages.json'), JSON.stringify({}));
-    expect(resolveMSG('__MSG_unknownKey__', tmpDir)).toBe('__MSG_unknownKey__');
+    expect(await resolveMSG('__MSG_unknownKey__', tmpDir)).toBe('__MSG_unknownKey__');
   });
 
-  it('возвращает исходную строку если _locales не существует', () => {
-    expect(resolveMSG('__MSG_appName__', tmpDir)).toBe('__MSG_appName__');
+  it('возвращает исходную строку если _locales не существует', async () => {
+    expect(await resolveMSG('__MSG_appName__', tmpDir)).toBe('__MSG_appName__');
   });
 });
 
@@ -171,22 +171,22 @@ describe('getManifest', () => {
     fs.rmSync(tmpDir, { recursive: true, force: true });
   });
 
-  it('читает валидный manifest.json', () => {
+  it('читает валидный manifest.json', async () => {
     fs.writeFileSync(
       path.join(tmpDir, 'manifest.json'),
       JSON.stringify({ name: 'Test Ext', version: '2.0.0', description: 'Desc' })
     );
-    const result = getManifest(tmpDir);
+    const result = await getManifest(tmpDir);
     expect(result).toEqual({ name: 'Test Ext', version: '2.0.0', description: 'Desc' });
   });
 
-  it('возвращает null при отсутствии manifest.json', () => {
-    expect(getManifest(tmpDir)).toBeNull();
+  it('возвращает null при отсутствии manifest.json', async () => {
+    expect(await getManifest(tmpDir)).toBeNull();
   });
 
-  it('возвращает null при невалидном JSON', () => {
+  it('возвращает null при невалидном JSON', async () => {
     fs.writeFileSync(path.join(tmpDir, 'manifest.json'), '{ invalid json }');
-    expect(getManifest(tmpDir)).toBeNull();
+    expect(await getManifest(tmpDir)).toBeNull();
   });
 });
 
@@ -201,12 +201,12 @@ describe('listExtensions', () => {
     fs.rmSync(testDir, { recursive: true, force: true });
   });
 
-  it('возвращает пустой массив когда нет расширений', () => {
-    const result = listExtensions(testDir);
+  it('возвращает пустой массив когда нет расширений', async () => {
+    const result = await listExtensions(testDir);
     expect(result).toEqual([]);
   });
 
-  it('возвращает расширения с правильным полем enabled', () => {
+  it('возвращает расширения с правильным полем enabled', async () => {
     const ext1Dir = path.join(testDir, 'ext-one');
     const ext2Dir = path.join(testDir, 'ext-two');
     const ext3Dir = path.join(testDir, 'ext-msg');
@@ -228,7 +228,7 @@ describe('listExtensions', () => {
       JSON.stringify({ appName: { message: 'Zerion Wallet' }, appDesc: { message: 'A crypto wallet' } })
     );
 
-    const result = listExtensions(testDir);
+    const result = await listExtensions(testDir);
     expect(result).toHaveLength(3);
 
     const ext1 = result.find(e => e.id === 'ext-one');
@@ -244,10 +244,10 @@ describe('listExtensions', () => {
     expect(ext3.description).toBe('A crypto wallet');
   });
 
-  it('пропускает папки без manifest.json', () => {
+  it('пропускает папки без manifest.json', async () => {
     fs.mkdirSync(path.join(testDir, 'empty-folder'), { recursive: true });
 
-    const result = listExtensions(testDir);
+    const result = await listExtensions(testDir);
     expect(result).toHaveLength(0);
   });
 });

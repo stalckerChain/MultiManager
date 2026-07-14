@@ -1,6 +1,9 @@
 const express = require('express');
 const { getDatabase, createProxyQueries } = require('../db');
-const { parseProxy, parseProxyList, checkProxy, rotateProxy } = require('../proxy');
+const { parseProxy, parseProxyList, checkProxy, rotateProxy, getTimezoneByIp } = require('../proxy');
+const { validate, proxyCreateSchema, proxyUpdateSchema, proxyImportSchema } = require('./validate');
+const { notFound, conflict, badGateway, serverError } = require('./errors');
+const { asyncHandler } = require('./errors');
 
 const router = express.Router();
 
@@ -13,42 +16,34 @@ router.get('/', (req, res) => {
 router.get('/:id', (req, res) => {
   const db = getDatabase();
   const proxy = createProxyQueries(db).getById(req.params.id);
-  
+
   if (!proxy) {
-    return res.status(404).json({ error: 'Прокси не найден' });
+    throw notFound('Прокси');
   }
-  
+
   res.json(proxy);
 });
 
-router.post('/', (req, res) => {
+router.post('/', validate(proxyCreateSchema), (req, res) => {
   const db = getDatabase();
   const queries = createProxyQueries(db);
-  
+
   const { type, host, port, username, password, proxy_rotation_url } = req.body;
-  
-  if (!type || !host || !port) {
-    return res.status(400).json({ error: 'Обязательные поля: type, host, port' });
-  }
 
   const existing = queries.findByHostPort(host, port);
   if (existing) {
-    return res.status(409).json({ error: 'Прокси с таким host:port уже существует' });
+    throw conflict('Прокси с таким host:port уже существует');
   }
 
   const proxy = queries.create({ type, host, port, username, password, proxy_rotation_url });
   res.status(201).json(proxy);
 });
 
-router.post('/import', (req, res) => {
+router.post('/import', validate(proxyImportSchema), (req, res) => {
   const db = getDatabase();
   const queries = createProxyQueries(db);
-  
+
   const { text } = req.body;
-  
-  if (!text) {
-    return res.status(400).json({ error: 'Поле text обязательно' });
-  }
 
   try {
     const proxies = parseProxyList(text);
@@ -72,17 +67,18 @@ router.post('/import', (req, res) => {
       duplicates
     });
   } catch (err) {
-    res.status(400).json({ error: err.message });
+    const { badRequest } = require('./errors');
+    throw badRequest(err.message);
   }
 });
 
-router.put('/:id', (req, res) => {
+router.put('/:id', validate(proxyUpdateSchema), (req, res) => {
   const db = getDatabase();
   const queries = createProxyQueries(db);
   const proxy = queries.getById(req.params.id);
-  
+
   if (!proxy) {
-    return res.status(404).json({ error: 'Прокси не найден' });
+    throw notFound('Прокси');
   }
 
   const { type, host, port, username, password, proxy_rotation_url, is_active } = req.body;
@@ -116,9 +112,9 @@ router.delete('/:id', (req, res) => {
   const db = getDatabase();
   const queries = createProxyQueries(db);
   const proxy = queries.getById(req.params.id);
-  
+
   if (!proxy) {
-    return res.status(404).json({ error: 'Прокси не найден' });
+    throw notFound('Прокси');
   }
 
   queries.delete(req.params.id);
@@ -129,9 +125,9 @@ router.post('/:id/check', async (req, res) => {
   const db = getDatabase();
   const queries = createProxyQueries(db);
   const proxy = queries.getById(req.params.id);
-  
+
   if (!proxy) {
-    return res.status(404).json({ error: 'Прокси не найден' });
+    throw notFound('Прокси');
   }
 
   if (proxy.proxy_rotation_url) {
@@ -139,7 +135,7 @@ router.post('/:id/check', async (req, res) => {
       await rotateProxy(proxy.proxy_rotation_url);
       await new Promise(resolve => setTimeout(resolve, 3000));
     } catch (err) {
-      return res.status(502).json({ error: 'Ошибка ротации', details: err.message });
+      throw badGateway('Ошибка ротации', err.message);
     }
   }
 
@@ -163,5 +159,26 @@ router.post('/:id/check', async (req, res) => {
 
   res.json(result);
 });
+
+router.get('/:id/timezone', asyncHandler(async (req, res) => {
+  const db = getDatabase();
+  const queries = createProxyQueries(db);
+  const proxy = queries.getById(req.params.id);
+
+  if (!proxy) {
+    throw notFound('Прокси');
+  }
+
+  if (!proxy.last_ip) {
+    throw badGateway('IP прокси не определён. Сначала выполните проверку прокси.');
+  }
+
+  const result = await getTimezoneByIp(proxy.last_ip);
+  if (!result.ok) {
+    throw serverError('Не удалось определить таймзону', result.error);
+  }
+
+  res.json({ timezone: result.timezone });
+}));
 
 module.exports = router;

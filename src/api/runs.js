@@ -5,6 +5,7 @@ const os = require('os');
 const { getDatabase } = require('../db');
 const { createRunQueries, createRunTaskQueries, createMatrixQueries, createSystemConfigQueries, createProfileQueries } = require('../db/queries');
 const { RunExecutor } = require('../executor');
+const { validate, runCreateSchema } = require('./validate');
 
 function createRunsRouter(opts = {}) {
   const router = express.Router();
@@ -36,7 +37,7 @@ function createRunsRouter(opts = {}) {
     res.json(result);
   });
 
-  router.post('/', (req, res) => {
+  router.post('/', validate(runCreateSchema), (req, res) => {
     const { name, parallel_limit } = req.body;
 
     const enabledPairs = getMatrix().getEnabledPairs();

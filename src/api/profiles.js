@@ -1,6 +1,8 @@
 const express = require('express');
 const { getDatabase, createProfileQueries } = require('../db');
 const { generateFingerprint } = require('../fingerprint');
+const { validate, profileCreateSchema, profileUpdateSchema, profileBatchSchema } = require('./validate');
+const { notFound, conflict } = require('./errors');
 
 const router = express.Router();
 
@@ -13,31 +15,19 @@ router.get('/', (req, res) => {
 router.get('/:id', (req, res) => {
   const db = getDatabase();
   const profile = createProfileQueries(db).getById(req.params.id);
-  
+
   if (!profile) {
-    return res.status(404).json({ error: 'Профиль не найден' });
+    throw notFound('Профиль');
   }
-  
+
   res.json(profile);
 });
 
-router.post('/batch', (req, res) => {
+router.post('/batch', validate(profileBatchSchema), (req, res) => {
   const db = getDatabase();
   const queries = createProfileQueries(db);
 
   const { accounts } = req.body;
-
-  if (!Array.isArray(accounts) || accounts.length === 0) {
-    return res.status(400).json({ error: 'accounts должен быть непустым массивом' });
-  }
-
-  for (let i = 0; i < accounts.length; i++) {
-    if (!accounts[i].name || !accounts[i].platform) {
-      return res.status(400).json({
-        error: `Элемент [${i}] требует name и platform`,
-      });
-    }
-  }
 
   const insertBatch = db.transaction((items) => {
     return items.map((acct) => {
@@ -76,19 +66,16 @@ router.post('/batch', (req, res) => {
     const created = insertBatch(accounts);
     res.status(201).json(created);
   } catch (err) {
-    res.status(500).json({ error: 'Ошибка массового импорта', details: err.message });
+    const { serverError } = require('./errors');
+    throw serverError('Ошибка массового импорта', err.message);
   }
 });
 
-router.post('/', (req, res) => {
+router.post('/', validate(profileCreateSchema), (req, res) => {
   const db = getDatabase();
   const queries = createProfileQueries(db);
-  
+
   const { name, proxy_id, platform, extensions, tags, notes, timezone, email, email_password, twitter_username, twitter_password, twitter_auth_token, twitter_email, discord_username, discord_password, discord_token, discord_email, wallet_evm_address, wallet_sol_address, wallet_password } = req.body;
-  
-  if (!name || !platform) {
-    return res.status(400).json({ error: 'Обязательные поля: name, platform' });
-  }
 
   const fingerprint = generateFingerprint(platform);
   
@@ -123,47 +110,50 @@ router.post('/', (req, res) => {
   res.status(201).json(profile);
 });
 
-router.put('/:id', (req, res) => {
+router.put('/:id', validate(profileUpdateSchema), (req, res) => {
   const db = getDatabase();
   const queries = createProfileQueries(db);
   const profile = queries.getById(req.params.id);
-  
+
   if (!profile) {
-    return res.status(404).json({ error: 'Профиль не найден' });
+    throw notFound('Профиль');
   }
 
-  const { name, proxy_id, platform, extensions, tags, notes, timezone, email, email_password, twitter_username, twitter_password, twitter_auth_token, twitter_email, discord_username, discord_password, discord_token, discord_email, wallet_evm_address, wallet_sol_address, wallet_password } = req.body;
-  
+  const body = req.body;
+  const toNull = (v) => (v === '' || v === undefined) ? null : v;
+
+  const { name, proxy_id, platform, extensions, tags, notes, timezone, email, email_password, twitter_username, twitter_password, twitter_auth_token, twitter_email, discord_username, discord_password, discord_token, discord_email, wallet_evm_address, wallet_sol_address, wallet_password } = body;
+
   const fingerprint = platform && platform !== profile.platform
     ? generateFingerprint(platform)
     : null;
 
   const updated = queries.update(req.params.id, {
-    name,
+    name: toNull(name),
     proxy_id: proxy_id !== undefined ? proxy_id : profile.proxy_id,
-    platform,
+    platform: toNull(platform),
     user_agent: fingerprint ? fingerprint.user_agent : null,
     screen_resolution: fingerprint ? fingerprint.screen_resolution : null,
     hardware_cores: fingerprint ? fingerprint.hardware_cores : null,
     hardware_memory: fingerprint ? fingerprint.hardware_memory : null,
     fingerprint_seed: fingerprint ? fingerprint.fingerprint_seed : null,
-    extensions,
-    tags,
-    notes,
-    timezone,
-    email,
-    email_password,
-    twitter_username,
-    twitter_password,
-    twitter_auth_token,
-    twitter_email,
-    discord_username,
-    discord_password,
-    discord_token,
-    discord_email,
-    wallet_evm_address,
-    wallet_sol_address,
-    wallet_password,
+    extensions: toNull(extensions),
+    tags: toNull(tags),
+    notes: toNull(notes),
+    timezone: toNull(timezone),
+    email: toNull(email),
+    email_password: toNull(email_password),
+    twitter_username: toNull(twitter_username),
+    twitter_password: toNull(twitter_password),
+    twitter_auth_token: toNull(twitter_auth_token),
+    twitter_email: toNull(twitter_email),
+    discord_username: toNull(discord_username),
+    discord_password: toNull(discord_password),
+    discord_token: toNull(discord_token),
+    discord_email: toNull(discord_email),
+    wallet_evm_address: toNull(wallet_evm_address),
+    wallet_sol_address: toNull(wallet_sol_address),
+    wallet_password: toNull(wallet_password),
   });
 
   res.json(updated);
@@ -173,13 +163,13 @@ router.delete('/:id', (req, res) => {
   const db = getDatabase();
   const queries = createProfileQueries(db);
   const profile = queries.getById(req.params.id);
-  
+
   if (!profile) {
-    return res.status(404).json({ error: 'Профиль не найден' });
+    throw notFound('Профиль');
   }
 
   if (profile.status !== 'stopped') {
-    return res.status(409).json({ error: 'Невозможно удалить запущенный профиль' });
+    throw conflict('Невозможно удалить запущенный профиль');
   }
 
   queries.delete(req.params.id);
@@ -190,9 +180,9 @@ router.post('/:id/regenerate', (req, res) => {
   const db = getDatabase();
   const queries = createProfileQueries(db);
   const profile = queries.getById(req.params.id);
-  
+
   if (!profile) {
-    return res.status(404).json({ error: 'Профиль не найден' });
+    throw notFound('Профиль');
   }
 
   const fingerprint = generateFingerprint(profile.platform);

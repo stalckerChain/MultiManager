@@ -31,18 +31,18 @@ Authorization: Bearer <token>
 
 ### POST /api/profiles
 
-Создать новый профиль. Отпечаток генерируется автоматически.
+Создать новый профиль. Отпечаток генерируется автоматически. **timezone обязателен.**
 
 **Тело запроса:**
 ```json
 {
   "name": "Мой профиль",
   "platform": "windows",
+  "timezone": "Europe/Berlin",
   "proxy_id": 1,
   "extensions": ["ext1", "ext2"],
   "tags": ["tag1"],
   "notes": "Заметка",
-  "timezone": "Asia/Bishkek",
   "email": "user@example.com",
   "email_password": "secret",
   "twitter_username": "my_twitter",
@@ -295,6 +295,27 @@ Authorization: Bearer <token>
 {
   "error": "Ошибка ротации",
   "details": "Timeout"
+}
+```
+
+---
+
+### GET /api/proxies/:id/timezone
+
+Определить таймзону по IP-адресу прокси. Требуется предварительная проверка прокси.
+
+**Ответ (200):**
+```json
+{
+  "timezone": "Europe/Berlin"
+}
+```
+
+**Ответ (500):**
+```json
+{
+  "error": "IP прокси не определён. Сначала выполните проверку прокси.",
+  "code": "BAD_GATEWAY"
 }
 ```
 

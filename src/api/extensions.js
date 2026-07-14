@@ -22,30 +22,30 @@ function getExtensionsDir() {
   }
 }
 
-function ensureDir(dir) {
-  if (!fs.existsSync(dir)) {
-    fs.mkdirSync(dir, { recursive: true });
+async function ensureDir(dir) {
+  try {
+    await fs.promises.access(dir);
+  } catch {
+    await fs.promises.mkdir(dir, { recursive: true });
   }
 }
 
-function getManifest(extDir) {
+async function getManifest(extDir) {
   const manifestPath = path.join(extDir, 'manifest.json');
-  if (!fs.existsSync(manifestPath)) return null;
-
   try {
-    const data = fs.readFileSync(manifestPath, 'utf-8');
+    await fs.promises.access(manifestPath);
+    const data = await fs.promises.readFile(manifestPath, 'utf-8');
     return JSON.parse(data);
   } catch {
     return null;
   }
 }
 
-function getLocale(extDir) {
+async function getLocale(extDir) {
   const localesDir = path.join(extDir, '_locales');
-  if (!fs.existsSync(localesDir)) return null;
-
   try {
-    const locales = fs.readdirSync(localesDir);
+    await fs.promises.access(localesDir);
+    const locales = await fs.promises.readdir(localesDir);
     const sysLocale = Intl.DateTimeFormat().resolvedOptions().locale;
     const sysLang = sysLocale.split('-')[0];
     if (locales.includes(sysLocale)) return sysLocale;
@@ -58,47 +58,55 @@ function getLocale(extDir) {
   }
 }
 
-function resolveMSG(value, extDir) {
+async function resolveMSG(value, extDir) {
   if (!value || typeof value !== 'string') return value;
 
   const msgRegex = /__MSG_(\w+)__/g;
   if (!msgRegex.test(value)) return value;
   msgRegex.lastIndex = 0;
 
-  const locale = getLocale(extDir);
+  const locale = await getLocale(extDir);
   if (!locale) return value;
 
   const messagesPath = path.join(extDir, '_locales', locale, 'messages.json');
-  if (!fs.existsSync(messagesPath)) return value;
-
   try {
-    const messages = JSON.parse(fs.readFileSync(messagesPath, 'utf-8'));
+    await fs.promises.access(messagesPath);
+    const messages = JSON.parse(await fs.promises.readFile(messagesPath, 'utf-8'));
     return value.replace(msgRegex, (_, key) => messages[key]?.message || value);
   } catch {
     return value;
   }
 }
 
-function listExtensions(dir) {
+async function listExtensions(dir) {
   const extDir = dir || getExtensionsDir();
-  ensureDir(extDir);
+  await ensureDir(extDir);
 
   const extensions = [];
-  const entries = fs.readdirSync(extDir, { withFileTypes: true });
+  const entries = await fs.promises.readdir(extDir, { withFileTypes: true });
 
   for (const entry of entries) {
     if (!entry.isDirectory()) continue;
 
-    const manifest = getManifest(path.join(extDir, entry.name));
+    const manifest = await getManifest(path.join(extDir, entry.name));
     if (!manifest) continue;
 
     const extPath = path.join(extDir, entry.name);
+    let enabled = false;
+    try {
+      await fs.promises.access(path.join(extPath, '.enabled'));
+      enabled = true;
+    } catch {}
+
+    const name = await resolveMSG(manifest.name, extPath) || entry.name;
+    const description = await resolveMSG(manifest.description, extPath) || '';
+
     extensions.push({
       id: entry.name,
-      name: resolveMSG(manifest.name, extPath) || entry.name,
+      name,
       version: manifest.version || '1.0.0',
-      description: resolveMSG(manifest.description, extPath) || '',
-      enabled: fs.existsSync(path.join(extPath, '.enabled')),
+      description,
+      enabled,
       path: extPath,
     });
   }

@@ -20,15 +20,33 @@
           <a-button type="dashed" block @click="generateFingerprint">
             {{ t('profiles.modal.generate') }}
           </a-button>
-          <a-form-item :label="t('profiles.modal.timezone')">
-            <a-select v-model:value="form.timezone">
-              <a-select-option value="Asia/Bishkek">Asia/Bishkek</a-select-option>
-              <a-select-option value="Asia/Tokyo">Asia/Tokyo</a-select-option>
-              <a-select-option value="Europe/Berlin">Europe/Berlin</a-select-option>
-              <a-select-option value="Europe/London">Europe/London</a-select-option>
-              <a-select-option value="America/New_York">America/New_York</a-select-option>
-              <a-select-option value="UTC">UTC</a-select-option>
-            </a-select>
+          <a-form-item :label="t('profiles.modal.timezone')" required>
+            <template #extra>
+              <span v-if="!form.timezone && !profile" class="text-xs text-orange-400">
+                Timezone is required. Select from proxy or enter manually.
+              </span>
+            </template>
+            <div class="flex gap-2">
+              <a-select
+                v-model:value="form.timezone"
+                show-search
+                placeholder="Search timezone..."
+                :filter-option="filterTimezone"
+                style="flex: 1"
+              >
+                <a-select-option v-for="tz in timezones" :key="tz" :value="tz">
+                  {{ tz }}
+                </a-select-option>
+              </a-select>
+              <a-button
+                v-if="form.proxy_id"
+                :loading="timezoneLoading"
+                @click="setTimezoneFromProxy"
+                title="Set timezone based on proxy IP"
+              >
+                From Proxy
+              </a-button>
+            </div>
           </a-form-item>
           <a-divider />
           <div class="grid grid-cols-2 gap-3">
@@ -113,6 +131,23 @@ const emit = defineEmits(['update:open', 'save']);
 const activeTab = ref('basic');
 const allExtensions = ref([]);
 const extensionsLoading = ref(false);
+const timezoneLoading = ref(false);
+
+const timezones = [
+  'UTC',
+  'America/New_York', 'America/Chicago', 'America/Denver', 'America/Los_Angeles',
+  'America/Sao_Paulo', 'America/Argentina/Buenos_Aires',
+  'Europe/London', 'Europe/Paris', 'Europe/Berlin', 'Europe/Moscow', 'Europe/Istanbul',
+  'Asia/Dubai', 'Asia/Kolkata', 'Asia/Bangkok', 'Asia/Shanghai', 'Asia/Tokyo', 'Asia/Seoul',
+  'Asia/Bishkek', 'Asia/Almaty',
+  'Australia/Sydney', 'Pacific/Auckland',
+  'Africa/Cairo', 'Africa/Lagos', 'Africa/Johannesburg',
+];
+
+function filterTimezone(input, option) {
+  return option.value.toLowerCase().includes(input.toLowerCase());
+}
+
 const form = reactive({
   name: '',
   tags: [],
@@ -122,7 +157,7 @@ const form = reactive({
   notes: '',
   user_agent: '',
   screen_resolution: '',
-  timezone: 'Asia/Bishkek',
+  timezone: '',
   email: '',
   email_password: '',
   twitter_username: '',
@@ -135,7 +170,7 @@ const form = reactive({
   discord_email: '',
   wallet_evm_address: '',
   wallet_sol_address: '',
-  wallet_password: 'asdfj*KK',
+  wallet_password: '',
 });
 
 async function fetchExtensions() {
@@ -147,6 +182,19 @@ async function fetchExtensions() {
     allExtensions.value = [];
   } finally {
     extensionsLoading.value = false;
+  }
+}
+
+async function setTimezoneFromProxy() {
+  if (!form.proxy_id) return;
+  timezoneLoading.value = true;
+  try {
+    const { data } = await client.get(`/api/proxies/${form.proxy_id}/timezone`);
+    form.timezone = data.timezone;
+  } catch (err) {
+    console.warn('Failed to get timezone from proxy:', err.message || err);
+  } finally {
+    timezoneLoading.value = false;
   }
 }
 
@@ -165,7 +213,7 @@ watch(() => props.profile, (p) => {
       notes: p.notes || '',
       user_agent: p.user_agent,
       screen_resolution: p.screen_resolution,
-      timezone: p.timezone || 'Asia/Bishkek',
+      timezone: p.timezone || '',
       email: p.email || '',
       email_password: p.email_password || '',
       twitter_username: p.twitter_username || '',
@@ -178,20 +226,26 @@ watch(() => props.profile, (p) => {
       discord_email: p.discord_email || '',
       wallet_evm_address: p.wallet_evm_address || '',
       wallet_sol_address: p.wallet_sol_address || '',
-      wallet_password: p.wallet_password || 'asdfj*KK',
+      wallet_password: p.wallet_password || '',
     });
   } else {
     Object.assign(form, {
       name: '', tags: [], platform: 'windows', proxy_id: null,
       extensions: [], notes: '', user_agent: '', screen_resolution: '',
-      timezone: 'Asia/Bishkek',
+      timezone: '',
       email: '', email_password: '',
       twitter_username: '', twitter_password: '', twitter_auth_token: '', twitter_email: '',
       discord_username: '', discord_password: '', discord_token: '', discord_email: '',
-      wallet_evm_address: '', wallet_sol_address: '', wallet_password: 'asdfj*KK',
+      wallet_evm_address: '', wallet_sol_address: '', wallet_password: '',
     });
   }
 }, { immediate: true });
+
+watch(() => form.proxy_id, async (newProxyId, oldProxyId) => {
+  if (newProxyId && newProxyId !== oldProxyId) {
+    await setTimezoneFromProxy();
+  }
+});
 
 function tryParse(json) {
   try { return JSON.parse(json); } catch { return []; }

@@ -1,6 +1,8 @@
 const express = require('express');
+const rateLimit = require('express-rate-limit');
 const { authMiddleware } = require('../api/auth');
 const { logger } = require('../logger');
+const { ApiError } = require('../api/errors');
 const profilesRouter = require('../api/profiles');
 const proxiesRouter = require('../api/proxies');
 const cookiesRouter = require('../api/cookies');
@@ -20,7 +22,18 @@ const { setupWebSocket } = require('./websocket');
 
 const app = express();
 
-app.use(express.json());
+app.use(express.json({ limit: '1mb' }));
+
+const apiLimiter = rateLimit({
+  windowMs: 60 * 1000,
+  max: 500,
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: { error: 'Слишком много запросов', code: 'RATE_LIMIT' },
+  skip: (req) => req.path === '/health',
+});
+
+app.use('/api/', apiLimiter);
 app.use(authMiddleware);
 
 app.get('/health', (req, res) => {
@@ -44,8 +57,11 @@ app.use('/api/runs', createRunsRouter());
 app.use('/api/internal/runs', createInternalRunsRouter());
 
 app.use((err, req, res, next) => {
+  if (err instanceof ApiError) {
+    return res.status(err.status).json(err.toJSON());
+  }
   logger.error({ err: err.message, stack: err.stack }, 'Unhandled server error');
-  res.status(500).json({ error: 'Внутренняя ошибка сервера' });
+  res.status(500).json({ error: 'Внутренняя ошибка сервера', code: 'INTERNAL_ERROR' });
 });
 
 module.exports = { app, setupWebSocket };

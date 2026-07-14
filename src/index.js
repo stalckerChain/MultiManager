@@ -38,5 +38,4 @@ setupWebSocket(server);
 server.listen(port, '127.0.0.1', () => {
   logger.info(`Core-движок запущен на http://127.0.0.1:${port}`);
   logger.info(`WebSocket доступен на ws://127.0.0.1:${port}/ws`);
-  logger.info(`API Token: ${token}`);
 });

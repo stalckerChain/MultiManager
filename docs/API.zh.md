@@ -31,18 +31,18 @@ Authorization: Bearer <token>
 
 ### POST /api/profiles
 
-创建新配置文件。指纹自动生成。
+创建新配置文件。指纹自动生成。**时区为必填项。**
 
 **请求体：**
 ```json
 {
   "name": "我的配置",
   "platform": "windows",
+  "timezone": "Europe/Berlin",
   "proxy_id": 1,
   "extensions": ["ext1", "ext2"],
   "tags": ["tag1"],
   "notes": "备注",
-  "timezone": "Asia/Bishkek",
   "email": "user@example.com",
   "email_password": "secret",
   "twitter_username": "my_twitter",
@@ -295,6 +295,27 @@ Authorization: Bearer <token>
 {
   "error": "轮换错误",
   "details": "Timeout"
+}
+```
+
+---
+
+### GET /api/proxies/:id/timezone
+
+根据代理 IP 地址获取时区。需要先执行代理检查。
+
+**响应 (200)：**
+```json
+{
+  "timezone": "Europe/Berlin"
+}
+```
+
+**响应 (500)：**
+```json
+{
+  "error": "代理 IP 未确定。请先执行代理检查。",
+  "code": "BAD_GATEWAY"
 }
 ```
 

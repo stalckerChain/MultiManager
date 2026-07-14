@@ -1,6 +1,6 @@
 const WebSocket = require('ws');
-const http = require('http');
 const { logger } = require('../logger');
+const cdp = require('../cdp/client');
 
 const SYNC_EVENT_SCRIPT = `
 (function() {
@@ -65,33 +65,7 @@ class CdpManager {
   }
 
   async _discoverWsUrl(cdpPort) {
-    const versions = ['/json/version', '/json'];
-    for (const path of versions) {
-      try {
-        const data = await new Promise((resolve, reject) => {
-          const req = http.get(`http://127.0.0.1:${cdpPort}${path}`, { timeout: 3000 }, (res) => {
-            let body = '';
-            res.on('data', (chunk) => { body += chunk; });
-            res.on('end', () => {
-              try { resolve(JSON.parse(body)); } catch { reject(new Error('Invalid JSON')); }
-            });
-          });
-          req.on('error', reject);
-          req.on('timeout', () => { req.destroy(); reject(new Error('timeout')); });
-        });
-
-        if (path === '/json/version' && data.webSocketDebuggerUrl) {
-          return data.webSocketDebuggerUrl;
-        }
-
-        if (path === '/json' && Array.isArray(data)) {
-          const page = data.find(t => t.type === 'page' && t.webSocketDebuggerUrl);
-          if (page) return page.webSocketDebuggerUrl;
-        }
-      } catch {}
-    }
-
-    return `ws://127.0.0.1:${cdpPort}/devtools/browser`;
+    return cdp.discoverWsUrl(cdpPort);
   }
 
   async connect(profileId, cdpPort, opts = {}) {
@@ -277,7 +251,9 @@ class CdpManager {
                 if (event.__mm_event) {
                   this.onEvent(eventProfileId, event, msg.sessionId);
                 }
-              } catch {}
+              } catch (err) {
+                logger.debug({ error: err.message }, 'CDP: ошибка парсинга sync event');
+              }
             }
           }
         }
@@ -320,7 +296,9 @@ class CdpManager {
                 if (event.__mm_event) {
                   this.onEvent(consoleProfileId, event);
                 }
-              } catch {}
+              } catch (err) {
+                logger.debug({ error: err.message }, 'CDP: ошибка парсинга console event');
+              }
             }
           }
         }
@@ -333,7 +311,9 @@ class CdpManager {
             logger.error({ profileId: excProfileId, details: msg.params?.exceptionDetails?.text }, 'CDP: exception in page');
           }
         }
-      } catch {}
+      } catch (err) {
+        logger.debug({ error: err.message }, 'CDP: ошибка обработки сообщения');
+      }
     };
 
     ws.on('message', handler);
@@ -379,7 +359,9 @@ class CdpManager {
 
           callback(session);
         }
-      } catch {}
+      } catch (err) {
+        logger.debug({ profileId, targetId, error: err.message }, 'CDP: ошибка обработки attachToTarget');
+      }
     };
     ws.on('message', handler);
   }
@@ -463,33 +445,7 @@ class CdpManager {
   }
 
   _sendAndWait(ws, method, params, sessionId) {
-    return new Promise((resolve, reject) => {
-      const id = Math.floor(Math.random() * 1e9);
-      const timeout = setTimeout(() => {
-        ws.removeListener('message', handler);
-        resolve(null);
-      }, 10000);
-
-      const handler = (raw) => {
-        try {
-          const msg = JSON.parse(raw);
-          if (msg.id === id) {
-            clearTimeout(timeout);
-            ws.removeListener('message', handler);
-            if (msg.error) {
-              reject(new Error(msg.error.message));
-            } else {
-              resolve(msg.result);
-            }
-          }
-        } catch {}
-      };
-      ws.on('message', handler);
-
-      const payload = { id, method, params };
-      if (sessionId) payload.sessionId = sessionId;
-      ws.send(JSON.stringify(payload));
-    });
+    return cdp.call(ws, method, params, { sessionId, timeout: 10000 });
   }
 
   async activateAndFocusTarget(profileId, targetId) {
@@ -577,7 +533,9 @@ class CdpManager {
               resolve({ scrollX: 0, scrollY: 0 });
             }
           }
-        } catch {}
+        } catch (err) {
+          logger.debug({ profileId, error: err.message }, 'CDP: ошибка парсинга scroll');
+        }
       };
       session.ws.on('message', handler);
       this._send(session, 'Runtime.evaluate', {
@@ -628,7 +586,9 @@ class CdpManager {
             logger.info({ profileId, targetId, url }, 'CDP: created new tab');
             resolve(targetId);
           }
-        } catch {}
+        } catch (err) {
+          logger.debug({ profileId, error: err.message }, 'CDP: ошибка парсинга createTarget');
+        }
       };
       bc.ws.on('message', handler);
     });
@@ -754,7 +714,9 @@ class CdpManager {
             );
             resolve(targets);
           }
-        } catch {}
+        } catch (err) {
+          logger.debug({ profileId, error: err.message }, 'CDP: ошибка парсинга getTargets');
+        }
       };
       bc.ws.on('message', handler);
     });
@@ -790,26 +752,8 @@ class CdpManager {
     const cdpPort = bc?.cdpPort;
     if (!cdpPort) return [];
 
-    return new Promise((resolve) => {
-      const req = http.get(`http://127.0.0.1:${cdpPort}/json`, { timeout: 3000 }, (res) => {
-        let body = '';
-        res.on('data', (chunk) => { body += chunk; });
-        res.on('end', () => {
-          try {
-            const data = JSON.parse(body);
-            if (!Array.isArray(data)) return resolve([]);
-            const tabs = data
-              .filter(t => t.type === 'page' && !(t.url || '').startsWith('devtools://'))
-              .map(t => ({ targetId: t.id, url: t.url || '', type: t.type }));
-            resolve(tabs);
-          } catch {
-            resolve([]);
-          }
-        });
-      });
-      req.on('error', () => resolve([]));
-      req.on('timeout', () => { req.destroy(); resolve([]); });
-    });
+    const tabs = await cdp.getHttpTabs(cdpPort);
+    return tabs.map(t => ({ targetId: t.id, url: t.url, type: t.type }));
   }
 
   /**
@@ -869,7 +813,9 @@ class CdpManager {
             logger.info({ profileId, targetId, sessionId }, 'CDP: attachToExistingTarget attached');
             resolve(session);
           }
-        } catch {}
+        } catch (err) {
+          logger.debug({ profileId, targetId, error: err.message }, 'CDP: ошибка обработки attachToExistingTarget');
+        }
       };
       bc.ws.on('message', handler);
     });

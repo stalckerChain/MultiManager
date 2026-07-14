@@ -252,7 +252,9 @@ class MultiController {
       const scroll = await this.cdp.getPageScroll(profileId);
       const slaveData = this.slaves.get(profileId);
       if (slaveData) slaveData.scroll = scroll;
-    } catch {}
+    } catch (err) {
+      logger.debug({ profileId, error: err.message }, 'Multi-control: ошибка загрузки scroll позиции');
+    }
   }
 
   async onMouseMoved(params) {

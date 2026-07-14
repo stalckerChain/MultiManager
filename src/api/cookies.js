@@ -3,6 +3,7 @@ const path = require('path');
 const fs = require('fs');
 const { getDatabase, createCookieQueries, createProfileQueries } = require('../db');
 const { parseJsonCookies, parseNetscapeCookies, exportCookiesToJson } = require('../cookie');
+const { validate, cookieImportSchema } = require('./validate');
 
 const router = express.Router();
 
@@ -20,37 +21,30 @@ router.get('/:profileId', (req, res) => {
   res.json(cookies);
 });
 
-router.post('/:profileId/import', (req, res) => {
+router.post('/:profileId/import', validate(cookieImportSchema), async (req, res) => {
   const db = getDatabase();
   const profileQueries = createProfileQueries(db);
   const cookieQueries = createCookieQueries(db);
-  
+
   const profile = profileQueries.getById(req.params.profileId);
   if (!profile) {
     return res.status(404).json({ error: 'Профиль не найден' });
   }
 
   const { format, content } = req.body;
-  
-  if (!format || !content) {
-    return res.status(400).json({ error: 'Обязательные поля: format, content' });
-  }
 
   let cookies;
   try {
     const tmpPath = path.join('/tmp', `cookies_${Date.now()}.txt`);
-    fs.writeFileSync(tmpPath, content);
-    
+    await fs.promises.writeFile(tmpPath, content);
+
     if (format === 'json') {
       cookies = parseJsonCookies(tmpPath);
-    } else if (format === 'netscape') {
-      cookies = parseNetscapeCookies(tmpPath);
     } else {
-      fs.unlinkSync(tmpPath);
-      return res.status(400).json({ error: 'Поддерживаемые форматы: json, netscape' });
+      cookies = parseNetscapeCookies(tmpPath);
     }
-    
-    fs.unlinkSync(tmpPath);
+
+    await fs.promises.unlink(tmpPath);
   } catch (err) {
     return res.status(400).json({ error: 'Ошибка парсинга куки', details: err.message });
   }

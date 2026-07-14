@@ -31,18 +31,18 @@ Check server health.
 
 ### POST /api/profiles
 
-Create a new profile. Fingerprint is auto-generated.
+Create a new profile. Fingerprint is auto-generated. **timezone is required.**
 
 **Request Body:**
 ```json
 {
   "name": "My Profile",
   "platform": "windows",
+  "timezone": "Europe/Berlin",
   "proxy_id": 1,
   "extensions": ["ext1", "ext2"],
   "tags": ["tag1"],
   "notes": "Note",
-  "timezone": "Asia/Bishkek",
   "email": "user@example.com",
   "email_password": "secret",
   "twitter_username": "my_twitter",
@@ -295,6 +295,27 @@ Check proxy (with auto-rotation if configured).
 {
   "error": "Rotation error",
   "details": "Timeout"
+}
+```
+
+---
+
+### GET /api/proxies/:id/timezone
+
+Get timezone by proxy IP address. Requires prior proxy check.
+
+**Response (200):**
+```json
+{
+  "timezone": "Europe/Berlin"
+}
+```
+
+**Response (500):**
+```json
+{
+  "error": "Proxy IP not determined. Run proxy check first.",
+  "code": "BAD_GATEWAY"
 }
 ```
 

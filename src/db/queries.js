@@ -28,20 +28,20 @@ function createProfileQueries(db) {
       extensions = COALESCE(?, extensions),
       tags = COALESCE(?, tags),
       notes = COALESCE(?, notes),
-      timezone = COALESCE(?, timezone),
-      email = COALESCE(?, email),
-      email_password = COALESCE(?, email_password),
-      twitter_username = COALESCE(?, twitter_username),
-      twitter_password = COALESCE(?, twitter_password),
-      twitter_auth_token = COALESCE(?, twitter_auth_token),
-      twitter_email = COALESCE(?, twitter_email),
-      discord_username = COALESCE(?, discord_username),
-      discord_password = COALESCE(?, discord_password),
-      discord_token = COALESCE(?, discord_token),
-      discord_email = COALESCE(?, discord_email),
-      wallet_evm_address = COALESCE(?, wallet_evm_address),
-      wallet_sol_address = COALESCE(?, wallet_sol_address),
-      wallet_password = COALESCE(?, wallet_password)
+      timezone = ?,
+      email = ?,
+      email_password = ?,
+      twitter_username = ?,
+      twitter_password = ?,
+      twitter_auth_token = ?,
+      twitter_email = ?,
+      discord_username = ?,
+      discord_password = ?,
+      discord_token = ?,
+      discord_email = ?,
+      wallet_evm_address = ?,
+      wallet_sol_address = ?,
+      wallet_password = ?
     WHERE id = ?
   `);
 
@@ -88,7 +88,7 @@ function createProfileQueries(db) {
         JSON.stringify(enc.extensions || []),
         JSON.stringify(enc.tags || []),
         enc.notes || '',
-        enc.timezone || 'Asia/Bishkek',
+        enc.timezone || null,
         enc.email || null,
         enc.email_password || null,
         enc.twitter_username || null,
@@ -101,7 +101,7 @@ function createProfileQueries(db) {
         enc.discord_email || null,
         enc.wallet_evm_address || null,
         enc.wallet_sol_address || null,
-        enc.wallet_password || 'asdfj*KK'
+        enc.wallet_password || null
       );
       return decryptRowSafe(getById.get(id));
     },

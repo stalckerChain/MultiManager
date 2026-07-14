@@ -33,7 +33,7 @@ function createTables(db) {
       notes TEXT DEFAULT '',
       status TEXT DEFAULT 'stopped' CHECK(status IN ('stopped', 'starting', 'running')),
       pid INTEGER,
-      timezone TEXT DEFAULT 'Asia/Bishkek',
+      timezone TEXT,
       email TEXT,
       email_password TEXT,
       twitter_username TEXT,
@@ -46,7 +46,7 @@ function createTables(db) {
       discord_email TEXT,
       wallet_evm_address TEXT,
       wallet_sol_address TEXT,
-      wallet_password TEXT DEFAULT 'asdfj*KK',
+      wallet_password TEXT,
       created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
       updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
       FOREIGN KEY (proxy_id) REFERENCES proxies(id) ON DELETE SET NULL
@@ -194,16 +194,13 @@ function migrateTables(db) {
   const missing = NEW_PROFILE_COLUMNS.filter(c => !existing.includes(c));
 
   if (missing.length > 0) {
-    const tz = 'Asia/Bishkek';
-    const walletPw = 'asdfj*KK';
-
     const mig = db.transaction(() => {
       for (const col of missing) {
         let sql;
         if (col === 'timezone') {
-          sql = `ALTER TABLE profiles ADD COLUMN timezone TEXT DEFAULT '${tz}'`;
+          sql = `ALTER TABLE profiles ADD COLUMN timezone TEXT`;
         } else if (col === 'wallet_password') {
-          sql = `ALTER TABLE profiles ADD COLUMN wallet_password TEXT DEFAULT '${walletPw}'`;
+          sql = `ALTER TABLE profiles ADD COLUMN wallet_password TEXT`;
         } else {
           sql = `ALTER TABLE profiles ADD COLUMN ${col} TEXT`;
         }

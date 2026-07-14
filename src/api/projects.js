@@ -5,6 +5,7 @@ const os = require('os');
 const { getDatabase } = require('../db');
 const { createProjectQueries, createMatrixQueries, createProfileQueries, createSystemConfigQueries } = require('../db/queries');
 const { buildProjectsFromConfig, parseAccountRanges } = require('../config/stauto0-config');
+const { validate, projectUpdateSchema } = require('./validate');
 
 function createProjectsRouter(opts = {}) {
   const router = express.Router();
@@ -107,7 +108,7 @@ function createProjectsRouter(opts = {}) {
     res.json({ ...project, profiles });
   });
 
-  router.put('/:name', (req, res) => {
+  router.put('/:name', validate(projectUpdateSchema), (req, res) => {
     const existing = getProjects().getByName(req.params.name);
     if (!existing) {
       return res.status(404).json({ error: 'Project not found' });

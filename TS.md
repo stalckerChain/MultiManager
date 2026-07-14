@@ -60,7 +60,7 @@
 **Новые колонки таблицы `profiles`:**
 | Колонка | Тип | Назначение |
 |---------|-----|-----------|
-| `timezone` | TEXT DEFAULT 'Asia/Bishkek' | Прокидывается через CDP `Emulation.setTimezoneOverride` при старте |
+| `timezone` | TEXT (обязателен при создании) | Прокидывается через CDP `Emulation.setTimezoneOverride` при старте. Определяется автоматически по IP прокси или задаётся вручную. |
 | `email` | TEXT | Email аккаунта |
 | `email_password` | TEXT | Пароль почты (см. ToDo.md §7.2 — шифрование) |
 | `twitter_username` | TEXT | Логин X/Twitter |
@@ -311,7 +311,7 @@ Python: `connect_over_cdp("http://127.0.0.1:9331")`.
 - **Новые вкладки в ProfileModal:**
   - «Аккаунты»: `email`, `email_password`, блоки X/Twitter и Discord (4+4 поля). Пароли маскируются, есть кнопка «показать/скрыть».
   - «Кошельки»: `wallet_evm_address`, `wallet_sol_address` (read-only, копируемые), `wallet_password` (с возможностью смены).
-  - Поле `timezone` (select из common tz: Asia/Bishkek, Asia/Tokyo, Europe/Berlin, Europe/London, America/New_York, UTC).
+  - Поле `timezone` — searchable select из 30+ часовых поясов. Кнопка «From Proxy» для авто-определения таймзоны по IP прокси. При смене прокси таймзона обновляется автоматически. Таймзона обязательна при создании профиля.
 
 ### 9.2. Window Arranger ⚠️ ЧАСТИЧНО (см. §4.7)
 ### 9.3. Экран «Менеджер прокси» ✅ РЕАЛИЗОВАНО (`gui/src/renderer/views/Proxies.vue`)

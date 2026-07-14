@@ -231,6 +231,7 @@ describe('Database Queries', () => {
       const profile = queries.create({
         name: 'Defaults Profile',
         platform: 'macos',
+        timezone: 'Europe/Berlin',
         fingerprint_seed: 'seed-defaults',
         user_agent: 'Mozilla/5.0',
         screen_resolution: '2560x1600',
@@ -238,10 +239,10 @@ describe('Database Queries', () => {
         hardware_memory: 24,
       });
 
-      expect(profile.timezone).toBe('Asia/Bishkek');
+      expect(profile.timezone).toBe('Europe/Berlin');
       expect(profile.email).toBeNull();
       expect(profile.email_password).toBeNull();
-      expect(profile.wallet_password).toBe('asdfj*KK');
+      expect(profile.wallet_password).toBeNull();
     });
 
     it('обновляет новые поля', () => {
@@ -300,7 +301,7 @@ describe('Database Queries', () => {
       expect(cols).toContain('wallet_password');
 
       const profile = migDb.prepare('SELECT * FROM profiles WHERE id = ?').get('test-id');
-      expect(profile.timezone).toBe('Asia/Bishkek');
+      expect(profile.timezone).toBeNull();
       expect(profile.name).toBe('Legacy');
       migDb.close();
     });

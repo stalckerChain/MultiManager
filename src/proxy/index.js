@@ -202,4 +202,34 @@ async function rotateProxy(rotationUrl, timeout = 10000) {
   });
 }
 
-module.exports = { parseProxy, parseProxyList, checkProxy, rotateProxy };
+async function getTimezoneByIp(ip, timeout = 5000) {
+  return new Promise((resolve) => {
+    const req = http.get(`http://ip-api.com/json/${ip}?fields=status,message,timezone`, { timeout }, (res) => {
+      let data = '';
+      res.on('data', chunk => data += chunk);
+      res.on('end', () => {
+        try {
+          const json = JSON.parse(data);
+          if (json.status === 'success' && json.timezone) {
+            resolve({ ok: true, timezone: json.timezone });
+          } else {
+            resolve({ ok: false, error: json.message || 'Unknown error' });
+          }
+        } catch {
+          resolve({ ok: false, error: 'Invalid response' });
+        }
+      });
+    });
+
+    req.on('error', (err) => {
+      resolve({ ok: false, error: err.message });
+    });
+
+    req.on('timeout', () => {
+      req.destroy();
+      resolve({ ok: false, error: 'Timeout' });
+    });
+  });
+}
+
+module.exports = { parseProxy, parseProxyList, checkProxy, rotateProxy, getTimezoneByIp };

@@ -102,6 +102,7 @@ describe('Profiles', () => {
     const res = await request('POST', '/api/profiles', {
       name: 'Test Profile',
       platform: 'windows',
+      timezone: 'Europe/Berlin',
       tags: ['test'],
       notes: 'Automated test',
     });
@@ -205,6 +206,18 @@ describe('Profiles', () => {
     expect(res.body.wallet_evm_address).toBe('0xabcdef1234567890abcdef1234567890abcdef12');
   });
 
+  it('PUT /api/profiles/:id clears fields with null', async () => {
+    const res = await request('PUT', `/api/profiles/${createdProfileId}`, {
+      email: null,
+      twitter_username: null,
+      wallet_password: null,
+    });
+    expect(res.status).toBe(200);
+    expect(res.body.email).toBeNull();
+    expect(res.body.twitter_username).toBeNull();
+    expect(res.body.wallet_password).toBeNull();
+  });
+
   it('POST /api/profiles/:id/regenerate changes fingerprint', async () => {
     const before = await request('GET', `/api/profiles/${createdProfileId}`);
     const res = await request('POST', `/api/profiles/${createdProfileId}/regenerate`);
@@ -252,7 +265,9 @@ describe('Profiles Batch', () => {
       accounts: [{ name: 'No Platform' }],
     });
     expect(res.status).toBe(400);
-    expect(res.body.error).toContain('[0]');
+    expect(res.body.error).toBe('Ошибка валидации');
+    expect(res.body.details).toBeDefined();
+    expect(res.body.details.length).toBeGreaterThan(0);
   });
 
   it('POST /api/profiles/batch returns 400 when accounts is missing', async () => {
@@ -320,6 +335,16 @@ describe('Proxies', () => {
     expect(res.body.host).toBe('proxy.example.com');
   });
 
+  it('GET /api/proxies/:id/timezone returns error when no last_ip', async () => {
+    const res = await request('GET', `/api/proxies/${createdProxyId}/timezone`);
+    expect(res.status).toBe(502);
+  });
+
+  it('GET /api/proxies/:id/timezone returns 404 for unknown proxy', async () => {
+    const res = await request('GET', '/api/proxies/99999/timezone');
+    expect(res.status).toBe(404);
+  });
+
   it('DELETE /api/proxies/:id cleans up test proxy', async () => {
     await request('DELETE', `/api/proxies/${createdProxyId}`).catch(() => {});
   });
@@ -332,6 +357,7 @@ describe('Cookies', () => {
     const res = await request('POST', '/api/profiles', {
       name: 'Cookie Test Profile',
       platform: 'windows',
+      timezone: 'Europe/Berlin',
     });
     profileId = res.body.id;
   });
@@ -384,6 +410,7 @@ describe('Browser', () => {
     const res = await request('POST', '/api/profiles', {
       name: 'Browser Test Profile',
       platform: 'windows',
+      timezone: 'Europe/Berlin',
     });
     profileId = res.body.id;
   });
@@ -437,6 +464,7 @@ describe('Multi-Control', () => {
     const res = await request('POST', '/api/profiles', {
       name: 'MultiControl Test Profile',
       platform: 'windows',
+      timezone: 'Europe/Berlin',
     });
     profileId = res.body.id;
   });
@@ -499,6 +527,7 @@ describe('Cleanup', () => {
     const create = await request('POST', '/api/profiles', {
       name: 'To Delete',
       platform: 'linux',
+      timezone: 'Asia/Tokyo',
     });
     const id = create.body.id;
 

@@ -257,13 +257,26 @@ POST http://127.0.0.1:{PORT}/api/profiles/batch
 Content-Type: application/json
 {
   "accounts": [
-    { "name": "Worker #1", "platform": "windows" },
-    { "name": "Worker #2", "platform": "macos" }
+    { "name": "Worker #1", "platform": "windows", "timezone": "Europe/Berlin" },
+    { "name": "Worker #2", "platform": "macos", "timezone": "Asia/Tokyo" }
   ]
 }
 ```
 
 **Ответ (201):** Массив созданных профилей (одна транзакция, автооткат при ошибке).
+
+### 6. Определение таймзоны по прокси
+
+```
+GET http://127.0.0.1:{PORT}/api/proxies/{proxy_id}/timezone
+```
+
+**Ответ (200):**
+```json
+{ "timezone": "Europe/Berlin" }
+```
+
+> **Примечание:** Требуется предварительная проверка прокси (`POST /api/proxies/:id/check`), чтобы определить IP-адрес. Таймзона определяется через `ip-api.com`.
 
 ---
 

@@ -13,15 +13,17 @@ function getProfileLogPath(profileId) {
   return path.join(getAppDir(), 'logs', `profile_${profileId}.log`);
 }
 
-router.get('/', (req, res) => {
+router.get('/', async (req, res) => {
   const logPath = getCoreLogPath();
 
-  if (!fs.existsSync(logPath)) {
+  try {
+    await fs.promises.access(logPath);
+  } catch {
     return res.json([]);
   }
 
   try {
-    const content = fs.readFileSync(logPath, 'utf-8');
+    const content = await fs.promises.readFile(logPath, 'utf-8');
     const lines = content.trim().split('\n').filter(Boolean);
     const limit = parseInt(req.query.limit) || 100;
     const logs = lines.slice(-limit).map(line => {
@@ -38,15 +40,17 @@ router.get('/', (req, res) => {
   }
 });
 
-router.get('/tail', (req, res) => {
+router.get('/tail', async (req, res) => {
   const logPath = getCoreLogPath();
 
-  if (!fs.existsSync(logPath)) {
+  try {
+    await fs.promises.access(logPath);
+  } catch {
     return res.json({ content: '' });
   }
 
   try {
-    const stat = fs.statSync(logPath);
+    const stat = await fs.promises.stat(logPath);
     const bytes = parseInt(req.query.bytes) || 10240;
     const start = Math.max(0, stat.size - bytes);
 
@@ -64,15 +68,17 @@ router.get('/tail', (req, res) => {
   }
 });
 
-router.get('/profile/:profileId', (req, res) => {
+router.get('/profile/:profileId', async (req, res) => {
   const logPath = getProfileLogPath(req.params.profileId);
 
-  if (!fs.existsSync(logPath)) {
+  try {
+    await fs.promises.access(logPath);
+  } catch {
     return res.json([]);
   }
 
   try {
-    const content = fs.readFileSync(logPath, 'utf-8');
+    const content = await fs.promises.readFile(logPath, 'utf-8');
     const lines = content.trim().split('\n').filter(Boolean);
     const limit = parseInt(req.query.limit) || 100;
     const logs = lines.slice(-limit).map(line => {
@@ -89,23 +95,27 @@ router.get('/profile/:profileId', (req, res) => {
   }
 });
 
-router.get('/files', (req, res) => {
+router.get('/files', async (req, res) => {
   const logsDir = path.join(getAppDir(), 'logs');
 
-  if (!fs.existsSync(logsDir)) {
+  try {
+    await fs.promises.access(logsDir);
+  } catch {
     return res.json([]);
   }
 
   try {
-    const files = fs.readdirSync(logsDir).filter(f => f.endsWith('.log'));
-    const logFiles = files.map(f => {
-      const stat = fs.statSync(path.join(logsDir, f));
-      return {
+    const files = (await fs.promises.readdir(logsDir)).filter(f => f.endsWith('.log'));
+    const logFiles = [];
+    for (const f of files) {
+      const stat = await fs.promises.stat(path.join(logsDir, f));
+      logFiles.push({
         name: f,
         size: stat.size,
         modified: stat.mtime,
-      };
-    }).sort((a, b) => b.modified - a.modified);
+      });
+    }
+    logFiles.sort((a, b) => b.modified - a.modified);
 
     res.json(logFiles);
   } catch (err) {
