@@ -41,7 +41,7 @@
             </a-menu>
           </template>
         </a-dropdown>
-        <a-button size="small" @click="$router.push('settings')">
+        <a-button size="small" @click="$router.push('/settings')">
           {{ t('nav.settings') }}
         </a-button>
       </div>
