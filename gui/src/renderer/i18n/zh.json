@@ -5,7 +5,6 @@
   "nav": {
     "profiles": "配置文件",
     "proxies": "代理",
-    "tasks": "任务",
     "extensions": "扩展",
     "settings": "设置",
     "automation": "自动化"
@@ -183,68 +182,6 @@
     "historyTitle": "历史",
     "historyEmpty": "暂无已完成的任务。",
     "loadMore": "加载更多"
-  },
-  "tasks": {
-    "title": "任务管理器",
-    "create": "创建任务",
-    "edit": "编辑任务",
-    "search": "搜索任务...",
-    "runNow": "立即运行",
-    "viewExecutions": "执行记录",
-    "confirmDelete": "确定要删除此任务吗？",
-    "columns": {
-      "name": "名称",
-      "script": "脚本",
-      "schedule": "计划",
-      "status": "状态",
-      "lastRun": "上次运行",
-      "actions": "操作"
-    },
-    "scheduleTypes": {
-      "once": "一次",
-      "daily": "每日",
-      "weekly": "每周",
-      "manual": "手动",
-      "archive": "归档"
-    },
-    "form": {
-      "name": "任务名称",
-      "namePlaceholder": "输入任务名称",
-      "scriptName": "脚本名称",
-      "scriptNamePlaceholder": "例如: concrete, paragraph",
-      "scheduleType": "计划类型",
-      "isActive": "启用",
-      "params": "参数 (JSON)",
-      "paramsPlaceholder": "{\"referral_code\": \"abc\"}"
-    },
-    "executions": {
-      "title": "任务执行记录",
-      "columns": {
-        "profile": "配置文件",
-        "status": "状态",
-        "exitCode": "退出代码",
-        "startedAt": "开始时间",
-        "logFile": "日志文件"
-      },
-      "status": {
-        "running": "运行中",
-        "success": "成功",
-        "failed": "失败"
-      },
-      "empty": "暂无执行记录",
-      "noLog": "无日志文件",
-      "viewLog": "查看日志"
-    },
-    "status": {
-      "active": "启用",
-      "inactive": "禁用"
-    },
-    "notifications": {
-      "created": "任务创建成功",
-      "updated": "任务更新成功",
-      "deleted": "任务删除成功",
-      "runStarted": "任务已启动"
-    }
   },
   "common": {
     "start": "启动",

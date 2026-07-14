@@ -42,7 +42,7 @@ stAuto0 — Playwright-based фреймворк Web3-автоматизации 
 - **stAuto0 — отдельный проект** в своей папке, со своим git и зависимостями.
 - **SQLite MultiManager = единственный источник правды.** stAuto0 **не хранит** данные аккаунтов постоянно (нет `config/accounts.py` после миграции).
 - **Данные аккаунтов — через API-чтение:** `GET /api/internal/profiles?range=001-010` отдаёт массив dict.
-- **Данные проектов — «Tasks как контейнер»:** код проектов в `projects/*.py`, мета (script_name, params JSON, schedule) в таблицах `tasks`/`task_executions` MultiManager.
+- **Данные проектов:** код проектов в `projects/*.py`, мета (script_name, params JSON) синхронизируется в таблицу `projects` MultiManager через `POST /api/projects/sync`.
 
 ### 2.3. Маппинг полей аккаунта (Python ↔ MultiManager)
 
@@ -388,28 +388,16 @@ python scripts/migrate_profile_dirs.py
 ## 9. Планировщик (точка стыковки с MultiManager, решение #8)
 
 ### 9.1. Внешний триггер
-- **Windows:** Task Scheduler → `curl -X POST -H "Authorization: Bearer SECRET" http://127.0.0.1:3000/api/tasks/{id}/run`
+- **Windows:** Task Scheduler → `curl -X POST -H "Authorization: Bearer SECRET" http://127.0.0.1:3000/api/runs/{id}/start`
 - **Linux/macOS:** cron → аналогичный curl или wget.
-- Core spawn'ит: `spawn('python', ['main.py', '--project='+task.script_name, '--range='+task.params.range, '--log-name='+task.id], {cwd: <stAuto0 путь>})`.
-- Exit code → `task_executions.status` (0=success, ≠0=failed).
-- stdout/stderr → `logs/task_{task_id}_{timestamp}.log` (путь в `task_executions.log_file_path`).
-- Встроенный терминал GUI (MultiManager Ф6) tail'ит этот файл.
-
-> **✅ АУДИТ 2026-07-10 — spawn-ядро Ф6 РЕАЛИЗОВАНО.** `POST /api/tasks/:id/run` (`src/api/tasks.js:99-186`) spawn'ит `python main.py` через `child_process.spawn`:
-> - читает `stAuto0_path` и `python_path` из `system_config` (настройки автоматизации);
-> - парсит `task.params.range` для фильтрации профилей (если не задан — все профили);
-> - создаёт лог-файл `task_{taskId}_{profileId}_{timestamp}.log` в `%APPDATA%/CloakManager/logs/tasks/`;
-> - передаёт `--project`, `--range`, `--log-name`, `--token` в Python;
-> - пишет stdout/stderr в лог через `fs.createWriteStream`;
-> - по `exit` вызывает `updateExecutionStatus` (success/failed + exit_code);
-> - по `error` вызывает `updateExecutionStatus` (failed, -1);
-> - если настройки не заданы — возвращает 400 с сообщением;
-> - `log_file_path` сохраняется в БД, терминал привязан через кнопку "View Log" в GUI.
+- Core spawn'ит Python для каждого профиля через RunExecutor.
+- Exit code → `run_tasks.status` (0=success, ≠0=failed).
+- stdout/stderr → `logs/runs/{run_id}/{profile_name}.log` (путь в `run_tasks.log_file_path`).
 
 ### 9.2. Конфигурация в Settings MultiManager (Ф5)
 - Поле «Путь к stAuto0» (cwd для spawn).
 - Поле «Python-интерпретатор» (путь к `python.exe` или `python3`).
-- Список доступных проектов (сканирование `projects/*.py` на классы `BaseProject`) — для выбора `script_name` в Tasks Manager.
+- Список доступных проектов (сканирование `projects/*.py` на классы `BaseProject`).
 
 > **Python-окружение (решение Q3, 2026-07-09):** venv внутри stAuto0. Путь в Settings указывает на интерпретатор venv:
 > - **Windows:** `stAuto0/venv/Scripts/python.exe`
@@ -419,7 +407,7 @@ python scripts/migrate_profile_dirs.py
 
 ### 9.3. Без GUI (headless ферма)
 - MultiManager Core работает как демон (без Electron). Запускается: `node src/index.js --api-token=SECRET --port=3000` или через systemd/Task Scheduler.
-- Внешний планировщик дёргает `POST /api/tasks/:id/run`.
+- Внешний планировщик дёргает `POST /api/runs/{id}/start`.
 - GUI опционален для мониторинга.
 
 -------------------------------
@@ -503,6 +491,6 @@ python scripts/migrate_profile_dirs.py
 
 ### 12.3. Итог по стыковке
 **Ручной/CLI запуск** (`python main.py --project=... --range=... --token=...` поверх живого MultiManager Core) — **работает**: Ф1–Ф6 MultiManager и все фазы stAuto0 стыкуются корректно, `ws_endpoint` реальный, секреты и прокси приходят готовыми.
-**Автоматическое исполнение по расписанию** (Tasks Manager → cron/Task Scheduler → `POST /api/tasks/:id/run`) — **работает**: Core spawn'ит Python, пишет логи, обновляет статус и exit_code в `task_executions`. Терминал привязан через кнопку "View Log".
+**Автоматическое исполнение** (Automation Matrix → `POST /api/runs/:id/start`) — **работает**: Core spawn'ит Python, пишет логи, обновляет статус в `run_tasks`.
 
 -------------------------------

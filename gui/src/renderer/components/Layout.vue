@@ -7,7 +7,6 @@
           @click="handleMenuClick">
           <a-menu-item key="profiles">{{ t('nav.profiles') }}</a-menu-item>
           <a-menu-item key="proxies">{{ t('nav.proxies') }}</a-menu-item>
-          <a-menu-item key="tasks">{{ t('nav.tasks') }}</a-menu-item>
           <a-menu-item key="arranger">Window Arranger</a-menu-item>
           <a-menu-item key="extensions">{{ t('nav.extensions') }}</a-menu-item>
           <a-sub-menu key="automation" :title="t('nav.automation')">

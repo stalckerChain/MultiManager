@@ -271,84 +271,6 @@ describe('Database Queries', () => {
     });
   });
 
-  describe('Tasks & Task Executions', () => {
-    beforeEach(() => {
-      db.exec('DELETE FROM task_executions');
-      db.exec('DELETE FROM tasks');
-    });
-
-    it('создаёт задачу', () => {
-      const id = uuidv4();
-      db.prepare(`
-        INSERT INTO tasks (id, name, script_name, schedule_type, params, is_active)
-        VALUES (?, ?, ?, ?, ?, ?)
-      `).run(id, 'Test Task', 'script.py', 'daily', JSON.stringify({ key: 'val' }), 1);
-
-      const task = db.prepare('SELECT * FROM tasks WHERE id = ?').get(id);
-      expect(task.name).toBe('Test Task');
-      expect(task.script_name).toBe('script.py');
-      expect(task.schedule_type).toBe('daily');
-      expect(task.is_active).toBe(1);
-    });
-
-    it('создаёт запись выполнения задачи', () => {
-      const taskId = uuidv4();
-      const profileQueries = createProfileQueries(db);
-      const profile = profileQueries.create({
-        name: 'Exec Test',
-        platform: 'windows',
-        fingerprint_seed: 'seed-exec',
-        user_agent: 'Mozilla/5.0',
-        screen_resolution: '1920x1080',
-        hardware_cores: 8,
-        hardware_memory: 16,
-      });
-
-      db.prepare(`
-        INSERT INTO tasks (id, name, script_name, schedule_type, is_active)
-        VALUES (?, ?, ?, ?, ?)
-      `).run(taskId, 'Task', 'test.py', 'manual', 1);
-
-      db.prepare(`
-        INSERT INTO task_executions (task_id, profile_id, status, exit_code, last_run_at, log_file_path)
-        VALUES (?, ?, ?, ?, ?, ?)
-      `).run(taskId, profile.id, 'success', 0, new Date().toISOString(), '/tmp/log.txt');
-
-      const exec = db.prepare('SELECT * FROM task_executions WHERE task_id = ?').all(taskId);
-      expect(exec).toHaveLength(1);
-      expect(exec[0].status).toBe('success');
-      expect(exec[0].exit_code).toBe(0);
-    });
-
-    it('каскадно удаляет выполнения при удалении задачи', () => {
-      const taskId = uuidv4();
-      const profileQueries = createProfileQueries(db);
-      const profile = profileQueries.create({
-        name: 'Cascade Test',
-        platform: 'windows',
-        fingerprint_seed: 'seed-cascade',
-        user_agent: 'Mozilla/5.0',
-        screen_resolution: '1920x1080',
-        hardware_cores: 8,
-        hardware_memory: 16,
-      });
-
-      db.prepare(`
-        INSERT INTO tasks (id, name, script_name, schedule_type, is_active)
-        VALUES (?, ?, ?, ?, ?)
-      `).run(taskId, 'Task', 'test.py', 'manual', 1);
-
-      db.prepare(`
-        INSERT INTO task_executions (task_id, profile_id, status)
-        VALUES (?, ?, ?)
-      `).run(taskId, profile.id, 'running');
-
-      db.prepare('DELETE FROM tasks WHERE id = ?').run(taskId);
-      const execs = db.prepare('SELECT * FROM task_executions WHERE task_id = ?').all(taskId);
-      expect(execs).toHaveLength(0);
-    });
-  });
-
   describe('Migration', () => {
     it('migrateTables добавляет новые колонки в существующую таблицу', () => {
       const migDb = new Database(':memory:');
@@ -380,20 +302,6 @@ describe('Database Queries', () => {
       const profile = migDb.prepare('SELECT * FROM profiles WHERE id = ?').get('test-id');
       expect(profile.timezone).toBe('Asia/Bishkek');
       expect(profile.name).toBe('Legacy');
-      migDb.close();
-    });
-
-    it('создаёт таблицы tasks и task_executions', () => {
-      const migDb = new Database(':memory:');
-      migDb.pragma('journal_mode = WAL');
-      createTables(migDb);
-
-      const tables = migDb.prepare(
-        "SELECT name FROM sqlite_master WHERE type='table' ORDER BY name"
-      ).all().map(t => t.name);
-      expect(tables).toContain('tasks');
-      expect(tables).toContain('task_executions');
-
       migDb.close();
     });
   });

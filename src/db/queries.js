@@ -281,102 +281,6 @@ function createLogQueries(db) {
   };
 }
 
-function createTaskQueries(db) {
-  const insert = db.prepare(`
-    INSERT INTO tasks (id, name, script_name, schedule_type, cron_expression, params, is_active)
-    VALUES (?, ?, ?, ?, ?, ?, ?)
-  `);
-
-  const getById = db.prepare('SELECT * FROM tasks WHERE id = ?');
-  const getAll = db.prepare('SELECT * FROM tasks ORDER BY created_at DESC');
-  const getActive = db.prepare('SELECT * FROM tasks WHERE is_active = 1 ORDER BY created_at DESC');
-
-  const update = db.prepare(`
-    UPDATE tasks SET
-      name = COALESCE(?, name),
-      script_name = COALESCE(?, script_name),
-      schedule_type = COALESCE(?, schedule_type),
-      cron_expression = ?,
-      params = COALESCE(?, params),
-      is_active = COALESCE(?, is_active),
-      updated_at = CURRENT_TIMESTAMP
-    WHERE id = ?
-  `);
-
-  const deleteById = db.prepare('DELETE FROM tasks WHERE id = ?');
-
-  const insertExecution = db.prepare(`
-    INSERT INTO task_executions (task_id, profile_id, status, exit_code, last_run_at, log_file_path)
-    VALUES (?, ?, ?, ?, CURRENT_TIMESTAMP, ?)
-  `);
-
-  const getExecutionsByTaskId = db.prepare(
-    'SELECT * FROM task_executions WHERE task_id = ? ORDER BY last_run_at DESC'
-  );
-
-  const updateExecutionStatus = db.prepare(`
-    UPDATE task_executions SET status = ?, exit_code = ? WHERE id = ?
-  `);
-
-  return {
-    create(data) {
-      if (!data.name || !data.script_name || !data.schedule_type) {
-        throw new Error('name, script_name и schedule_type обязательны');
-      }
-      const id = uuidv4();
-      insert.run(
-        id, data.name, data.script_name, data.schedule_type,
-        data.cron_expression || null,
-        JSON.stringify(data.params || {}),
-        data.is_active !== undefined ? (data.is_active ? 1 : 0) : 1
-      );
-      return getById.get(id);
-    },
-
-    getById(id) {
-      return getById.get(id);
-    },
-
-    getAll() {
-      return getAll.all();
-    },
-
-    getActive() {
-      return getActive.all();
-    },
-
-    update(id, data) {
-      update.run(
-        data.name || null,
-        data.script_name || null,
-        data.schedule_type || null,
-        data.cron_expression !== undefined ? data.cron_expression : null,
-        data.params ? JSON.stringify(data.params) : null,
-        data.is_active !== undefined ? (data.is_active ? 1 : 0) : null,
-        id
-      );
-      return getById.get(id);
-    },
-
-    delete(id) {
-      return deleteById.run(id);
-    },
-
-    createExecution(taskId, profileId, status = 'running', logFilePath = null) {
-      const result = insertExecution.run(taskId, profileId, status, null, logFilePath);
-      return result.lastInsertRowid;
-    },
-
-    getExecutions(taskId) {
-      return getExecutionsByTaskId.all(taskId);
-    },
-
-    updateExecutionStatus(id, status, exitCode = null) {
-      updateExecutionStatus.run(status, exitCode, id);
-    },
-  };
-}
-
 function createSystemConfigQueries(db) {
   const get = db.prepare('SELECT value FROM system_config WHERE key = ?');
   const set = db.prepare('INSERT OR REPLACE INTO system_config (key, value, updated_at) VALUES (?, ?, CURRENT_TIMESTAMP)');
@@ -642,7 +546,6 @@ module.exports = {
   createProxyQueries,
   createCookieQueries,
   createLogQueries,
-  createTaskQueries,
   createSystemConfigQueries,
   createProjectQueries,
   createMatrixQueries,

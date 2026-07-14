@@ -56,53 +56,6 @@ SQLite 数据库，使用 WAL 日志和 ACID 事务。
 
 ---
 
-### tasks
-
-存储调度任务。
-
-| 字段 | 类型 | 描述 |
-|------|------|------|
-| `id` | TEXT (UUID) | 唯一标识符 |
-| `name` | TEXT | 任务名称 |
-| `script_name` | TEXT | 要运行的脚本 |
-| `schedule_type` | TEXT | 调度类型（cron/interval/manual） |
-| `cron_expression` | TEXT | Cron 表达式（schedule_type=cron 时使用） |
-| `params` | TEXT | JSON 任务参数 |
-| `is_active` | INTEGER | 活动标志（0/1） |
-| `created_at` | DATETIME | 创建时间 |
-| `updated_at` | DATETIME | 更新时间 |
-
-**索引：**
-- `idx_tasks_is_active` — 活动任务搜索
-- `idx_tasks_schedule_type` — 按调度类型筛选
-
-**触发器：**
-- `update_tasks_timestamp` — 自动更新 `updated_at`
-
----
-
-### task_executions
-
-存储任务执行历史。
-
-| 字段 | 类型 | 描述 |
-|------|------|------|
-| `id` | INTEGER | 自增 ID |
-| `task_id` | TEXT | 外键关联 tasks |
-| `profile_id` | TEXT | 外键关联 profiles |
-| `status` | TEXT | 状态（pending/running/success/failed） |
-| `exit_code` | INTEGER | 退出码 |
-| `last_run_at` | DATETIME | 最后运行时间 |
-| `log_file_path` | TEXT | 日志文件路径 |
-
-**索引：**
-- `idx_task_executions_task_id` — 按任务搜索
-- `idx_task_executions_profile_id` — 按配置文件搜索
-
-**级联删除：** 删除任务时，其所有执行记录一并删除。
-
----
-
 ### proxies
 
 存储代理服务器。

@@ -98,41 +98,12 @@ function createTables(db) {
       updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
     );
 
-    CREATE TABLE IF NOT EXISTS tasks (
-      id TEXT PRIMARY KEY,
-      name TEXT NOT NULL,
-      script_name TEXT NOT NULL,
-      schedule_type TEXT NOT NULL CHECK(schedule_type IN ('once', 'daily', 'weekly', 'manual', 'archive')),
-      cron_expression TEXT,
-      params TEXT DEFAULT '{}',
-      is_active INTEGER DEFAULT 1,
-      created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-      updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
-    );
-
-    CREATE TABLE IF NOT EXISTS task_executions (
-      id INTEGER PRIMARY KEY AUTOINCREMENT,
-      task_id TEXT NOT NULL,
-      profile_id TEXT NOT NULL,
-      status TEXT NOT NULL CHECK(status IN ('success', 'failed', 'running')),
-      exit_code INTEGER,
-      last_run_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-      log_file_path TEXT,
-      FOREIGN KEY (task_id) REFERENCES tasks(id) ON DELETE CASCADE,
-      FOREIGN KEY (profile_id) REFERENCES profiles(id) ON DELETE CASCADE
-    );
-
     CREATE INDEX IF NOT EXISTS idx_profiles_status ON profiles(status);
     CREATE INDEX IF NOT EXISTS idx_profiles_proxy_id ON profiles(proxy_id);
     CREATE INDEX IF NOT EXISTS idx_proxies_host_port ON proxies(host, port);
     CREATE INDEX IF NOT EXISTS idx_cookies_profile_id ON cookies(profile_id);
     CREATE INDEX IF NOT EXISTS idx_profile_logs_profile_id ON profile_logs(profile_id);
     CREATE INDEX IF NOT EXISTS idx_profile_logs_created_at ON profile_logs(created_at);
-    CREATE INDEX IF NOT EXISTS idx_tasks_is_active ON tasks(is_active);
-    CREATE INDEX IF NOT EXISTS idx_tasks_schedule_type ON tasks(schedule_type);
-    CREATE INDEX IF NOT EXISTS idx_task_executions_task_id ON task_executions(task_id);
-    CREATE INDEX IF NOT EXISTS idx_task_executions_profile_id ON task_executions(profile_id);
-
     CREATE TABLE IF NOT EXISTS projects (
       name TEXT PRIMARY KEY,
       display_name TEXT NOT NULL DEFAULT '',
@@ -215,11 +186,6 @@ function createTables(db) {
       UPDATE system_config SET updated_at = CURRENT_TIMESTAMP WHERE key = NEW.key;
     END;
 
-    CREATE TRIGGER IF NOT EXISTS update_tasks_timestamp
-    AFTER UPDATE ON tasks
-    BEGIN
-      UPDATE tasks SET updated_at = CURRENT_TIMESTAMP WHERE id = NEW.id;
-    END;
   `);
 }
 

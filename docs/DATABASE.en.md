@@ -56,53 +56,6 @@ On DB initialization, `migrateTables()` checks for new columns via `PRAGMA table
 
 ---
 
-### tasks
-
-Stores scheduler tasks.
-
-| Field | Type | Description |
-|-------|------|-------------|
-| `id` | TEXT (UUID) | Unique identifier |
-| `name` | TEXT | Task name |
-| `script_name` | TEXT | Script to run |
-| `schedule_type` | TEXT | Schedule type (cron/interval/manual) |
-| `cron_expression` | TEXT | Cron expression (for schedule_type=cron) |
-| `params` | TEXT | JSON task parameters |
-| `is_active` | INTEGER | Active flag (0/1) |
-| `created_at` | DATETIME | Creation date |
-| `updated_at` | DATETIME | Update date |
-
-**Indexes:**
-- `idx_tasks_is_active` — Active task search
-- `idx_tasks_schedule_type` — Filter by schedule type
-
-**Triggers:**
-- `update_tasks_timestamp` — Auto-update `updated_at`
-
----
-
-### task_executions
-
-Stores task execution history.
-
-| Field | Type | Description |
-|-------|------|-------------|
-| `id` | INTEGER | Auto-increment ID |
-| `task_id` | TEXT | Foreign key to tasks |
-| `profile_id` | TEXT | Foreign key to profiles |
-| `status` | TEXT | Status (pending/running/success/failed) |
-| `exit_code` | INTEGER | Exit code |
-| `last_run_at` | DATETIME | Last run time |
-| `log_file_path` | TEXT | Log file path |
-
-**Indexes:**
-- `idx_task_executions_task_id` — Search by task
-- `idx_task_executions_profile_id` — Search by profile
-
-**Cascade Delete:** When a task is deleted, all its executions are deleted.
-
----
-
 ### proxies
 
 Stores proxy servers.

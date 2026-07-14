@@ -79,34 +79,7 @@
 
 **Миграция:** через `ALTER TABLE ADD COLUMN` — реализована в `src/db/schema.js:migrateTables()`. При инициализации БД проверяет `PRAGMA table_info` и добавляет недостающие колонки.
 
-### 3.3. Новые таблицы планировщика ✅ РЕАЛИЗОВАНО (Roadmap Ф1)
-
-**`tasks`** — задачи/квесты:
-| Колонка | Тип | Назначение |
-|---------|-----|-----------|
-| `id` | TEXT UUIDv4 PK | |
-| `name` | TEXT | Название квеста/задачи |
-| `script_name` | TEXT | Соответствует `--project=` аргументу stAuto0 (например, `concrete`) |
-| `schedule_type` | TEXT | `once` \| `daily` \| `weekly` \| `manual` \| `archive` |
-| `cron_expression` | TEXT | Для daily/weekly (опционально) |
-| `params` | TEXT JSON | Динамические параметры (referral codes, диапазоны, теги аккаунтов) |
-| `is_active` | INTEGER | 1/0 |
-| `created_at`, `updated_at` | DATETIME | |
-
-**`task_executions`** — история запусков:
-| Колонка | Тип | Назначение |
-|---------|-----|-----------|
-| `id` | INTEGER PK AUTOINCREMENT | |
-| `task_id` | TEXT FK → tasks(id) | |
-| `profile_id` | TEXT FK → profiles(id) | |
-| `status` | TEXT | `success` \| `failed` \| `running` |
-| `exit_code` | INTEGER | Код выхода Python-процесса (0=success) |
-| `last_run_at` | DATETIME | |
-| `log_file_path` | TEXT | Путь к логу запуска (tail'ится встроенным терминалом, §9.5) |
-
-> **«Tasks как контейнер» (решение #10):** код самих проектов (Concrete, Paragraph и др.) живёт в `stAuto0/projects/*.py`. MultiManager хранит только мета (script_name, params JSON, schedule). Планировщик может менять параметры задачи без правки Python-кода.
-
-### 3.4. Новые таблицы Automation Matrix ✅ (Roadmap Ф7)
+### 3.3. Новые таблицы Automation Matrix ✅ (Roadmap Ф7)
 
 **`projects`** — проекты/скрипты из stAuto0:
 | Колонка | Тип | Назначение |
@@ -153,8 +126,6 @@
 | `log_file_path` | TEXT | Путь к логу |
 | `attempts` | INTEGER | Сколько попыток заняло |
 | `started_at`, `completed_at` | DATETIME | |
-
-> Старые таблицы `tasks`/`task_executions` сохраняются для обратной совместимости.
 
 ### 3.4. Порт Core (исправление расхождения)
 GUI передаёт порт бэкенду через **env-переменную `PORT=N`** ✅ `gui/src/main/core-manager.js:60`, а не через CLI `--port=N`, как утверждал старый TS.md §3.2. `--api-token=` передаётся как CLI-аргумент. ✅ `gui/src/main/core-manager.js:70-71`
@@ -246,9 +217,7 @@ GUI передаёт порт бэкенду через **env-переменну
 | `/api/internal/profiles` | GET | **Выборка аккаунтов для Python.** Query `?range=001-010` разворачивается в `auto_001..auto_010`. Возвращает массив JSON со всеми Web3-метриками, почтами, соцсетями, прокси (готовая строка `host:port:user:pass`). | ✅ `src/api/internal.js` |
 | `/api/browser/:id/type` | POST | Human-like typing через CDP (обёртка над `humanType()`). Тело `{text}`. | ✅ `src/api/browser.js:587-630` |
 | `/api/browser/:id/zerion-login` | POST | Авто-логин Zerion (логика перенесена из `stAuto0/Core/browser.py::login_zerion`). | ✅ `src/api/browser.js` |
-| `/api/tasks/:id/run` | POST | Триггер внешнего планировщика (legacy). | ✅ `src/api/tasks.js` |
 | `/api/profiles/batch` | POST | Массовый импорт для Wallet Factory (1 транзакция вместо N запросов). Тело `{accounts: [...]}`. | ✅ `src/api/profiles.js:24-81` |
-| `/api/tasks` | CRUD | Управление задачами (legacy UI Tasks Manager). | ✅ `src/api/tasks.js` |
 
 > **`/api/internal/profiles` минует часть шифрования:** Python-агенту нужен cleartext для работы. Этот endpoint защищён тем же Bearer-token, но логируется как `[INTERNAL]` для аудита.
 
@@ -288,7 +257,6 @@ Zerion ID: `klghhnkeealcohjjanjjdaeeggmfmlpl`. Flow:
 ## 5. Стратегия логирования ✅ РЕАЛИЗОВАНО
 - **Системный лог `logs/core.log`:** запуск API, ошибки SQLite, генерация токенов, общие сбои. Dev → pino-pretty. ✅ `src/logger/index.js`
 - **Лог профиля `logs/profile_[ID].log`:** изолированный файл (ротация прокси, Proxy Checker, ошибки запуска, сессии автоматизации). Запись синхронная (`pino.destination({ sync: true })`) — гарантированный сброс на диск без задержек. ✅ `src/api/browser.js:10` (`createProfileLogger`)
-- **Лог задачи** (новый ✅ Roadmap Ф4): `logs/task_{task_id}_{timestamp}.log` — stdout/stderr spawn'нутого Python. Путь пишется в `task_executions.log_file_path`. Tail'ится встроенным терминалом GUI (§9.5). API готов, терминал ✅ (Ф6).
 - **Лог run** (✅ Roadmap Ф7): `logs/runs/{run_id}/{profile_name}.log` — stdout/stderr spawn'нутого Python для Automation Matrix. Путь пишется в `run_tasks.log_file_path`.
 
 -------------------------------
@@ -299,7 +267,7 @@ Zerion ID: `klghhnkeealcohjjanjjdaeeggmfmlpl`. Flow:
 
 **Integration (5 файлов):** SQLite WAL (параллельная запись), API endpoints, lifecycle профиля, Proxy Checker, extensions.
 
-**К новым тестам:** crypto (encrypt/decrypt/rotate) — ✅, backup (rolling cleanup) — ✅, `/api/internal/profiles` range-parsing — ✅, `tasks` CRUD — ✅, `zerion-login` с моком CDP — в работе.
+**К новым тестам:** crypto (encrypt/decrypt/rotate) — ✅, backup (rolling cleanup) — ✅, `/api/internal/profiles` range-parsing — ✅, `zerion-login` с моком CDP — в работе.
 
 -------------------------------
 ## 7. Формат ответа API для ИИ/Python ✅ ИСПРАВЛЕНО (Roadmap Ф4)
@@ -356,14 +324,7 @@ Python: `connect_over_cdp("http://127.0.0.1:9331")`.
 - Панель разработчика: бегущая строка core.log. ✅ `gui/src/renderer/components/LogPanel.vue`
 - Статус-бар: статус сервера, порт, копирование AUTH_TOKEN. ✅ `gui/src/renderer/components/StatusBar.vue`
 
-### 9.7. Экран «Tasks Manager» (Планировщик) ✅ РЕАЛИЗОВАНО (Roadmap Ф5)
-- Таблица задач: name, script_name, schedule_type, is_active, last_run. ✅ `gui/src/renderer/views/Tasks.vue`
-- История executions (task_executions): статус, exit_code, время, ссылка на лог. ✅ `gui/src/renderer/views/Tasks.vue`
-- Кнопка «Run now» → `POST /api/tasks/:id/run`. ✅ `gui/src/renderer/views/Tasks.vue`
-- CRUD задач (создание/редактирование с выбором script_name). ✅ `gui/src/renderer/views/Tasks.vue`
-- Pinia store: `stores/tasks.js` c CRUD + run + getExecutions. ✅ `gui/src/renderer/stores/tasks.js`
-
-### 9.8. Встроенный терминал (xterm.js + child_process) ✅ РЕАЛИЗОВАНО (Roadmap Ф6)
+### 9.7. Встроенный терминал (xterm.js + child_process) ✅ РЕАЛИЗОВАНО (Roadmap Ф6)
 > **Компонент:** `gui/src/renderer/components/Terminal.vue` (xterm.js renderer).
 > **Бэкенд:** `gui/src/main/pty.js` — IPC-модуль на child_process.spawn (powershell Get-Content -Wait на Windows, tail -f на Linux/macOS).
 > **Интеграция:** Расположен над LogPanel в Layout.vue. Поле ввода пути к файлу + кнопки Tail/Stop.
@@ -396,11 +357,11 @@ Python: `connect_over_cdp("http://127.0.0.1:9331")`.
 
 | Фаза | Задача | Файлы | Зависимости |
 |------|--------|-------|-------------|
-| **Ф1** | **✅ Расширение БД:** `timezone`, новые колонки `profiles`, таблицы `tasks`/`task_executions`. Миграция `ALTER TABLE`. | `src/db/schema.js`, `src/db/queries.js` | — |
-| **Ф2** | **✅ Crypto-модуль AES-256-GCM + гибрид мастер-ключа (Keyring/PBKDF2/recovery) + авто-логин Zerion.** | `src/crypto/index.js`, `src/db/queries.js`, `src/api/browser.js`, `src/api/settings.js`, `src/api/internal.js`, `src/api/tasks.js`, `gui/.../Settings.vue` | Ф1 |
+| **Ф1** | **✅ Расширение БД:** `timezone`, новые колонки `profiles`. Миграция `ALTER TABLE`. | `src/db/schema.js`, `src/db/queries.js` | — |
+| **Ф2** | **✅ Crypto-модуль AES-256-GCM + гибрид мастер-ключа (Keyring/PBKDF2/recovery) + авто-логин Zerion.** | `src/crypto/index.js`, `src/db/queries.js`, `src/api/browser.js`, `src/api/settings.js`, `src/api/internal.js`, `gui/.../Settings.vue` | Ф1 |
 | **Ф3** | **✅ Backup Hot Backup + Rolling 7д.** | `src/backup/index.js`, `src/index.js`, `tests/unit/backup.test.js` | — |
-| **Ф4** | **✅ Все endpoints:** `/api/browser/:id/type`, `/api/profiles/batch`, `ws_endpoint`, `/api/internal/profiles`, `/api/browser/:id/zerion-login`, `/api/tasks/:id/run`, `/api/tasks` CRUD. | `src/api/browser.js`, `src/api/profiles.js`, `src/api/internal.js`, `src/api/tasks.js` | Ф1, Ф2 |
-| **Ф5** | **✅ ProfileModal** вкладки (Аккаунты + Кошельки). **✅ Settings** crypto/automation. **✅ Экран Tasks Manager.** | `gui/src/renderer/views/ProfileModal.vue`, `gui/src/renderer/views/Tasks.vue`, `gui/src/renderer/views/Settings.vue` | Ф1, Ф2, Ф4 |
+| **Ф4** | **✅ Все endpoints:** `/api/browser/:id/type`, `/api/profiles/batch`, `ws_endpoint`, `/api/internal/profiles`, `/api/browser/:id/zerion-login`. | `src/api/browser.js`, `src/api/profiles.js`, `src/api/internal.js` | Ф1, Ф2 |
+| **Ф5** | **✅ ProfileModal** вкладки (Аккаунты + Кошельки). **✅ Settings** crypto/automation. | `gui/src/renderer/views/ProfileModal.vue`, `gui/src/renderer/views/Settings.vue` | Ф1, Ф2, Ф4 |
 | **Ф6** | **✅ Терминал xterm.js + child_process.** | `gui/package.json`, `gui/src/main/pty.js`, `gui/src/renderer/components/Terminal.vue`, `tests/unit/pty.test.js` | Ф4 |
 | **Ф7** | **✅ Automation Matrix:** Проекты, Матрица, Runs, RunExecutor. Новые таблицы `projects`, `project_profile_config`, `runs`, `run_tasks`. Endpoints `/api/projects`, `/api/matrix`, `/api/runs`. GUI: 3 страницы (Матрица, Задачи, История). stAuto0: `run()` → bool, `--run-id`, callback статуса. Параллельный spawn с лимитом. | `src/db/schema.js`, `src/db/queries.js`, `src/api/projects.js`, `src/api/matrix.js`, `src/api/runs.js`, `src/api/internal-runs.js`, `src/executor/index.js`, `gui/.../AutomationMatrix.vue`, `gui/.../AutomationRuns.vue`, `gui/.../AutomationHistory.vue`, `gui/.../stores/automation.js` + stAuto0: `base.py`, `browser.py`, `multimanager.py`, `main.py` | Ф4, Ф5, Ф6 |
 
@@ -413,39 +374,36 @@ Python: `connect_over_cdp("http://127.0.0.1:9331")`.
 |---|------|------|--------|-----------|
 | 1 | БД: 30 колонок profiles | ✅ | ✅ `schema.js` | — |
 | 2 | БД: новые колонки v1.1.0 | ✅ | ✅ `schema.js:50-63` | Ф1 ✅ |
-| 3 | БД: таблицы tasks/task_executions | ✅ | ✅ `schema.js:79-100` | Ф1 ✅ |
-| 4 | Timezone в профиле | ✅ | ✅ `schema.js:47` | Ф1 ✅ |
-| 5 | Шифрование AES-256-GCM | ✅ | ✅ `src/crypto/index.js` | Ф2 ✅ |
-| 6 | Hot Backup + Rolling | ✅ | ✅ `src/backup/index.js` | Ф3 ✅ |
-| 7 | `/api/internal/profiles?range=` | ✅ | ✅ `src/api/internal.js` | Ф4 ✅ |
-| 8 | Human-like Typing endpoint | ✅ | ✅ `src/api/browser.js:587-630` | Ф4 ✅ |
-| 9 | Авто-логин Zerion по CDP | ✅ | ✅ `src/api/browser.js` | Ф2/Ф4 ✅ |
-| 10 | `POST /api/tasks/:id/run` | ✅ | ✅ `src/api/tasks.js` | Ф4 ✅ |
-| 11 | `POST /api/profiles/batch` | ✅ | ✅ `src/api/profiles.js:24-81` | Ф4 ✅ |
-| 12 | Исправление `ws_endpoint` | ✅ | ✅ `src/api/browser.js:377-419` | Ф4 ✅ |
-| 13 | ProfileModal вкладки (акки/кошельки) | ✅ | ✅ `gui/.../AccountsTab.vue`, `WalletsTab.vue` | Ф5 ✅ |
-| 14 | Экран Tasks Manager | ✅ | ✅ `gui/.../Tasks.vue`, `stores/tasks.js` | Ф5 ✅ |
-| 15 | Встроенный терминал | ✅ | ✅ `gui/.../pty.js`, `Terminal.vue` | Ф6 ✅ |
-| 16 | Settings: crypto + automation | ✅ | ✅ `gui/.../Settings.vue`, `src/api/settings.js` | Ф5 ✅ |
-| 17 | БД: таблицы projects/project_profile_config/runs/run_tasks | ✅ | ✅ `schema.js` | Ф7 ✅ |
-| 18 | `/api/projects` (CRUD + sync) | ✅ | ✅ `src/api/projects.js` | Ф7 ✅ |
-| 19 | `/api/matrix` (GET + PUT) | ✅ | ✅ `src/api/matrix.js` | Ф7 ✅ |
-| 20 | `/api/runs` (CRUD + start/cancel) | ✅ | ✅ `src/api/runs.js` | Ф7 ✅ |
-| 21 | `/api/internal/runs/:id/task-status` | ✅ | ✅ `src/api/internal-runs.js` | Ф7 ✅ |
-| 22 | RunExecutor (parallel spawn) | ✅ | ✅ `src/executor/index.js` | Ф7 ✅ |
-| 23 | GUI: Automation Matrix / Runs / History | ✅ | ✅ `gui/.../Automation*.vue`, `stores/automation.js` | Ф7 ✅ |
-| 24 | stAuto0: run()→bool, --run-id, callback | ✅ | ✅ внешний репо stAuto0 | Ф7 ✅ |
-| 25 | Cookie drag-and-drop + валидатор | ✅ | ⚠️ | ToDo §2 |
-| 26 | Window Arranger cross-platform | ✅ | ⚠️ (Windows-only) | ToDo §4 |
-| 27 | Migration Wizard (AdsPower) | ❌ заморожено | ❌ | ToDo §5 |
-| 28 | Cloud Sync | ❌ заморожено | ❌ | ToDo §6 |
-| 29 | Multi-Control v0.13.0 | ✅ | ✅ | — |
-| 30 | Fingerprint Generator | ✅ | ✅ | — |
-| 31 | Proxy Manager + ротация | ✅ | ✅ | — |
-| 32 | Extensions Manager | ✅ | ✅ | — |
-| 33 | Anti-Zombie процесс-контроль | ✅ | ✅ | — |
-| 34 | Очистка кэша | ✅ | ✅ | — |
-| 35 | i18n / Темизация / Tray / Auto-update | ✅ | ✅ | — |
-| 36 | Порт через env `PORT` (не `--port`) | ⚠️ док | ✅ факт | Ф4 док. |
+| 3 | Timezone в профиле | ✅ | ✅ `schema.js:47` | Ф1 ✅ |
+| 4 | Шифрование AES-256-GCM | ✅ | ✅ `src/crypto/index.js` | Ф2 ✅ |
+| 5 | Hot Backup + Rolling | ✅ | ✅ `src/backup/index.js` | Ф3 ✅ |
+| 6 | `/api/internal/profiles?range=` | ✅ | ✅ `src/api/internal.js` | Ф4 ✅ |
+| 7 | Human-like Typing endpoint | ✅ | ✅ `src/api/browser.js:587-630` | Ф4 ✅ |
+| 8 | Авто-логин Zerion по CDP | ✅ | ✅ `src/api/browser.js` | Ф2/Ф4 ✅ |
+| 9 | `POST /api/profiles/batch` | ✅ | ✅ `src/api/profiles.js:24-81` | Ф4 ✅ |
+| 10 | Исправление `ws_endpoint` | ✅ | ✅ `src/api/browser.js:377-419` | Ф4 ✅ |
+| 11 | ProfileModal вкладки (акки/кошельки) | ✅ | ✅ `gui/.../AccountsTab.vue`, `WalletsTab.vue` | Ф5 ✅ |
+| 12 | Встроенный терминал | ✅ | ✅ `gui/.../pty.js`, `Terminal.vue` | Ф6 ✅ |
+| 13 | Settings: crypto + automation | ✅ | ✅ `gui/.../Settings.vue`, `src/api/settings.js` | Ф5 ✅ |
+| 14 | БД: таблицы projects/project_profile_config/runs/run_tasks | ✅ | ✅ `schema.js` | Ф7 ✅ |
+| 15 | `/api/projects` (CRUD + sync) | ✅ | ✅ `src/api/projects.js` | Ф7 ✅ |
+| 16 | `/api/matrix` (GET + PUT) | ✅ | ✅ `src/api/matrix.js` | Ф7 ✅ |
+| 17 | `/api/runs` (CRUD + start/cancel) | ✅ | ✅ `src/api/runs.js` | Ф7 ✅ |
+| 18 | `/api/internal/runs/:id/task-status` | ✅ | ✅ `src/api/internal-runs.js` | Ф7 ✅ |
+| 19 | RunExecutor (parallel spawn) | ✅ | ✅ `src/executor/index.js` | Ф7 ✅ |
+| 20 | GUI: Automation Matrix / Runs / History | ✅ | ✅ `gui/.../Automation*.vue`, `stores/automation.js` | Ф7 ✅ |
+| 21 | stAuto0: run()→bool, --run-id, callback | ✅ | ✅ внешний репо stAuto0 | Ф7 ✅ |
+| 22 | Cookie drag-and-drop + валидатор | ✅ | ⚠️ | ToDo §2 |
+| 23 | Window Arranger cross-platform | ✅ | ⚠️ (Windows-only) | ToDo §4 |
+| 24 | Migration Wizard (AdsPower) | ❌ заморожено | ❌ | ToDo §5 |
+| 25 | Cloud Sync | ❌ заморожено | ❌ | ToDo §6 |
+| 26 | Multi-Control v0.13.0 | ✅ | ✅ | — |
+| 27 | Fingerprint Generator | ✅ | ✅ | — |
+| 28 | Proxy Manager + ротация | ✅ | ✅ | — |
+| 29 | Extensions Manager | ✅ | ✅ | — |
+| 30 | Anti-Zombie процесс-контроль | ✅ | ✅ | — |
+| 31 | Очистка кэша | ✅ | ✅ | — |
+| 32 | i18n / Темизация / Tray / Auto-update | ✅ | ✅ | — |
+| 33 | Порт через env `PORT` (не `--port`) | ⚠️ док | ✅ факт | Ф4 док. |
 
 -------------------------------
