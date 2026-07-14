@@ -1,10 +1,11 @@
-import { describe, it, expect, beforeEach, vi } from 'vitest';
+import { describe, it, expect, beforeEach, vi, afterEach } from 'vitest';
 import express from 'express';
 import request from 'supertest';
 import Database from 'better-sqlite3';
 import { createTables } from '../../src/db/schema';
 import { createProjectQueries, createSystemConfigQueries } from '../../src/db/queries';
 import { createProjectsRouter } from '../../src/api/projects';
+import * as stauto0Config from '../../src/config/stauto0-config';
 
 function setupApi(db) {
   const app = express();
@@ -108,6 +109,15 @@ describe('POST /api/projects/sync', () => {
     createTables(db);
     config = createSystemConfigQueries(db);
     app = setupApi(db);
+    // Mock config reader to return empty array (no config file in tests)
+    vi.spyOn(stauto0Config, 'buildProjectsFromConfig').mockReturnValue([]);
+    vi.spyOn(stauto0Config, 'parseAccountRanges').mockReturnValue([]);
+    // Also mock readFileSync to prevent reading real config file
+    vi.spyOn(require('fs'), 'readFileSync').mockReturnValue('');
+  });
+
+  afterEach(() => {
+    vi.restoreAllMocks();
   });
 
   it('uses default stAuto0_path when not configured', async () => {

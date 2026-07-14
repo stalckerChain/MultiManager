@@ -119,7 +119,7 @@
 | `default_config` | TEXT JSON | Параметры по умолчанию (referral_codes и т.д.) |
 | `created_at`, `updated_at` | DATETIME | |
 
-Синхронизируются из `{stAuto0_path}/projects/*.py` через `POST /api/projects/sync`.
+Синхронизируются из `{stAuto0_path}/projects/*.py` + `{stAuto0_path}/config/projects.py` через `POST /api/projects/sync`. На GET `/api/matrix` проекты читаются напрямую из `config/projects.py` (только `PROJECT_STATUS == "active"`), что гарантирует актуальность данных без предварительной синхронизации. `PROJECT_FLAGS.accounts` определяет допустимые диапазоны профилей для каждого проекта.
 
 **`project_profile_config`** — матрица отметок Проекты×Профили:
 | Колонка | Тип | Назначение |
@@ -272,10 +272,10 @@ Zerion ID: `klghhnkeealcohjjanjjdaeeggmfmlpl`. Flow:
 
 | Endpoint | Метод | Назначение |
 |----------|-------|-----------|
-| `/api/projects` | GET | Список проектов |
-| `/api/projects/sync` | POST | Сканировать `stAuto0/projects/*.py`, обновить БД |
+| `/api/projects` | GET | Список проектов из БД |
+| `/api/projects/sync` | POST | Сканировать `stAuto0/projects/*.py` + `config/projects.py`, обновить БД |
 | `/api/projects/:name` | PUT | Обновить настройки проекта |
-| `/api/matrix` | GET | Вся матрица (проекты, профили, отметки) |
+| `/api/matrix` | GET | Вся матрица: проекты читаются напрямую из `stAuto0/config/projects.py` (только active), профили из БД, отметки из `project_profile_config` |
 | `/api/matrix` | PUT | Batch-обновление чекбоксов |
 | `/api/runs` | GET | Список запусков (пагинация) |
 | `/api/runs` | POST | Создать новый run из текущих отметок |
@@ -375,7 +375,7 @@ Python: `connect_over_cdp("http://127.0.0.1:9331")`.
 - Коды ошибок бэкенда (`ERR_PROXY_REFUSED`) локализуются на фронтенде.
 
 ### 9.10. Automation Matrix ✅ (Roadmap Ф7)
-- **Матрица** (`AutomationMatrix.vue`): таблица Проекты (колонки) × Профили (строки) с чекбоксами на пересечениях. Фильтр профилей. Кнопка «Создать задачу» → создаёт run.
+- **Матрица** (`AutomationMatrix.vue`): таблица Проекты (колонки) × Профили (строки) с чекбоксами на пересечениях. Проекты загружаются из `stAuto0/config/projects.py` (только active). Чекбоксы ограничены `allowed_profile_ids` из `PROJECT_FLAGS.accounts`. Фильтр профилей. Кнопка «Создать задачу» → создаёт run.
 - **Задачи** (`AutomationRuns.vue`): список созданных runs со статусами. Раскрываемая цветная матрица: ⚪=pending, 🔵=running, 🟢=success, 🔴=failed. Кнопки «Выполнить» и «Отмена».
 - **История** (`AutomationHistory.vue`): выполненные runs с ленивой подгрузкой (infinite scroll/pagination).
 - Pinia store: `stores/automation.js` — fetchMatrix, updateMatrix, createRun, startRun, fetchRuns, fetchRun.

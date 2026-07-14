@@ -434,12 +434,13 @@ function createProjectQueries(db) {
         // Добавляем или обновляем новые проекты
         for (const item of items) {
           const existingRow = getByNameStmt.get(item.name);
+          const isActive = item.is_active !== undefined ? (item.is_active ? 1 : 0) : 1;
           if (existingRow) {
             updateStmt.run(
               item.display_name || null,
               item.module_path || null,
               item.class_name || null,
-              1,
+              isActive,
               item.default_config || null,
               item.name
             );
@@ -449,7 +450,7 @@ function createProjectQueries(db) {
               item.display_name || '',
               item.module_path || '',
               item.class_name || '',
-              1,
+              isActive,
               item.default_config || '{}'
             );
           }

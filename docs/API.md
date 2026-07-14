@@ -1338,13 +1338,18 @@ Human-like ввод текста через CDP. Имитирует реальн
 
 ### GET /api/matrix
 
-Вся матрица Проекты×Профили: проекты, профили и отметки (чекбоксы).
+Вся матрица Проекты×Профили: проекты (из `stAuto0/config/projects.py`, только active), профили и отметки (чекбоксы). Проекты читаются напрямую из конфигурационного файла при каждом запросе — синхронизация не требуется.
 
 **Ответ (200):**
 ```json
 {
   "projects": [
-    { "name": "concrete", "display_name": "concrete", "is_active": 1 }
+    {
+      "name": "concrete",
+      "display_name": "Concrete",
+      "is_active": true,
+      "allowed_profile_ids": ["uuid1", "uuid2"]
+    }
   ],
   "profiles": [
     { "id": "uuid", "number": 1, "name": "auto_001", "status": "stopped" }
@@ -1356,11 +1361,13 @@ Human-like ввод текста через CDP. Имитирует реальн
       "is_enabled": 1,
       "config_override": "{}",
       "profile_name": "auto_001",
-      "project_display": "concrete"
+      "project_display": "Concrete"
     }
   ]
 }
 ```
+
+> `allowed_profile_ids` — список ID профилей, допустимых для проекта (на основе `PROJECT_FLAGS.accounts` в `config/projects.py`). Если `accounts` не указан — доступны все профили.
 
 ---
 

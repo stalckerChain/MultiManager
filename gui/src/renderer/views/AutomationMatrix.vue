@@ -56,6 +56,7 @@
             <div class="flex justify-center">
               <a-checkbox
                 :checked="isChecked(record.id, column.projectName)"
+                :disabled="!isProfileAllowed(record.id, column.allowedProfileIds)"
                 @change="toggleCell(record.id, column.projectName)"
               />
             </div>
@@ -113,12 +114,15 @@ const columns = computed(() => {
       width: 180,
     },
   ];
-  for (const proj of store.projects) {
+  // Only show active projects
+  const activeProjects = store.projects.filter(p => p.is_active);
+  for (const proj of activeProjects) {
     cols.push({
       title: proj.display_name || proj.name,
       dataIndex: `proj_${proj.name}`,
       key: `proj_${proj.name}`,
       projectName: proj.name,
+      allowedProfileIds: proj.allowed_profile_ids || [],
       width: 100,
       align: 'center',
     });
@@ -158,6 +162,11 @@ function toggleCell(profileId, projectName) {
   selectedCells.value[key] = !isChecked(profileId, projectName);
 }
 
+function isProfileAllowed(profileId, allowedProfileIds) {
+  if (!allowedProfileIds || allowedProfileIds.length === 0) return true;
+  return allowedProfileIds.includes(profileId);
+}
+
 async function handleSyncProjects() {
   syncing.value = true;
   try {
@@ -173,8 +182,12 @@ async function handleSyncProjects() {
 
 function getEnabledEntries() {
   const entries = [];
-  for (const proj of store.projects) {
+  // Only include active projects
+  const activeProjects = store.projects.filter(p => p.is_active);
+  for (const proj of activeProjects) {
+    const allowedIds = proj.allowed_profile_ids || store.profiles.map(p => p.id);
     for (const prof of store.profiles) {
+      if (!allowedIds.includes(prof.id)) continue;
       const key = getCellKey(prof.id, proj.name);
       const enabled = selectedCells.value[key] !== undefined
         ? selectedCells.value[key]
