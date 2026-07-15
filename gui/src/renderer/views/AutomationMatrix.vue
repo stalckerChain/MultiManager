@@ -155,14 +155,37 @@ function isChecked(profileId, projectName) {
 
 const selectedCount = computed(() => {
   let count = 0;
+  // Read .value ONCE and store ref to force Vue dependency tracking.
+  // The spread forces iteration over all own keys, registering a
+  // dependency on the reactive object even when it starts empty.
+  const cells = { ...selectedCells.value };
   const activeProjects = store.projects.filter(p => p.is_active);
-  for (const proj of activeProjects) {
-    const allowedIds = proj.allowed_profile_ids || store.profiles.map(p => p.id);
-    for (const prof of store.profiles) {
-      if (!allowedIds.includes(prof.id)) continue;
-      if (isChecked(prof.id, proj.name)) count++;
-    }
+  const activeProjectNames = new Set(activeProjects.map(p => p.name));
+  const matrix = store.matrix;
+
+  // Count locally toggled cells that belong to active projects
+  for (const key in cells) {
+    if (!cells[key]) continue;
+    const [profileId, projectName] = key.split('::');
+    if (!activeProjectNames.has(projectName)) continue;
+    const proj = activeProjects.find(p => p.name === projectName);
+    const allowedIds = proj?.allowed_profile_ids || store.profiles.map(p => p.id);
+    if (!allowedIds.includes(profileId)) continue;
+    count++;
   }
+
+  // Count server-enabled cells not overridden locally
+  for (const entry of matrix) {
+    if (!entry.is_enabled) continue;
+    if (!activeProjectNames.has(entry.project_name)) continue;
+    const key = getCellKey(entry.profile_id, entry.project_name);
+    if (key in cells) continue; // already counted (or overridden) locally
+    const proj = activeProjects.find(p => p.name === entry.project_name);
+    const allowedIds = proj?.allowed_profile_ids || store.profiles.map(p => p.id);
+    if (!allowedIds.includes(entry.profile_id)) continue;
+    count++;
+  }
+
   return count;
 });
 
