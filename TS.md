@@ -21,7 +21,7 @@
 **Технологический стек Core:**
 - Node.js ≥ 20.x, Express 4.x, better-sqlite3 (WAL + ACID), pino (логирование), ws (WebSocket), socks (SOCKS5-proxy), adm-zip, ghost-cursor, tree-kill, koffi (FFI для нативных Windows-хуков)
 
-**Тестирование:** Vitest (unit + integration), 645 тестов (42 файла). ✅ `tests/`, `vitest.config.js`
+**Тестирование:** Vitest (unit + integration), 649 тестов (42 файла). ✅ `tests/`, `vitest.config.js`
 
 -------------------------------
 ## 2. Безопасность и авторизация локального API ✅ РЕАЛИЗОВАНО
@@ -263,7 +263,7 @@ Zerion ID: `klghhnkeealcohjjanjjdaeeggmfmlpl`. Flow:
 
 -------------------------------
 ## 6. Стратегия тестирования ✅ РЕАЛИЗОВАНО
-Фреймворк **Vitest v3.x**, 645 тестов (42 файла). Запуск: `npm test`, `npm run test:watch`.
+Фреймворк **Vitest v3.x**, 649 тестов (42 файла). Запуск: `npm test`, `npm run test:watch`.
 
 **Unit (24 файла):** парсеры прокси/куки, fingerprint, auth middleware, расширения, CDP Manager, Multi-Control, Window Arranger, Human-like Typing, backup, crypto.
 
