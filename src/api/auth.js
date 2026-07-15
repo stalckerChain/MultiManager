@@ -11,6 +11,10 @@ function getToken() {
 }
 
 function authMiddleware(req, res, next) {
+  if (!state.apiToken) {
+    return res.status(503).json({ error: 'Service unavailable: token not initialized' });
+  }
+
   const authHeader = req.headers.authorization;
 
   if (!authHeader || !authHeader.startsWith('Bearer ')) {

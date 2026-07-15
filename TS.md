@@ -28,7 +28,7 @@
 
 - **Локальный хост:** Core открывает порт только на `127.0.0.1`. ✅ `src/index.js:27`
 - **Handshake:** GUI при fork Core передаёт токен как `--api-token=SECRET_VALUE` и порт через **env `PORT=N`** (см. примечание в §3.2). ✅ `gui/src/main/core-manager.js:60,70`
-- **Авторизация:** Все HTTP-запросы требуют `Authorization: Bearer SECRET`. Middleware возвращает 401 при отсутствии/несовпадении токена. ✅ `src/api/auth.js`
+- **Авторизация:** Все HTTP-запросы требуют `Authorization: Bearer SECRET`. Middleware возвращает 401 при отсутствии/несовпадении токена. Если токен не инициализирован — 503. ✅ `src/api/auth.js`
 - **Доступ для ИИ-агентов:** Токен доступен для копирования в Settings GUI. ✅ `gui/src/renderer/views/Settings.vue`
 - **Health:** `GET /health` — `{"status":"ok"}` (до middleware авторизации). ✅ `src/core/app.js:20`
 

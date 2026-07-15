@@ -56,4 +56,17 @@ describe('Auth Middleware', () => {
     expect(res.status).toHaveBeenCalledWith(401);
     expect(next).not.toHaveBeenCalled();
   });
+
+  it('возвращает 503 если токен не инициализирован', () => {
+    setToken(null);
+    const req = { headers: { authorization: 'Bearer test-token-123' } };
+    const res = { status: vi.fn().mockReturnThis(), json: vi.fn() };
+    const next = vi.fn();
+
+    authMiddleware(req, res, next);
+
+    expect(res.status).toHaveBeenCalledWith(503);
+    expect(res.json).toHaveBeenCalledWith({ error: 'Service unavailable: token not initialized' });
+    expect(next).not.toHaveBeenCalled();
+  });
 });

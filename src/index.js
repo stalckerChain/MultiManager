@@ -17,6 +17,15 @@ setToken(token);
 initDatabase();
 
 const db = getDatabase();
+
+// Сначала sync-операции, до async
+const staleProfiles = db.prepare("SELECT id FROM profiles WHERE status IN ('running', 'starting')").all();
+if (staleProfiles.length > 0) {
+  db.prepare("UPDATE profiles SET status = 'stopped', pid = NULL WHERE status IN ('running', 'starting')").run();
+  logger.info(`Сброшены ${staleProfiles.length} профилей со старыми статусами`);
+}
+
+// Затем async-операции
 performBackup(db).catch(err => logger.warn(`Hot backup пропущен (некритично): ${err.message}`));
 initMasterKey(db).then(() => {
   if (hasMasterKey()) {
@@ -24,13 +33,7 @@ initMasterKey(db).then(() => {
   } else {
     logger.warn('Master-ключ не инициализирован — режим ожидания пароля');
   }
-});
-
-const staleProfiles = db.prepare("SELECT id FROM profiles WHERE status IN ('running', 'starting')").all();
-if (staleProfiles.length > 0) {
-  db.prepare("UPDATE profiles SET status = 'stopped', pid = NULL WHERE status IN ('running', 'starting')").run();
-  logger.info(`Сброшены ${staleProfiles.length} профилей со старыми статусами`);
-}
+}).catch(err => logger.error(`Ошибка initMasterKey: ${err.message}`));
 
 const server = http.createServer(app);
 setupWebSocket(server);
