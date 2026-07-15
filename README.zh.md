@@ -17,6 +17,7 @@
 - **自动更新：** 通过 `electron-updater` 实现应用后台更新，支持 `autoDownload` 和通知。
 - **国际化（i18n）：** 通过 `i18next` 实现完整的热切换语言支持（English、Русский、简体中文）。
 - **主题切换：** 通过 CSS 变量动态切换主题（深色/浅色/跟随系统）。
+- **自动化矩阵：** 项目×配置文件矩阵，带复选框。分组运行，颜色状态指示器。并行执行限制。运行历史懒加载。设置中的项目管理（启用/禁用复选框，删除）。
 - **WebSocket：** 将 Core 引擎的配置文件状态和日志实时广播到 GUI。
 > **PowerShell 调用：** 所有 PowerShell 调用（`Get-RunningWindows`、`Move-Window`、`Set-WindowFocus`、`FocusByPID`、`FindWindowByPid`）均使用 `spawn('powershell', ['-EncodedCommand', ...])` — 通过 Base64 UTF‑16LE 编码直接调用 PowerShell（不经过 `cmd.exe` / 临时文件 / stdin），绕过 Execution Policy、ASR 规则以及命令行长度限制（~8191 字符）。`getScreenSize` 也已从 `execAsync(powershell -Command)` 迁移到 `spawn` + `-EncodedCommand`。
 

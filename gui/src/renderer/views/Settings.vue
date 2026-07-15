@@ -92,8 +92,28 @@
           <a-input-number v-model:value="automation.parallelLimit" :min="1" :max="20" class="w-full" />
         </a-form-item>
         <a-form-item v-if="automation.availableProjects && automation.availableProjects.length > 0" :label="t('settings.availableProjects')">
-          <div class="flex flex-wrap gap-1">
+          <div class="flex flex-wrap gap-1 mb-2">
             <a-tag v-for="proj in automation.availableProjects" :key="proj">{{ proj }}</a-tag>
+          </div>
+        </a-form-item>
+        <a-form-item v-if="projectList.length > 0" :label="t('settings.projectList')">
+          <div class="border rounded max-h-64 overflow-y-auto">
+            <div
+              v-for="proj in projectList"
+              :key="proj.name"
+              class="flex items-center justify-between px-3 py-2 border-b last:border-b-0 hover:bg-gray-50 dark:hover:bg-gray-800"
+            >
+              <div class="flex items-center gap-2">
+                <a-checkbox :checked="proj.is_active === 1" @change="toggleProjectActive(proj)">
+                  {{ proj.display_name || proj.name }}
+                </a-checkbox>
+                <a-tag v-if="proj.is_active === 1" color="green" size="small">active</a-tag>
+                <a-tag v-else color="default" size="small">inactive</a-tag>
+              </div>
+              <a-button type="text" danger size="small" @click="confirmDeleteProject(proj)">
+                <DeleteOutlined />
+              </a-button>
+            </div>
           </div>
         </a-form-item>
         <div class="flex gap-2">
@@ -122,7 +142,7 @@
 
 <script setup>
 import { ref, onMounted } from 'vue';
-import { EyeOutlined, EyeInvisibleOutlined, FolderOpenOutlined } from '@ant-design/icons-vue';
+import { EyeOutlined, EyeInvisibleOutlined, FolderOpenOutlined, DeleteOutlined } from '@ant-design/icons-vue';
 import { useTranslation } from 'i18next-vue';
 import { useAppStore } from '../stores/app.js';
 import { useAutomationStore } from '../stores/automation.js';
@@ -156,6 +176,7 @@ const automation = ref({
 });
 const savingAutomation = ref(false);
 const syncingProjects = ref(false);
+const projectList = ref([]);
 
 function handleThemeChange() {
   appStore.setTheme(theme.value);
@@ -262,6 +283,7 @@ async function handleSyncProjects() {
     const result = await autoStore.syncProjects();
     message.success(t('settings.syncProjectsResult', { added: result.added || 0, removed: result.removed || 0 }));
     await fetchAutomation();
+    await fetchProjectList();
   } catch (err) {
     message.error(err.message || t('common.error'));
   } finally {
@@ -285,9 +307,42 @@ async function browsePython() {
   }
 }
 
+async function fetchProjectList() {
+  try {
+    const autoStore = useAutomationStore();
+    projectList.value = await autoStore.fetchProjects();
+  } catch {
+    projectList.value = [];
+  }
+}
+
+async function toggleProjectActive(proj) {
+  try {
+    const autoStore = useAutomationStore();
+    const newActive = proj.is_active === 1 ? 0 : 1;
+    await autoStore.updateProject(proj.name, { is_active: newActive });
+    proj.is_active = newActive;
+    message.success(t('settings.projectUpdated'));
+  } catch (err) {
+    message.error(err.message || t('common.error'));
+  }
+}
+
+async function confirmDeleteProject(proj) {
+  try {
+    const autoStore = useAutomationStore();
+    await autoStore.deleteProject(proj.name);
+    projectList.value = projectList.value.filter(p => p.name !== proj.name);
+    message.success(t('settings.projectDeleted'));
+  } catch (err) {
+    message.error(err.message || t('common.error'));
+  }
+}
+
 onMounted(() => {
   fetchCryptoStatus();
   fetchRecoveryKey();
   fetchAutomation();
+  fetchProjectList();
 });
 </script>

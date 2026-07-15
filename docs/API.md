@@ -1266,6 +1266,15 @@ Human-like ввод текста через CDP. Имитирует реальн
 
 ---
 
+### DELETE /api/projects/:name
+
+Удалить проект из БД.
+
+**Ответ (204):** Успешное удаление
+**Ответ (404):** `{ "error": "Project not found" }`
+
+---
+
 ## Матрица (Matrix)
 
 ### GET /api/matrix

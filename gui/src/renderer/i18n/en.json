@@ -136,7 +136,10 @@
     "syncProjectsSuccess": "Projects synced successfully",
     "syncProjectsResult": "Added: {{added}}, removed: {{removed}}",
     "parallelLimit": "Parallel Limit",
-    "parallelLimitHelp": "Max number of profiles running simultaneously"
+    "parallelLimitHelp": "Max number of profiles running simultaneously",
+    "projectList": "Projects",
+    "projectUpdated": "Project updated",
+    "projectDeleted": "Project deleted"
   },
   "automation": {
     "title": "Automation",

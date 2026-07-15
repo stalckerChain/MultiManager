@@ -136,7 +136,10 @@
     "syncProjectsSuccess": "Проекты синхронизированы",
     "syncProjectsResult": "Добавлено: {{added}}, удалено: {{removed}}",
     "parallelLimit": "Лимит параллельности",
-    "parallelLimitHelp": "Макс. количество одновременно запущенных профилей"
+    "parallelLimitHelp": "Макс. количество одновременно запущенных профилей",
+    "projectList": "Проекты",
+    "projectUpdated": "Проект обновлён",
+    "projectDeleted": "Проект удалён"
   },
   "automation": {
     "title": "Автоматизация",

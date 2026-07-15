@@ -1146,6 +1146,93 @@ Authorization: Bearer <token>
 
 ---
 
+## 项目（自动化矩阵）
+
+### GET /api/projects
+
+获取从 `stAuto0/projects/*.py` 同步的所有项目列表。
+
+**响应 (200):**
+```json
+[
+  {
+    "name": "concrete",
+    "display_name": "concrete",
+    "module_path": "projects.concrete",
+    "class_name": "",
+    "is_active": 1,
+    "default_config": "{}",
+    "created_at": "2026-07-13 12:00:00",
+    "updated_at": "2026-07-13 12:00:00"
+  }
+]
+```
+
+---
+
+### POST /api/projects/sync
+
+扫描 `stAuto0/projects/*.py` 目录，添加新项目，停用已删除的项目。忽略 `__init__.py`、`base.py`、`loader.py`。如果未配置 `stAuto0_path`，则使用默认路径 `~/AI/stAuto0`。
+
+**响应 (200):**
+```json
+{
+  "added": 2,
+  "removed": 0,
+  "total": 5
+}
+```
+
+---
+
+### GET /api/projects/:name
+
+获取单个项目及其矩阵中的配置文件。
+
+**响应 (200):**
+```json
+{
+  "name": "concrete",
+  "display_name": "Concrete Points",
+  "is_active": 1,
+  "profiles": [
+    { "project_name": "concrete", "profile_id": "uuid", "is_enabled": 1 }
+  ]
+}
+```
+
+**响应 (404):** `{ "error": "Project not found" }`
+
+---
+
+### PUT /api/projects/:name
+
+更新项目设置（display_name、is_active、default_config、module_path、class_name）。
+
+**请求体：**
+```json
+{
+  "display_name": "Concrete Points",
+  "is_active": 1,
+  "default_config": "{\"referral_code\": \"ABC\"}"
+}
+```
+
+**响应 (200):** 更新后的项目对象
+
+**响应 (404):** `{ "error": "Project not found" }`
+
+---
+
+### DELETE /api/projects/:name
+
+从数据库中删除项目。
+
+**响应 (204):** 成功删除
+**响应 (404):** `{ "error": "Project not found" }`
+
+---
+
 ## 配置文件状态
 
 | 状态 | 描述 |

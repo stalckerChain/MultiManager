@@ -124,6 +124,15 @@ function createProjectsRouter(opts = {}) {
     res.json(updated);
   });
 
+  router.delete('/:name', (req, res) => {
+    const existing = getProjects().getByName(req.params.name);
+    if (!existing) {
+      return res.status(404).json({ error: 'Project not found' });
+    }
+    getProjects().delete(req.params.name);
+    res.status(204).end();
+  });
+
   return router;
 }
 

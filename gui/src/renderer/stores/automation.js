@@ -90,9 +90,18 @@ export const useAutomationStore = defineStore('automation', () => {
     return data;
   }
 
+  async function deleteProject(name) {
+    await client.delete(`/api/projects/${encodeURIComponent(name)}`);
+  }
+
+  async function updateProject(name, data) {
+    const { data: result } = await client.put(`/api/projects/${encodeURIComponent(name)}`, data);
+    return result;
+  }
+
   return {
     matrix, projects, profiles, runs, currentRun, loading, error,
     fetchMatrix, updateMatrix, createRun, fetchRuns, fetchRun,
-    startRun, cancelRun, fetchProjects, syncProjects,
+    startRun, cancelRun, fetchProjects, syncProjects, deleteProject, updateProject,
   };
 });

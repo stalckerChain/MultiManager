@@ -243,7 +243,9 @@ Zerion ID: `klghhnkeealcohjjanjjdaeeggmfmlpl`. Flow:
 |----------|-------|-----------|
 | `/api/projects` | GET | Список проектов из БД |
 | `/api/projects/sync` | POST | Сканировать `stAuto0/projects/*.py` + `config/projects.py`, обновить БД |
+| `/api/projects/:name` | GET | Получить проект с профилями из матрицы |
 | `/api/projects/:name` | PUT | Обновить настройки проекта |
+| `/api/projects/:name` | DELETE | Удалить проект из БД |
 | `/api/matrix` | GET | Вся матрица: проекты читаются напрямую из `stAuto0/config/projects.py` (только active), профили из БД, отметки из `project_profile_config` |
 | `/api/matrix` | PUT | Batch-обновление чекбоксов |
 | `/api/runs` | GET | Список запусков (пагинация) |
@@ -351,6 +353,7 @@ Python: `connect_over_cdp("http://127.0.0.1:9331")`.
 ### 10.6. Settings — расширение ✅ РЕАЛИЗОВАНО (Roadmap Ф5)
 - Раздел «Безопасность»: toggle мастер-пароль, поле ввода/смены пароля, отображение recovery-key, статус OS Keyring. ✅ `gui/src/renderer/views/Settings.vue`, `src/api/settings.js`
 - Раздел «Автоматизация»: путь к stAuto0, выбор Python-интерпретатора, список доступных проектов. ✅ `gui/src/renderer/views/Settings.vue`, `src/api/settings.js`
+- Управление проектами: чекбоксы вкл/выкл (is_active), кнопка удаления, синхронизация проектов обновляет список. ✅ `gui/src/renderer/views/Settings.vue`, `src/api/projects.js` (DELETE /api/projects/:name)
 
 -------------------------------
 ## 11. Roadmap реализации (MultiManager-сторона)

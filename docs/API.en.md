@@ -1168,6 +1168,93 @@ Update automation settings. If paths are not provided, default values are used (
 
 ---
 
+## Projects (Automation Matrix)
+
+### GET /api/projects
+
+List all projects synced from `stAuto0/projects/*.py`.
+
+**Response (200):**
+```json
+[
+  {
+    "name": "concrete",
+    "display_name": "concrete",
+    "module_path": "projects.concrete",
+    "class_name": "",
+    "is_active": 1,
+    "default_config": "{}",
+    "created_at": "2026-07-13 12:00:00",
+    "updated_at": "2026-07-13 12:00:00"
+  }
+]
+```
+
+---
+
+### POST /api/projects/sync
+
+Scan `stAuto0/projects/*.py` directory, add new projects, deactivate removed ones. Ignores `__init__.py`, `base.py`, `loader.py`. If `stAuto0_path` is not configured, default path `~/AI/stAuto0` is used.
+
+**Response (200):**
+```json
+{
+  "added": 2,
+  "removed": 0,
+  "total": 5
+}
+```
+
+---
+
+### GET /api/projects/:name
+
+Get a single project with its profiles from the matrix.
+
+**Response (200):**
+```json
+{
+  "name": "concrete",
+  "display_name": "Concrete Points",
+  "is_active": 1,
+  "profiles": [
+    { "project_name": "concrete", "profile_id": "uuid", "is_enabled": 1 }
+  ]
+}
+```
+
+**Response (404):** `{ "error": "Project not found" }`
+
+---
+
+### PUT /api/projects/:name
+
+Update project settings (display_name, is_active, default_config, module_path, class_name).
+
+**Request Body:**
+```json
+{
+  "display_name": "Concrete Points",
+  "is_active": 1,
+  "default_config": "{\"referral_code\": \"ABC\"}"
+}
+```
+
+**Response (200):** Updated project object
+
+**Response (404):** `{ "error": "Project not found" }`
+
+---
+
+### DELETE /api/projects/:name
+
+Delete a project from the database.
+
+**Response (204):** Successfully deleted
+**Response (404):** `{ "error": "Project not found" }`
+
+---
+
 ## Profile Statuses
 
 | Status | Description |

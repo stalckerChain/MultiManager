@@ -386,6 +386,10 @@ function createProjectQueries(db) {
     getActive() {
       return getActiveStmt.all();
     },
+
+    delete(name) {
+      deleteByName.run(name);
+    },
   };
 }
 
