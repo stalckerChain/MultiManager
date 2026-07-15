@@ -22,7 +22,7 @@ function validate(schema) {
 const profileCreateSchema = z.object({
   name: z.string().min(1, 'name обязателен').max(100),
   platform: z.enum(['windows', 'macos', 'linux']),
-  timezone: z.string().min(1, 'timezone обязателен'),
+  timezone: z.string().optional().default('UTC'),
   proxy_id: z.number().int().positive().nullable().optional(),
   extensions: z.any().optional(),
   tags: z.any().optional(),

@@ -190,6 +190,7 @@ async function handleOneClick() {
   await profilesStore.create({
     name: `Profile ${Date.now()}`,
     platform: 'windows',
+    timezone: Intl.DateTimeFormat().resolvedOptions().timeZone || 'UTC',
   });
 }
 
