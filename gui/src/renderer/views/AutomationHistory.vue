@@ -61,6 +61,7 @@
                 <thead>
                   <tr>
                     <th class="text-left p-2 border border-slate-600 bg-slate-700 whitespace-nowrap">{{ t('automation.columns.profile') }}</th>
+                    <th class="text-left p-2 border border-slate-600 bg-slate-700 whitespace-nowrap">{{ t('automation.columns.profileId') }}</th>
                     <th
                       v-for="proj in runProjects[run.id]"
                       :key="proj"
@@ -71,22 +72,23 @@
                   </tr>
                 </thead>
                 <tbody>
-                  <tr v-for="(tasks, profileName) in groupedTasks(run.id)" :key="profileName">
-                    <td class="p-2 border border-slate-600 font-medium whitespace-nowrap">{{ profileName }}</td>
+                  <tr v-for="(group, profileKey) in groupedTasks(run.id)" :key="profileKey">
+                    <td class="p-2 border border-slate-600 font-medium whitespace-nowrap">{{ group.profileName }}</td>
+                    <td class="p-2 border border-slate-600 text-xs text-slate-400 whitespace-nowrap">{{ group.profileId }}</td>
                     <td
                       v-for="proj in runProjects[run.id]"
                       :key="proj"
                       class="p-1 border border-slate-600 text-center"
                     >
                       <div
-                        v-if="getTaskStatus(run.id, proj, profileName)"
+                        v-if="getTaskStatus(run.id, proj, profileKey)"
                         class="w-full h-full min-h-[24px] flex items-center justify-center"
                       >
                         <div
                           class="w-4 h-4 rounded cursor-pointer"
-                          :class="cellColorClass(getTaskStatus(run.id, proj, profileName))"
-                          :title="getTaskStatus(run.id, proj, profileName)"
-                          @click="openLog(getTaskLog(run.id, proj, profileName))"
+                          :class="cellColorClass(getTaskStatus(run.id, proj, profileKey))"
+                          :title="getTaskStatus(run.id, proj, profileKey)"
+                          @click="openLog(getTaskLog(run.id, proj, profileKey))"
                         />
                       </div>
                     </td>
@@ -193,26 +195,30 @@ function groupedTasks(runId) {
   const tasks = runTasks.value[runId] || [];
   const groups = {};
   for (const task of tasks) {
-    const profileName = task.profile_name || task.profile_id;
-    if (!groups[profileName]) groups[profileName] = [];
-    groups[profileName].push(task);
+    const profileKey = task.profile_id;
+    if (!groups[profileKey]) {
+      groups[profileKey] = {
+        profileName: task.profile_name || task.profile_id,
+        profileId: task.profile_id,
+        tasks: [],
+      };
+    }
+    groups[profileKey].tasks.push(task);
   }
   return groups;
 }
 
-function getTaskStatus(runId, projectName, profileName) {
-  const tasks = runTasks.value[runId] || [];
-  const task = tasks.find(
-    t => t.project_name === projectName && (t.profile_name === profileName || t.profile_id === profileName)
-  );
+function getTaskStatus(runId, projectName, profileKey) {
+  const group = groupedTasks(runId)[profileKey];
+  if (!group) return null;
+  const task = group.tasks.find(t => t.project_name === projectName);
   return task ? task.status : null;
 }
 
-function getTaskLog(runId, projectName, profileName) {
-  const tasks = runTasks.value[runId] || [];
-  const task = tasks.find(
-    t => t.project_name === projectName && (t.profile_name === profileName || t.profile_id === profileName)
-  );
+function getTaskLog(runId, projectName, profileKey) {
+  const group = groupedTasks(runId)[profileKey];
+  if (!group) return null;
+  const task = group.tasks.find(t => t.project_name === projectName);
   return task ? task.log_file_path : null;
 }
 

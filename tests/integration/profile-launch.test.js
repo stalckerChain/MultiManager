@@ -35,12 +35,18 @@ let profile;
 
 beforeAll(() => {
   db = initDatabase();
+  db.pragma('foreign_keys = OFF');
   profileQueries = createProfileQueries(db);
   cookieQueries = createCookieQueries(db);
 
+  db.exec('DELETE FROM run_tasks');
+  db.exec('DELETE FROM runs');
+  db.exec('DELETE FROM project_profile_config');
+  db.exec('DELETE FROM projects');
   db.exec('DELETE FROM profiles');
   db.exec('DELETE FROM cookies');
   db.exec('DELETE FROM profile_logs');
+  db.pragma('foreign_keys = ON');
 });
 
 afterAll(() => {

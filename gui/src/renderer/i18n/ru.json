@@ -173,6 +173,7 @@
     },
     "columns": {
       "profile": "Профиль",
+      "profileId": "ID профиля",
       "project": "Проект",
       "name": "Название",
       "date": "Дата",

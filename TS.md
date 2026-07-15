@@ -21,7 +21,7 @@
 **Технологический стек Core:**
 - Node.js ≥ 20.x, Express 4.x, better-sqlite3 (WAL + ACID), pino (логирование), ws (WebSocket), socks (SOCKS5-proxy), adm-zip, ghost-cursor, tree-kill, koffi (FFI для нативных Windows-хуков)
 
-**Тестирование:** Vitest (unit + integration), 563 теста (31 файл). ✅ `tests/`, `vitest.config.js`
+**Тестирование:** Vitest (unit + integration), 645 тестов (42 файла). ✅ `tests/`, `vitest.config.js`
 
 -------------------------------
 ## 2. Безопасность и авторизация локального API ✅ РЕАЛИЗОВАНО
@@ -92,7 +92,7 @@
 | `default_config` | TEXT JSON | Параметры по умолчанию (referral_codes и т.д.) |
 | `created_at`, `updated_at` | DATETIME | |
 
-Синхронизируются из `{stAuto0_path}/projects/*.py` + `{stAuto0_path}/config/projects.py` через `POST /api/projects/sync`. На GET `/api/matrix` проекты читаются напрямую из `config/projects.py` (только `PROJECT_STATUS == "active"`), что гарантирует актуальность данных без предварительной синхронизации. `PROJECT_FLAGS.accounts` определяет допустимые диапазоны профилей для каждого проекта.
+Синхронизируются из `{stAuto0_path}/projects/*.py` + `{stAuto0_path}/config/projects.py` через `POST /api/projects/sync`. На GET `/api/matrix` проекты читаются из таблицы `projects` в БД (только `is_active = 1`), что гарантирует консистентность с настройками проектов. `default_config.accounts` определяет допустимые диапазоны профилей для каждого проекта.
 
 **`project_profile_config`** — матрица отметок Проекты×Профили:
 | Колонка | Тип | Назначение |
@@ -246,7 +246,7 @@ Zerion ID: `klghhnkeealcohjjanjjdaeeggmfmlpl`. Flow:
 | `/api/projects/:name` | GET | Получить проект с профилями из матрицы |
 | `/api/projects/:name` | PUT | Обновить настройки проекта |
 | `/api/projects/:name` | DELETE | Удалить проект из БД |
-| `/api/matrix` | GET | Вся матрица: проекты читаются напрямую из `stAuto0/config/projects.py` (только active), профили из БД, отметки из `project_profile_config` |
+| `/api/matrix` | GET | Вся матрица: проекты читаются из таблицы `projects` в БД (только `is_active=1`), профили из БД, отметки из `project_profile_config` |
 | `/api/matrix` | PUT | Batch-обновление чекбоксов |
 | `/api/runs` | GET | Список запусков (пагинация) |
 | `/api/runs` | POST | Создать новый run из текущих отметок |
@@ -263,7 +263,7 @@ Zerion ID: `klghhnkeealcohjjanjjdaeeggmfmlpl`. Flow:
 
 -------------------------------
 ## 6. Стратегия тестирования ✅ РЕАЛИЗОВАНО
-Фреймворк **Vitest v3.x**, 563 теста (31 файл). Запуск: `npm test`, `npm run test:watch`.
+Фреймворк **Vitest v3.x**, 645 тестов (42 файла). Запуск: `npm test`, `npm run test:watch`.
 
 **Unit (24 файла):** парсеры прокси/куки, fingerprint, auth middleware, расширения, CDP Manager, Multi-Control, Window Arranger, Human-like Typing, backup, crypto.
 
@@ -366,7 +366,7 @@ Python: `connect_over_cdp("http://127.0.0.1:9331")`.
 | **Ф4** | **✅ Все endpoints:** `/api/browser/:id/type`, `/api/profiles/batch`, `ws_endpoint`, `/api/internal/profiles`, `/api/browser/:id/zerion-login`. | `src/api/browser.js`, `src/api/profiles.js`, `src/api/internal.js` | Ф1, Ф2 |
 | **Ф5** | **✅ ProfileModal** вкладки (Аккаунты + Кошельки). **✅ Settings** crypto/automation. | `gui/src/renderer/views/ProfileModal.vue`, `gui/src/renderer/views/Settings.vue` | Ф1, Ф2, Ф4 |
 | **Ф6** | **✅ Терминал xterm.js + child_process.** | `gui/package.json`, `gui/src/main/pty.js`, `gui/src/renderer/components/Terminal.vue`, `tests/unit/pty.test.js` | Ф4 |
-| **Ф7** | **✅ Automation Matrix:** Проекты, Матрица, Runs, RunExecutor. Новые таблицы `projects`, `project_profile_config`, `runs`, `run_tasks`. Endpoints `/api/projects`, `/api/matrix`, `/api/runs`. GUI: 3 страницы (Матрица, Задачи, История). stAuto0: `run()` → bool, `--run-id`, callback статуса. Параллельный spawn с лимитом. | `src/db/schema.js`, `src/db/queries.js`, `src/api/projects.js`, `src/api/matrix.js`, `src/api/runs.js`, `src/api/internal-runs.js`, `src/executor/index.js`, `gui/.../AutomationMatrix.vue`, `gui/.../AutomationRuns.vue`, `gui/.../AutomationHistory.vue`, `gui/.../stores/automation.js` + stAuto0: `base.py`, `browser.py`, `multimanager.py`, `main.py` | Ф4, Ф5, Ф6 |
+| **Ф7** | **✅ Automation Matrix:** Проекты, Матрица, Runs, RunExecutor. Новые таблицы `projects`, `project_profile_config`, `runs`, `run_tasks`. Endpoints `/api/projects`, `/api/matrix`, `/api/runs`. GUI: 3 страницы (Матрица, Задачи, История). stAuto0: `run()` → bool, `--run-id`, callback статуса. Параллельный spawn с лимитом. Executor автоматически финализирует статус run после завершения всех процессов. Матрица читает проекты из БД (is_active флаг). | `src/db/schema.js`, `src/db/queries.js`, `src/api/projects.js`, `src/api/matrix.js`, `src/api/runs.js`, `src/api/internal-runs.js`, `src/executor/index.js`, `gui/.../AutomationMatrix.vue`, `gui/.../AutomationRuns.vue`, `gui/.../AutomationHistory.vue`, `gui/.../stores/automation.js` + stAuto0: `base.py`, `browser.py`, `multimanager.py`, `main.py` | Ф4, Ф5, Ф6 |
 
 > **Параллельный трек (TS_INTEGRATION.md):** миграция stAuto0 идёт фазами ФА–ФД и стыкуется с MultiManager Ф1–Ф4 (API-контракт).
 

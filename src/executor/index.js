@@ -45,11 +45,30 @@ class RunExecutor {
     }
 
     await Promise.all(running);
+
+    // Finalize run status if still running (Python scripts may not have reported back)
+    if (!this._cancelled && this.options.updateRun) {
+      const tasks = await this.options.getRunTasks();
+      const allDone = tasks.every(t => t.status === 'success' || t.status === 'failed');
+      if (allDone) {
+        const hasFailures = tasks.some(t => t.status === 'failed');
+        this.options.updateRun(this.run.id, hasFailures ? 'partial' : 'completed', new Date().toISOString());
+      } else {
+        // Some tasks never reported back — mark remaining as failed
+        for (const task of tasks) {
+          if (task.status === 'running' || task.status === 'pending') {
+            this.options.updateRunTaskStatus(task.id, 'failed');
+          }
+        }
+        this.options.updateRun(this.run.id, 'partial', new Date().toISOString());
+      }
+    }
   }
 
   async _executeProfile(profileId, tasks) {
     for (const task of tasks) {
       await this.options.updateRunTaskStatus(task.id, 'running');
+      task.status = 'running';
     }
 
     const profile = this.options.getProfileById
@@ -88,6 +107,12 @@ class RunExecutor {
       child.on('close', (code) => {
         logStream.end();
         this.processes.delete(profileId);
+        // Mark tasks that weren't reported back as failed
+        for (const task of tasks) {
+          if (task.status === 'running') {
+            this.options.updateRunTaskStatus(task.id, 'failed');
+          }
+        }
         resolve();
       });
     });

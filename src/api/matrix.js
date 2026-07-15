@@ -1,14 +1,11 @@
 const express = require('express');
-const path = require('path');
-const os = require('os');
 const { getDatabase } = require('../db');
-const { createMatrixQueries, createProfileQueries, createSystemConfigQueries } = require('../db/queries');
-const stauto0Config = require('../config/stauto0-config');
+const { createMatrixQueries, createProfileQueries, createProjectQueries } = require('../db/queries');
+const { parseAccountRanges } = require('../config/stauto0-config');
 
 function createMatrixRouter(opts = {}) {
   const router = express.Router();
-  const _buildProjectsFromConfig = opts.buildProjectsFromConfig || stauto0Config.buildProjectsFromConfig;
-  const _parseAccountRanges = opts.parseAccountRanges || stauto0Config.parseAccountRanges;
+  const _parseAccountRanges = opts.parseAccountRanges || parseAccountRanges;
 
   function getMatrix() {
     return opts.matrixQueries || createMatrixQueries(getDatabase());
@@ -18,21 +15,16 @@ function createMatrixRouter(opts = {}) {
     return opts.profileQueries || createProfileQueries(getDatabase());
   }
 
-  function getCfg() {
-    return opts.configQueries || createSystemConfigQueries(getDatabase());
+  function getProjects() {
+    return opts.projectQueries || createProjectQueries(getDatabase());
   }
 
   router.get('/', (req, res) => {
     const profileList = getProfiles().getAll();
     const matrixEntries = getMatrix().getAll();
 
-    // Read active projects directly from stAuto0/config/projects.py
-    const defaultPath = path.join(os.homedir(), 'AI', 'stAuto0');
-    const stAuto0Path = getCfg().get('stAuto0_path') || defaultPath;
-    const configProjects = _buildProjectsFromConfig(stAuto0Path);
-
-    // Filter to active projects only
-    const activeProjects = configProjects.filter(p => p.is_active);
+    // Read active projects from database (not filesystem)
+    const activeProjects = getProjects().getActive();
 
     // Build allowed_profile_ids for each active project based on accounts config
     const projectsWithAllowed = activeProjects.map(proj => {

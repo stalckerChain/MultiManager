@@ -173,6 +173,7 @@
     },
     "columns": {
       "profile": "Profile",
+      "profileId": "Profile ID",
       "project": "Project",
       "name": "Name",
       "date": "Date",

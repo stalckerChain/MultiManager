@@ -170,9 +170,8 @@ function isProfileAllowed(profileId, allowedProfileIds) {
 async function handleSyncProjects() {
   syncing.value = true;
   try {
-    const result = await store.syncProjects();
-    message.success(t('settings.syncProjectsResult', { added: result.added || 0, removed: result.removed || 0 }));
     await store.fetchMatrix();
+    message.success(t('settings.syncProjectsSuccess'));
   } catch (err) {
     message.error(err.message || t('common.error'));
   } finally {

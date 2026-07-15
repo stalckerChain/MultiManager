@@ -173,6 +173,7 @@
     },
     "columns": {
       "profile": "配置文件",
+      "profileId": "配置文件 ID",
       "project": "项目",
       "name": "名称",
       "date": "日期",
