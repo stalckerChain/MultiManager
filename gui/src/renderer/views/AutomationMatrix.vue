@@ -86,7 +86,7 @@
 </template>
 
 <script setup>
-import { ref, computed, onMounted } from 'vue';
+import { ref, computed, watch, onMounted } from 'vue';
 import { useRouter } from 'vue-router';
 import { useTranslation } from 'i18next-vue';
 import { message } from 'ant-design-vue';
@@ -153,17 +153,15 @@ function isChecked(profileId, projectName) {
   return entry ? Boolean(entry.is_enabled) : false;
 }
 
-const selectedCount = computed(() => {
+const selectedCount = ref(0);
+
+function recalcCount() {
   let count = 0;
-  // Read .value ONCE and store ref to force Vue dependency tracking.
-  // The spread forces iteration over all own keys, registering a
-  // dependency on the reactive object even when it starts empty.
-  const cells = { ...selectedCells.value };
+  const cells = selectedCells.value;
   const activeProjects = store.projects.filter(p => p.is_active);
   const activeProjectNames = new Set(activeProjects.map(p => p.name));
   const matrix = store.matrix;
 
-  // Count locally toggled cells that belong to active projects
   for (const key in cells) {
     if (!cells[key]) continue;
     const [profileId, projectName] = key.split('::');
@@ -174,20 +172,21 @@ const selectedCount = computed(() => {
     count++;
   }
 
-  // Count server-enabled cells not overridden locally
   for (const entry of matrix) {
     if (!entry.is_enabled) continue;
     if (!activeProjectNames.has(entry.project_name)) continue;
     const key = getCellKey(entry.profile_id, entry.project_name);
-    if (key in cells) continue; // already counted (or overridden) locally
+    if (key in cells) continue;
     const proj = activeProjects.find(p => p.name === entry.project_name);
     const allowedIds = proj?.allowed_profile_ids || store.profiles.map(p => p.id);
     if (!allowedIds.includes(entry.profile_id)) continue;
     count++;
   }
 
-  return count;
-});
+  selectedCount.value = count;
+}
+
+watch([selectedCells, () => store.projects, () => store.matrix], recalcCount, { deep: true, immediate: true });
 
 function toggleCell(profileId, projectName) {
   const key = getCellKey(profileId, projectName);
