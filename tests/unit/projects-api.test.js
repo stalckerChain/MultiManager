@@ -162,4 +162,74 @@ describe('POST /api/projects/sync', () => {
     expect(res.body.removed).toBe(1);
     expect(projects.getByName('old_project').is_active).toBe(0);
   });
+
+  it('preserves is_active=0 for existing projects during sync', async () => {
+    const projects = createProjectQueries(db);
+    // Start with both projects active
+    projects.sync([
+      { name: 'concrete', display_name: 'Concrete' },
+      { name: 'allscale', display_name: 'AllScale' },
+    ]);
+    // User disables concrete
+    projects.update('concrete', { is_active: 0 });
+    expect(projects.getByName('concrete').is_active).toBe(0);
+
+    config.set('stAuto0_path', '/fake/stAuto0');
+    // Sync returns both projects from filesystem (no is_active field)
+    vi.spyOn(require('fs'), 'readdirSync').mockReturnValue(['concrete.py', 'allscale.py']);
+
+    const res = await request(app).post('/api/projects/sync');
+    expect(res.status).toBe(200);
+
+    // concrete should still be disabled after sync
+    expect(projects.getByName('concrete').is_active).toBe(0);
+    // allscale should still be active
+    expect(projects.getByName('allscale').is_active).toBe(1);
+  });
+
+  it('preserves is_active=0 when sync is called without is_active in data', async () => {
+    const projects = createProjectQueries(db);
+    projects.sync([
+      { name: 'concrete', display_name: 'Concrete' },
+      { name: 'allscale', display_name: 'AllScale' },
+    ]);
+    // User disables concrete
+    projects.update('concrete', { is_active: 0 });
+    expect(projects.getByName('concrete').is_active).toBe(0);
+
+    // Sync with data that has NO is_active field (like filesystem scan does)
+    projects.sync([
+      { name: 'concrete', display_name: 'Concrete' },
+      { name: 'allscale', display_name: 'AllScale' },
+    ]);
+
+    // concrete should STILL be disabled — sync preserves existing is_active
+    expect(projects.getByName('concrete').is_active).toBe(0);
+    expect(projects.getByName('allscale').is_active).toBe(1);
+  });
+
+  it('explicit is_active in sync data overrides existing value', async () => {
+    const projects = createProjectQueries(db);
+    projects.sync([
+      { name: 'concrete', display_name: 'Concrete' },
+    ]);
+    projects.update('concrete', { is_active: 0 });
+    expect(projects.getByName('concrete').is_active).toBe(0);
+
+    // Sync with explicit is_active:1 should override
+    projects.sync([
+      { name: 'concrete', display_name: 'Concrete', is_active: 1 },
+    ]);
+    expect(projects.getByName('concrete').is_active).toBe(1);
+  });
+
+  it('new projects from sync default to active', async () => {
+    const projects = createProjectQueries(db);
+    config.set('stAuto0_path', '/fake/stAuto0');
+    vi.spyOn(require('fs'), 'readdirSync').mockReturnValue(['new_project.py']);
+
+    const res = await request(app).post('/api/projects/sync');
+    expect(res.status).toBe(200);
+    expect(projects.getByName('new_project').is_active).toBe(1);
+  });
 });

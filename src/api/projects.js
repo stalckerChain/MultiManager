@@ -48,7 +48,6 @@ function createProjectsRouter(opts = {}) {
           display_name: f.replace(/\.py$/, ''),
           module_path: `projects.${f.replace(/\.py$/, '')}`,
           class_name: '',
-          is_active: 1,
           default_config: '{}',
         }));
     } catch (err) {
