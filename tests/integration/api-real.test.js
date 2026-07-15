@@ -159,6 +159,54 @@ describe('Profiles', () => {
     expect(res.status).toBe(400);
   });
 
+  it('POST /api/profiles returns 400 without timezone', async () => {
+    const res = await request('POST', '/api/profiles', {
+      name: 'No TZ',
+      platform: 'windows',
+    });
+    expect(res.status).toBe(400);
+    expect(res.body.error).toBeTruthy();
+  });
+
+  it('POST /api/profiles returns 400 with empty timezone', async () => {
+    const res = await request('POST', '/api/profiles', {
+      name: 'Empty TZ',
+      platform: 'windows',
+      timezone: '',
+    });
+    expect(res.status).toBe(400);
+    expect(res.body.error).toBeTruthy();
+  });
+
+  it('POST /api/profiles returns 400 with invalid platform', async () => {
+    const res = await request('POST', '/api/profiles', {
+      name: 'Bad Platform',
+      platform: 'android',
+      timezone: 'UTC',
+    });
+    expect(res.status).toBe(400);
+  });
+
+  it('POST /api/profiles returns 400 without name', async () => {
+    const res = await request('POST', '/api/profiles', {
+      platform: 'windows',
+      timezone: 'UTC',
+    });
+    expect(res.status).toBe(400);
+  });
+
+  it('POST /api/profiles creates profile with one-click style data', async () => {
+    const res = await request('POST', '/api/profiles', {
+      name: `Profile ${Date.now()}`,
+      platform: 'windows',
+      timezone: Intl.DateTimeFormat().resolvedOptions().timeZone || 'UTC',
+    });
+    expect(res.status).toBe(201);
+    expect(res.body.id).toBeTruthy();
+    expect(res.body.timezone).toBeTruthy();
+    await request('DELETE', `/api/profiles/${res.body.id}`);
+  });
+
   it('GET /api/profiles returns list', async () => {
     const res = await request('GET', '/api/profiles');
     expect(res.status).toBe(200);
