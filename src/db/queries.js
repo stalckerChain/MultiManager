@@ -338,8 +338,9 @@ function createProjectQueries(db) {
         // Добавляем или обновляем новые проекты
         for (const item of items) {
           const existingRow = getByNameStmt.get(item.name);
-          const isActive = item.is_active !== undefined ? (item.is_active ? 1 : 0) : 1;
           if (existingRow) {
+            // Preserve is_active flag if not provided in sync data
+            const isActive = item.is_active !== undefined ? (item.is_active ? 1 : 0) : existingRow.is_active;
             updateStmt.run(
               item.display_name || null,
               item.module_path || null,
@@ -349,6 +350,7 @@ function createProjectQueries(db) {
               item.name
             );
           } else {
+            const isActive = item.is_active !== undefined ? (item.is_active ? 1 : 0) : 1;
             insert.run(
               item.name,
               item.display_name || '',
