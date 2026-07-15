@@ -48,6 +48,7 @@
       "save": "Save",
       "cancel": "Cancel",
       "timezone": "Timezone",
+      "timezoneRequired": "Please select a timezone",
       "email": "Email",
       "emailPassword": "Email Password",
       "twitterUsername": "X/Twitter Username",

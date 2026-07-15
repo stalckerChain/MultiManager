@@ -113,6 +113,7 @@
 <script setup>
 import { ref, watch, reactive } from 'vue';
 import { useTranslation } from 'i18next-vue';
+import { message } from 'ant-design-vue';
 import { useProxiesStore } from '../stores/proxies.js';
 import client from '../api/client.js';
 import AccountsTab from '../components/AccountsTab.vue';
@@ -264,6 +265,10 @@ function handleCancel() {
 }
 
 function handleOk() {
+  if (!form.timezone) {
+    message.error(t('profiles.modal.timezoneRequired'));
+    return;
+  }
   emit('save', { ...form });
 }
 </script>

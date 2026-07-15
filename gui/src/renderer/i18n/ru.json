@@ -48,6 +48,7 @@
       "save": "Сохранить",
       "cancel": "Отмена",
       "timezone": "Часовой пояс",
+      "timezoneRequired": "Выберите часовой пояс",
       "email": "Email",
       "emailPassword": "Пароль почты",
       "twitterUsername": "X/Twitter Логин",

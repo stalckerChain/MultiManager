@@ -48,6 +48,7 @@
       "save": "保存",
       "cancel": "取消",
       "timezone": "时区",
+      "timezoneRequired": "请选择时区",
       "email": "邮箱",
       "emailPassword": "邮箱密码",
       "twitterUsername": "X/Twitter 用户名",
