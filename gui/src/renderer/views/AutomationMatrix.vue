@@ -139,7 +139,16 @@ const filteredProfiles = computed(() => {
 });
 
 const selectedCount = computed(() => {
-  return Object.keys(selectedCells.value).filter(k => selectedCells.value[k]).length;
+  let count = 0;
+  const activeProjects = store.projects.filter(p => p.is_active);
+  for (const proj of activeProjects) {
+    const allowedIds = proj.allowed_profile_ids || store.profiles.map(p => p.id);
+    for (const prof of store.profiles) {
+      if (!allowedIds.includes(prof.id)) continue;
+      if (isChecked(prof.id, proj.name)) count++;
+    }
+  }
+  return count;
 });
 
 const selectedCells = ref({});
