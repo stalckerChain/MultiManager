@@ -331,7 +331,7 @@ router.post('/:id/start', asyncHandler(async (req, res) => {
     }
   }
 
-  const browserPath = getBrowserPath();
+  const browserPath = await getBrowserPath();
 
   if (!fs.existsSync(browserPath)) {
     profileQueries.updateStatus(req.params.id, 'stopped');

@@ -1,4 +1,4 @@
-# MultiManager v1.1.0
+# MultiManager v1.3.1
 
 Industrial cross-platform anti-detect browser with a graphical interface and local REST API / WebSocket for autonomous AI agents (AdsPower alternative), built on the CloakBrowser C++ core.
 

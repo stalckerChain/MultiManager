@@ -1,5 +1,19 @@
 # Changelog
 
+## v1.3.1
+
+### Исправления
+
+- **[BUG] Browser Start: `getBrowserPath()` вызывалась без `await` — браузеры не запускались по кнопке Start.**
+  `getBrowserPath()` объявлена как `async` (использует `fs.promises.readdir` и `fs.promises.access`), но в обработчике `POST /:id/start` вызывалась без `await`. Переменная `browserPath` оказывалась объектом `Promise`, `fs.existsSync(Promise)` всегда возвращал `false`, и эндпоинт возвращал 500 `"CloakBrowser не установлен"`.
+  **Фикс:** добавлен `await` перед `getBrowserPath()` в `src/api/browser.js:334`.
+  Добавлены 15 регрессионных тестов (`tests/unit/browser-start-await.test.js`):
+  - Source-level проверки наличия `await` в обработчике
+  - Функциональные тесты логики `getBrowserPath` (сортировка версий, пропуск отсутствующих бинарников, обработка ошибок fs)
+  - Type-safety проверки (строка vs Promise для `existsSync` и `spawn`)
+
+---
+
 ## v1.3.0
 
 ### Исправления
@@ -37,7 +51,7 @@
 
 ## Тесты
 
-- Всего: **671 тест** (43 файла)
+- Всего: **691 тест** (44 файла)
 - Обновлены регрессионные тесты в `gui-matrix-selection.test.js`:
   - Пустой `allowed_profile_ids: []` не блокирует подсчёт (3 новых теста)
   - `undefined allowed_profile_ids` не блокирует подсчёт
