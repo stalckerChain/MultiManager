@@ -2,9 +2,13 @@ import { describe, it, expect } from 'vitest';
 
 /**
  * Логика выбора ячеек матрицы (из AutomationMatrix.vue).
- * Тестируем отдельно от компонента, чтобы покрыть баг:
- * selectedCount не учитывал ячейки, уже включённые в store.matrix,
- * из-за чего кнопка "Create Run" оставалась disabled.
+ *
+ * Покрытые баги:
+ * 1. selectedCount не учитывал ячейки, уже включённые в store.matrix,
+ *    из-за чего кнопка "Create Run" оставалась disabled.
+ * 2. Подсчёт работал только для последних столбцов — чекбоксы
+ *    в первых столбцах не увеличивали счётчик (реактивность ref({})).
+ *    Фикс: замена ref(0) + watch на computed.
  */
 
 function getCellKey(profileId, projectName) {
@@ -129,6 +133,65 @@ describe('matrix selection logic', () => {
       };
       const count = getSelectedCount(projects, profiles, selectedCells, matrix);
       expect(count).toBe(2);
+    });
+
+    it('РЕГРЕССИЯ: каждый столбец независимо увеличивает счётчик', () => {
+      // Ранее: чекбоксы в первых столбцах не увеличивали selectedCount,
+      // потому что watch на ref({}) не отслеживал добавление новых свойств.
+      // Фикс: selectedCount — computed, а не ref(0) + watch.
+      const allProjects = [
+        { name: 'proj_a', display_name: 'A', is_active: true },
+        { name: 'proj_b', display_name: 'B', is_active: true },
+        { name: 'proj_c', display_name: 'C', is_active: true },
+        { name: 'proj_d', display_name: 'D', is_active: true },
+      ];
+      const singleProfile = [{ id: 'p1', number: 1, name: 'auto_001' }];
+
+      // Проверяем каждый столбец по отдельности
+      for (const proj of allProjects) {
+        const cells = { [getCellKey('p1', proj.name)]: true };
+        const count = getSelectedCount(allProjects, singleProfile, cells, []);
+        expect(count).toBe(1);
+      }
+    });
+
+    it('РЕГРЕССИЯ: добавление ячеек по одной даёт корректный инкремент', () => {
+      // Симулируем пошаговое добавление ячеек — как при клике на чекбоксы
+      const allProjects = [
+        { name: 'proj_a', display_name: 'A', is_active: true },
+        { name: 'proj_b', display_name: 'B', is_active: true },
+        { name: 'proj_c', display_name: 'C', is_active: true },
+      ];
+      const singleProfile = [{ id: 'p1', number: 1, name: 'auto_001' }];
+
+      const cells = {};
+      expect(getSelectedCount(allProjects, singleProfile, cells, [])).toBe(0);
+
+      cells[getCellKey('p1', 'proj_a')] = true;
+      expect(getSelectedCount(allProjects, singleProfile, cells, [])).toBe(1);
+
+      cells[getCellKey('p1', 'proj_b')] = true;
+      expect(getSelectedCount(allProjects, singleProfile, cells, [])).toBe(2);
+
+      cells[getCellKey('p1', 'proj_c')] = true;
+      expect(getSelectedCount(allProjects, singleProfile, cells, [])).toBe(3);
+    });
+
+    it('РЕГРЕССИЯ: отключение ячейки корректно уменьшает счётчик', () => {
+      const allProjects = [
+        { name: 'proj_a', display_name: 'A', is_active: true },
+        { name: 'proj_b', display_name: 'B', is_active: true },
+      ];
+      const singleProfile = [{ id: 'p1', number: 1, name: 'auto_001' }];
+
+      const cells = {
+        [getCellKey('p1', 'proj_a')]: true,
+        [getCellKey('p1', 'proj_b')]: true,
+      };
+      expect(getSelectedCount(allProjects, singleProfile, cells, [])).toBe(2);
+
+      cells[getCellKey('p1', 'proj_a')] = false;
+      expect(getSelectedCount(allProjects, singleProfile, cells, [])).toBe(1);
     });
   });
 

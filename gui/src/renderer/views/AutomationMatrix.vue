@@ -86,7 +86,7 @@
 </template>
 
 <script setup>
-import { ref, computed, watch, onMounted } from 'vue';
+import { ref, computed, onMounted } from 'vue';
 import { useRouter } from 'vue-router';
 import { useTranslation } from 'i18next-vue';
 import { message } from 'ant-design-vue';
@@ -153,9 +153,7 @@ function isChecked(profileId, projectName) {
   return entry ? Boolean(entry.is_enabled) : false;
 }
 
-const selectedCount = ref(0);
-
-function recalcCount() {
+const selectedCount = computed(() => {
   let count = 0;
   const cells = selectedCells.value;
   const activeProjects = store.projects.filter(p => p.is_active);
@@ -183,10 +181,8 @@ function recalcCount() {
     count++;
   }
 
-  selectedCount.value = count;
-}
-
-watch([selectedCells, () => store.projects, () => store.matrix], recalcCount, { deep: true, immediate: true });
+  return count;
+});
 
 function toggleCell(profileId, projectName) {
   const key = getCellKey(profileId, projectName);
