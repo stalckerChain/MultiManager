@@ -6,7 +6,7 @@ const path = require('path');
 const { getDatabase, createProfileQueries, createProxyQueries, createLogQueries } = require('../db');
 const { checkProxy, rotateProxy } = require('../proxy');
 const { injectCookies, getProfileDir } = require('../cookie/inject');
-const { createProfileLogger } = require('../logger');
+const { logger, createProfileLogger } = require('../logger');
 const { broadcastStatus } = require('../core/websocket');
 const { getExtensionsDir } = require('./extensions');
 const { humanType } = require('../typing');
@@ -146,7 +146,12 @@ function getCdpPort(profileId) {
 
 async function getBrowserPath() {
   const platform = process.platform;
-  const home = process.env.HOME || process.env.USERPROFILE;
+  const home = process.env.USERPROFILE || process.env.HOME || '';
+
+  if (!home) {
+    logger.warn('getBrowserPath: HOME/USERPROFILE not set');
+    return null;
+  }
 
   if (platform === 'win32' || platform === 'darwin' || platform === 'linux') {
     const cacheDir = path.join(home, '.cloakbrowser');
@@ -333,7 +338,8 @@ router.post('/:id/start', asyncHandler(async (req, res) => {
 
   const browserPath = await getBrowserPath();
 
-  if (!fs.existsSync(browserPath)) {
+  if (!browserPath || !fs.existsSync(browserPath)) {
+    profileLogger.error({ profileId: req.params.id, browserPath }, 'CloakBrowser не найден');
     profileQueries.updateStatus(req.params.id, 'stopped');
     broadcastStatus(req.params.id, 'stopped');
     logQueries.add(req.params.id, 'error', 'CloakBrowser не установлен');

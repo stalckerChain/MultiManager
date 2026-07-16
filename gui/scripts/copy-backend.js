@@ -6,7 +6,8 @@ function copyDirSync(src, dest) {
   for (const entry of fs.readdirSync(src, { withFileTypes: true })) {
     const srcPath = path.join(src, entry.name);
     const destPath = path.join(dest, entry.name);
-    if (entry.isDirectory()) {
+    const stat = fs.statSync(srcPath);
+    if (stat.isDirectory()) {
       copyDirSync(srcPath, destPath);
     } else {
       fs.copyFileSync(srcPath, destPath);
@@ -15,7 +16,7 @@ function copyDirSync(src, dest) {
 }
 
 module.exports = async function(context) {
-  const backendSrc = path.join(__dirname, '..', 'backend');
+  const backendSrc = path.join(__dirname, '..', '..', 'src');
   const backendDest = path.join(context.appOutDir, 'resources', 'backend');
 
   if (!fs.existsSync(backendSrc)) {

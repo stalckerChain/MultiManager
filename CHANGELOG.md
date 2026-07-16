@@ -1,16 +1,30 @@
 # Changelog
 
-## v1.3.1
+## v1.3.2
 
 ### Исправления
 
-- **[BUG] Browser Start: `getBrowserPath()` вызывалась без `await` — браузеры не запускались по кнопке Start.**
-  `getBrowserPath()` объявлена как `async` (использует `fs.promises.readdir` и `fs.promises.access`), но в обработчике `POST /:id/start` вызывалась без `await`. Переменная `browserPath` оказывалась объектом `Promise`, `fs.existsSync(Promise)` всегда возвращал `false`, и эндпоинт возвращал 500 `"CloakBrowser не установлен"`.
-  **Фикс:** добавлен `await` перед `getBrowserPath()` в `src/api/browser.js:334`.
-  Добавлены 15 регрессионных тестов (`tests/unit/browser-start-await.test.js`):
-  - Source-level проверки наличия `await` в обработчике
-  - Функциональные тесты логики `getBrowserPath` (сортировка версий, пропуск отсутствующих бинарников, обработка ошибок fs)
-  - Type-safety проверки (строка vs Promise для `existsSync` и `spawn`)
+- **[BUG] Browser Start: `getBrowserPath()` не находила браузер в Electron fork — "CloakBrowser не установлен".**
+  При запуске core-движка из GUI через `child_process.fork` переменная `HOME` может быть не задана на Windows, а `USERPROFILE` всегда доступна. Старый порядок `HOME || USERPROFILE` не работал в fork-окружении Electron. Дополнительно: `fs.existsSync(null)` выбрасывал `TypeError` если `getBrowserPath()` возвращал `null`.
+  **Фикс:** изменён порядок на `USERPROFILE || HOME`, добавлена null-проверка `!browserPath || !fs.existsSync(browserPath)`, добавлен импорт `logger` в `browser.js`.
+
+- **[BUG] copy-backend копировал устаревший код из `gui/backend/` вместо `src/`.**
+  `gui/backend/` была обычной директорией-копией (не symlink), поэтому `copy-backend.js` копировала устаревшие файлы при сборке. Обновления в `src/api/browser.js` не попадали в release.
+  **Фикс:** `copy-backend.js` теперь копирует из `path.join(__dirname, '..', '..', 'src')` вместо `gui/backend`. Добавлена `fs.statSync()` вместо `entry.isDirectory()` для корректного обхода симлинков на Windows.
+
+- **[BUG] Proxy не отображаются в ProfileModal при редактировании.**
+  `ProfileModal.vue` не загружал список прокси при открытии модального окна. Если пользователь не посещал страницу прокси, выпадающий список был пуст.
+  **Фикс:** добавлен `proxiesStore.fetchAll()` при открытии модального окна.
+
+- **[BUG] Start/Stop без обработки ошибок — статус зависал в `starting`.**
+  Если API возвращал ошибку, `profilesStore.fetchAll()` не вызывался и статус профиля оставался `starting` навсегда.
+  **Фикс:** добавлен `try/catch/finally` в `startProfile`/`stopProfile` в `Profiles.vue`.
+
+### Тесты
+
+- Добавлены `tests/unit/browser-get-path.test.js` — source-level и функциональные тесты для `getBrowserPath` (USERPROFILE优先, null-guard, fallback logic).
+- Добавлены `tests/unit/copy-backend.test.js` — регрессионные тесты для `copy-backend.js` (источник `src/`, `statSync` вместо `isDirectory`).
+- Всего 707 тестов, все проходят.
 
 ---
 

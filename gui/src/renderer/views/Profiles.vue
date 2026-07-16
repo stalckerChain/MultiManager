@@ -210,13 +210,23 @@ async function handleSave(values) {
 }
 
 async function startProfile(id) {
-  await browserStore.start(id);
-  await profilesStore.fetchAll();
+  try {
+    await browserStore.start(id);
+  } catch (err) {
+    console.error('[Profiles] start failed:', err.message || err);
+  } finally {
+    await profilesStore.fetchAll();
+  }
 }
 
 async function stopProfile(id) {
-  await browserStore.stop(id);
-  await profilesStore.fetchAll();
+  try {
+    await browserStore.stop(id);
+  } catch (err) {
+    console.error('[Profiles] stop failed:', err.message || err);
+  } finally {
+    await profilesStore.fetchAll();
+  }
 }
 
 function handleContext({ key }, record) {

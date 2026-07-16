@@ -13,7 +13,7 @@ MultiManager/
 │   ├── dist/               # Собранный фронтенд (vite build)
 │   ├── release/            # Готовые сборки (установщик, портативная версия)
 │   ├── resources/          # Иконки приложения
-│   └── backend → ../src    # Symlink на Core-движок
+│   └── backend             # Копия Core-движка (синхронизируется через copy-backend.js)
 ├── tests/
 └── docs/
 ```

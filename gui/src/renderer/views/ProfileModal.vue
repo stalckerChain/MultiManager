@@ -200,7 +200,12 @@ async function setTimezoneFromProxy() {
 }
 
 watch(() => props.open, (isOpen) => {
-  if (isOpen) fetchExtensions();
+  if (isOpen) {
+    fetchExtensions();
+    if (proxiesStore.proxies.length === 0) {
+      proxiesStore.fetchAll();
+    }
+  }
 });
 
 watch(() => props.profile, (p) => {
