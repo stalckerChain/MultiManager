@@ -231,8 +231,8 @@ class MultiController {
 
     const slaveScroll = this.slaves.get(slaveId)?.scroll || { scrollX: 0, scrollY: 0 };
 
-    const slaveX = pageX - this.masterScroll.scrollX + slaveScroll.scrollX + offsetX;
-    const slaveY = pageY - this.masterScroll.scrollY + slaveScroll.scrollY + offsetY;
+    const slaveX = pageX - slaveScroll.scrollX + offsetX;
+    const slaveY = pageY - slaveScroll.scrollY + offsetY;
 
     return { x: Math.max(0, Math.round(slaveX)), y: Math.max(0, Math.round(slaveY)) };
   }
@@ -337,6 +337,8 @@ class MultiController {
     if (!this.active || !this.cdp) return;
     const totalY = params.deltaY || 0;
     const totalX = params.deltaX || 0;
+    this.masterScroll.scrollX = (this.masterScroll.scrollX || 0) + totalX;
+    this.masterScroll.scrollY = (this.masterScroll.scrollY || 0) + totalY;
     const steps = Math.max(1, Math.ceil(Math.max(Math.abs(totalY), Math.abs(totalX)) / SCROLL_STEP_PX));
 
     const promises = [];

@@ -162,12 +162,13 @@ describe('MultiController', () => {
       );
     });
 
-    it('учитывает scroll master при пересчёте', async () => {
+    it('учитывает scroll slave при пересчёте координат', async () => {
       controller.setMaster('master-1');
       controller.setWindowPosition('master-1', 0, 0, 1920, 1080);
       controller.setWindowPosition('slave-1', 0, 0, 1920, 1080);
       await controller.addSlave('slave-1');
-      controller.masterScroll = { scrollX: 0, scrollY: 100 };
+      const slaveData = controller.slaves.get('slave-1');
+      slaveData.scroll = { scrollX: 0, scrollY: 100 };
 
       await controller.onMousePressed({ x: 100, y: 300, button: 0, clickCount: 1 });
 

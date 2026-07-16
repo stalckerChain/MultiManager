@@ -232,7 +232,7 @@ router.post('/start', async (req, res) => {
           return;
         }
         const targetId = cdpManager.targetBySid.get(sessionId);
-        if (targetId && !['mouseUp', 'mouseMove', 'scroll', 'keyUp', 'charInput'].includes(event.type)) {
+        if (targetId) {
           controller.setActiveMasterTab(targetId);
         }
         inputCapture.injectFromCdp(event);

@@ -371,9 +371,30 @@ if (event.type === 'keyDown' && event.key === 'Enter') {
 
 ## Версия
 
-Текущая: v0.13.0 (Human-like движения: ghost-cursor path() + плавный скролл)
+Текущая: v0.14.0 (Coordinate fix: page→viewport конвертация + multi-tab sync)
 
 ## История версий
+
+### v0.14.0 — Coordinate fix: page→viewport конвертация + multi-tab sync
+
+**Проблема 1:** Координаты кликов и hover не синхронизировались после прокрутки.
+\_toSlaveCoords\ неправильно конвертировала page-координаты в viewport: \pageX - masterScrollX + slaveScrollX + offsetX\ давала \clientX + slaveScrollX + offsetX\ вместо \clientX + offsetX\.
+
+**Исправление 1:** Формула изменена на \pageX - slaveScrollX + offsetX\.
+
+**Проблема 2:** \masterScroll\ был статическим снапшотом и не обновлялся при прокрутке.
+
+**Исправление 2:** \masterScroll\ обновляется накоплением дельт в \scrollTo\.
+
+**Проблема 3:** Синхронизация ломалась при открытии нового таба. \setActiveMasterTab\ вызывался только для \mouseDown\, \	abActivated\ — \ctiveMasterTab\ не обновлялся при interactions с другим табом → \_getSlaveSession\ искал slave по устаревшему табу.
+
+**Исправление 3:** Убран фильтр исключений — \setActiveMasterTab\ вызывается для ВСЕХ событий от master.
+
+| Файл | Изменение |
+|------|-----------|
+| \src/multi-control/index.js\ | \_toSlaveCoords\: исправлена формула конвертации координат; \scrollTo\: \masterScroll\ обновляется при скролле |
+| \src/api/multi-control.js\ | \onEvent\: убран фильтр исключений из \setActiveMasterTab\ |
+| \	ests/unit/multi-control.test.js\ | Обновлён тест scroll-координат (slave scroll вместо master scroll) |
 
 ### v0.13.0 — Human-like движения: ghost-cursor path() + плавный скролл
 

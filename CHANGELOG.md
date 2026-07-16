@@ -1,5 +1,28 @@
 # Changelog
 
+## v1.3.3 (Multi-Control Coordinate Fix)
+
+### Исправления
+
+- **[BUG] Multi-Control: координаты кликов и hover не синхронизировались после прокрутки страницы.**
+  \_toSlaveCoords\ конвертировала page-координаты в viewport неверно: \pageX - masterScrollX + slaveScrollX + offsetX\ давала \clientX + slaveScrollX + offsetX\ вместо \clientX + offsetX\. Клик по dropdown после прокрутки попадал мимо целевого элемента.
+  **Фикс:** формула изменена на \pageX - slaveScrollX + offsetX\ — правильная конвертация page→viewport.
+
+- **[BUG] Multi-Control: \masterScroll\ не обновлялся при прокрутке — координаты дрейфовали.**
+  \masterScroll\ был статическим снапшотом при инициализации. После прокрутки master-страницы формула конвертации координат становилась всё менее точной.
+  **Фикс:** \masterScroll\ теперь обновляется накоплением дельт в \scrollTo\.
+
+- **[BUG] Multi-Control: синхронизация ломалась при открытии нового таба.**
+  \setActiveMasterTab\ вызывался только для \mouseDown\ (исключения: \mouseMove\, \scroll\, \keyUp\, \charInput\). При переключении на новый таб \ctiveMasterTab\ не обновлялся → \_getSlaveSession\ искал slave-сессию по устаревшему табу → события шли не в тот slave.
+  **Фикс:** убран фильтр исключений — \setActiveMasterTab\ вызывается для ВСЕХ событий от master.
+
+### Тесты
+
+- Обновлён тест \учитывает scroll slave при пересчёте координат\ — теперь проверяет slave scroll вместо master scroll.
+- Всего 707 тестов, все проходят.
+
+---
+
 ## v1.3.2
 
 ### Исправления

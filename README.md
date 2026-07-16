@@ -1,4 +1,4 @@
-# MultiManager v1.3.2 (Browser Start Fix + Electron Fork Fix ✅)
+# MultiManager v1.3.3 (Multi-Control Coordinate Fix) ✅)
 
 AI-Driven Web Automation Platform — кроссплатформенный антидетект-браузер с интеграцией Python-фреймворка автоматизации, графическим интерфейсом и локальным REST API / WebSocket для автономных ИИ-агентов (аналог AdsPower) на базе C++ ядра CloakBrowser.
 
