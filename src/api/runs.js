@@ -6,6 +6,7 @@ const { getDatabase } = require('../db');
 const { createRunQueries, createRunTaskQueries, createMatrixQueries, createSystemConfigQueries, createProfileQueries } = require('../db/queries');
 const { RunExecutor } = require('../executor');
 const { validate, runCreateSchema } = require('./validate');
+const { logger } = require('../logger');
 
 function createRunsRouter(opts = {}) {
   const router = express.Router();
@@ -82,12 +83,18 @@ function createRunsRouter(opts = {}) {
     const cfg = getCfg();
     const defaultStAuto0 = path.join(os.homedir(), 'AI', 'stAuto0');
     const defaultPython = path.join(os.homedir(), 'AI', 'stAuto0', 'venv', 'Scripts', 'python.exe');
+    const stAuto0Path = cfg.get('stAuto0_path') || defaultStAuto0;
+    const pythonPath = cfg.get('python_path') || defaultPython;
+
+    logger.info({ runId: run.id, stAuto0Path, pythonPath }, 'Starting run');
+
     const executor = new RunExecutor(run, {
-      stAuto0Path: cfg.get('stAuto0_path') || defaultStAuto0,
-      pythonPath: cfg.get('python_path') || defaultPython,
+      stAuto0Path,
+      pythonPath,
       apiToken: req.headers.authorization?.replace('Bearer ', '') || '',
       mmPort: req.socket.localPort || process.env.PORT || 3000,
       spawn,
+      logger,
       getRunTasks: () => Promise.resolve(getRunTasks().getByRunId(run.id)),
       updateRunTaskStatus: (taskId, status) => getRunTasks().updateStatus(taskId, status),
       updateRun: (id, status, completedAt) => getRuns().updateStatus(id, status, null, completedAt),
@@ -96,7 +103,18 @@ function createRunsRouter(opts = {}) {
     });
 
     RunExecutor.instances.set(run.id, executor);
-    executor.start().finally(() => RunExecutor.instances.delete(run.id));
+    executor.start()
+      .catch((err) => {
+        logger.error({ err: err.message, runId: run.id }, 'Run executor failed');
+        const tasks = getRunTasks().getByRunId(run.id);
+        for (const task of tasks) {
+          if (task.status === 'running' || task.status === 'pending') {
+            getRunTasks().updateStatus(task.id, 'failed');
+          }
+        }
+        getRuns().updateStatus(run.id, 'partial', null, new Date().toISOString());
+      })
+      .finally(() => RunExecutor.instances.delete(run.id));
 
     res.json({ status: 'started', run_id: req.params.id });
   });

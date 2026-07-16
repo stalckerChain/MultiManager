@@ -57,21 +57,12 @@
       "dist/**/*",
       "src/main/**/*",
       "src/preload/**/*",
-      "backend/**/*",
       "resources/**/*"
-    ],
-    "extraResources": [
-      {
-        "from": "../src",
-        "to": "backend/src",
-        "filter": [
-          "**/*"
-        ]
-      }
     ],
     "asarUnpack": [
       "**/*.node"
     ],
+    "afterPack": "./scripts/copy-backend.js",
     "directories": {
       "output": "release"
     },

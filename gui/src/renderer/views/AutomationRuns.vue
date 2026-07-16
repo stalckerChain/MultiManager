@@ -122,7 +122,7 @@
 </template>
 
 <script setup>
-import { ref, onMounted } from 'vue';
+import { ref, onMounted, onUnmounted } from 'vue';
 import { useTranslation } from 'i18next-vue';
 import { message } from 'ant-design-vue';
 import { ReloadOutlined } from '@ant-design/icons-vue';
@@ -263,7 +263,45 @@ async function refresh() {
   await store.fetchRuns(1, 50);
 }
 
+let refreshTimer = null;
+
+function startAutoRefresh() {
+  stopAutoRefresh();
+  refreshTimer = setInterval(async () => {
+    const hasRunning = store.runs.some(r => r.status === 'running');
+    if (hasRunning) {
+      await store.fetchRuns(1, 50);
+      // Also refresh expanded run details
+      if (expandedId.value) {
+        try {
+          const data = await store.fetchRun(expandedId.value);
+          runTasks.value[expandedId.value] = data.tasks || [];
+          const projSet = new Set();
+          for (const task of runTasks.value[expandedId.value]) {
+            projSet.add(task.project_name);
+          }
+          runProjects.value[expandedId.value] = Array.from(projSet);
+        } catch {
+          // ignore
+        }
+      }
+    }
+  }, 3000);
+}
+
+function stopAutoRefresh() {
+  if (refreshTimer) {
+    clearInterval(refreshTimer);
+    refreshTimer = null;
+  }
+}
+
 onMounted(() => {
   store.fetchRuns(1, 50);
+  startAutoRefresh();
+});
+
+onUnmounted(() => {
+  stopAutoRefresh();
 });
 </script>

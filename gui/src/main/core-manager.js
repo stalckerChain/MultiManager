@@ -11,7 +11,7 @@ const isDev = !require('electron').app.isPackaged;
 
 const CORE_PATH = isDev
   ? path.join(__dirname, '..', '..', '..', 'src', 'index.js')
-  : path.join(require('electron').app.getPath('exe'), '..', 'resources', 'backend', 'src', 'index.js');
+  : path.join(require('electron').app.getPath('exe'), '..', 'resources', 'backend', 'index.js');
 
 function log(level, ...args) {
   const ts = new Date().toISOString();

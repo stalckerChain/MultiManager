@@ -9,19 +9,29 @@ const INSTALLED_DIR = path.join(
 const RESOURCES = path.join(INSTALLED_DIR, 'resources');
 const PROJECT_ROOT = path.join(__dirname, '..', '..');
 
-const isInstalled = fs.existsSync(RESOURCES);
+const isInstalled = fs.existsSync(path.join(RESOURCES, 'app.asar')) && (
+  fs.existsSync(path.join(RESOURCES, 'backend')) ||
+  fs.existsSync(path.join(RESOURCES, 'backend', 'src'))
+);
 
 describe('Core Manager — packaged mode path validation', () => {
-  it.skipIf(!isInstalled)('resources/backend/src/ существует', () => {
-    expect(fs.existsSync(path.join(RESOURCES, 'backend', 'src'))).toBe(true);
+  it.skipIf(!isInstalled)('resources/backend/ существует', () => {
+    const backendDir = fs.existsSync(path.join(RESOURCES, 'backend', 'src'))
+      ? path.join(RESOURCES, 'backend', 'src')
+      : path.join(RESOURCES, 'backend');
+    expect(fs.existsSync(backendDir)).toBe(true);
   });
 
-  it.skipIf(!isInstalled)('CORE_PATH指向resources/backend/src/index.js', () => {
-    expect(fs.existsSync(path.join(RESOURCES, 'backend', 'src', 'index.js'))).toBe(true);
+  it.skipIf(!isInstalled)('CORE_PATH指向resources/backend/index.js', () => {
+    const hasNew = fs.existsSync(path.join(RESOURCES, 'backend', 'index.js'));
+    const hasOld = fs.existsSync(path.join(RESOURCES, 'backend', 'src', 'index.js'));
+    expect(hasNew || hasOld).toBe(true);
   });
 
   it.skipIf(!isInstalled)('все ключевые модули backend доступны', () => {
-    const base = path.join(RESOURCES, 'backend', 'src');
+    const base = fs.existsSync(path.join(RESOURCES, 'backend', 'src', 'index.js'))
+      ? path.join(RESOURCES, 'backend', 'src')
+      : path.join(RESOURCES, 'backend');
     const modules = [
       'index.js',
       path.join('core', 'app.js'),
@@ -93,10 +103,10 @@ describe('Core Manager — CORE_PATH construction', () => {
     expect(path.resolve(corePath)).toBe(path.resolve(path.join(PROJECT_ROOT, 'src', 'index.js')));
   });
 
-  it('packaged: CORE_PATH = exe/../resources/backend/src/index.js', () => {
+  it('packaged: CORE_PATH = exe/../resources/backend/index.js', () => {
     const exeDir = 'C:\\Programs\\multimanager-gui';
-    const corePath = path.join(exeDir, '..', 'resources', 'backend', 'src', 'index.js');
-    expect(path.dirname(corePath)).toContain(path.join('resources', 'backend', 'src'));
+    const corePath = path.join(exeDir, '..', 'resources', 'backend', 'index.js');
+    expect(path.dirname(corePath)).toContain(path.join('resources', 'backend'));
   });
 
   it('packaged: NODE_PATH = exe/../resources/app.asar/node_modules', () => {

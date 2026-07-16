@@ -165,7 +165,7 @@ const selectedCount = computed(() => {
     const [profileId, projectName] = key.split('::');
     if (!activeProjectNames.has(projectName)) continue;
     const proj = activeProjects.find(p => p.name === projectName);
-    const allowedIds = proj?.allowed_profile_ids || store.profiles.map(p => p.id);
+    const allowedIds = proj?.allowed_profile_ids?.length ? proj.allowed_profile_ids : store.profiles.map(p => p.id);
     if (!allowedIds.includes(profileId)) continue;
     count++;
   }
@@ -176,7 +176,7 @@ const selectedCount = computed(() => {
     const key = getCellKey(entry.profile_id, entry.project_name);
     if (key in cells) continue;
     const proj = activeProjects.find(p => p.name === entry.project_name);
-    const allowedIds = proj?.allowed_profile_ids || store.profiles.map(p => p.id);
+    const allowedIds = proj?.allowed_profile_ids?.length ? proj.allowed_profile_ids : store.profiles.map(p => p.id);
     if (!allowedIds.includes(entry.profile_id)) continue;
     count++;
   }
@@ -211,16 +211,14 @@ function getEnabledEntries() {
   // Only include active projects
   const activeProjects = store.projects.filter(p => p.is_active);
   for (const proj of activeProjects) {
-    const allowedIds = proj.allowed_profile_ids || store.profiles.map(p => p.id);
+    const allowedIds = proj.allowed_profile_ids?.length ? proj.allowed_profile_ids : store.profiles.map(p => p.id);
     for (const prof of store.profiles) {
       if (!allowedIds.includes(prof.id)) continue;
       const key = getCellKey(prof.id, proj.name);
       const enabled = selectedCells.value[key] !== undefined
         ? selectedCells.value[key]
         : (store.matrix.find(m => m.profile_id === prof.id && m.project_name === proj.name)?.is_enabled || false);
-      if (enabled) {
-        entries.push({ project_name: proj.name, profile_id: prof.id, is_enabled: 1 });
-      }
+      entries.push({ project_name: proj.name, profile_id: prof.id, is_enabled: enabled ? 1 : 0 });
     }
   }
   return entries;

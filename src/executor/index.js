@@ -37,7 +37,16 @@ class RunExecutor {
         await Promise.race(running);
       }
 
-      const promise = this._executeProfile(profileId, profileTasks).finally(() => {
+      const promise = this._executeProfile(profileId, profileTasks).catch((err) => {
+        if (this.options.logger) {
+          this.options.logger.error({ err: err.message, profileId }, 'Profile execution failed');
+        }
+        for (const task of profileTasks) {
+          if (task.status === 'running' || task.status === 'pending') {
+            this.options.updateRunTaskStatus(task.id, 'failed');
+          }
+        }
+      }).finally(() => {
         const idx = running.indexOf(promise);
         if (idx >= 0) running.splice(idx, 1);
       });
@@ -94,19 +103,59 @@ class RunExecutor {
     const logPath = path.join(logDir, `${profileName}.log`);
     const logStream = fs.createWriteStream(logPath, { flags: 'a' });
 
-    const child = this.options.spawn(this.options.pythonPath, args, {
-      cwd: this.options.stAuto0Path,
-      stdio: ['ignore', 'pipe', 'pipe'],
-    });
+    if (this.options.logger) {
+      this.options.logger.info({
+        pythonPath: this.options.pythonPath,
+        stAuto0Path: this.options.stAuto0Path,
+        projectNames,
+        range,
+        profileId,
+        profileName,
+      }, 'Spawning Python process');
+    }
+
+    let child;
+    try {
+      child = this.options.spawn(this.options.pythonPath, args, {
+        cwd: this.options.stAuto0Path,
+        stdio: ['ignore', 'pipe', 'pipe'],
+      });
+    } catch (err) {
+      logStream.end();
+      if (this.options.logger) {
+        this.options.logger.error({ err: err.message, profileId, pythonPath: this.options.pythonPath }, 'Failed to spawn Python process');
+      }
+      for (const task of tasks) {
+        this.options.updateRunTaskStatus(task.id, 'failed');
+      }
+      throw err;
+    }
     this.processes.set(profileId, child);
 
     child.stdout.pipe(logStream);
     child.stderr.pipe(logStream);
 
-    return new Promise((resolve) => {
+    return new Promise((resolve, reject) => {
+      child.on('error', (err) => {
+        logStream.end();
+        this.processes.delete(profileId);
+        if (this.options.logger) {
+          this.options.logger.error({ err: err.message, profileId, code: err.code }, 'Child process error');
+        }
+        for (const task of tasks) {
+          if (task.status === 'running') {
+            this.options.updateRunTaskStatus(task.id, 'failed');
+          }
+        }
+        reject(err);
+      });
+
       child.on('close', (code) => {
         logStream.end();
         this.processes.delete(profileId);
+        if (this.options.logger) {
+          this.options.logger.info({ code, profileId, profileName }, 'Child process exited');
+        }
         // Mark tasks that weren't reported back as failed
         for (const task of tasks) {
           if (task.status === 'running') {
