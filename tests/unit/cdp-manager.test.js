@@ -422,4 +422,40 @@ describe('attachToExistingTarget', () => {
       expect(targetSessions.has('t-missing')).toBe(false);
     });
   });
+
+  // Регрессия: SYNC_EVENT_SCRIPT должен передавать реальный window.scrollX/scrollY
+  // мастера в событиях мыши/скролла, иначе page→viewport конвертация в
+  // _toSlaveCoords не сможет корректно вычесть scroll мастера.
+  describe('SYNC_EVENT_SCRIPT передаёт реальный scroll мастера', () => {
+    function captureInjectedScript() {
+      const sent = [];
+      const session = {
+        ws: { send: vi.fn((raw) => sent.push(JSON.parse(raw))) },
+        sessionId: 's-1',
+        targetId: 't-1',
+        profileId: 'p-1',
+      };
+      mgr._injectSyncScript(session, '__MM_SYNC_BIND__');
+      const evalMsg = sent.find(m => m.method === 'Runtime.evaluate');
+      return evalMsg.params.expression;
+    }
+
+    it('mousemove включает scrollX/scrollY', () => {
+      const script = captureInjectedScript();
+      expect(script).toMatch(/mousemove[\s\S]*scrollX:\s*window\.scrollX/);
+      expect(script).toMatch(/mousemove[\s\S]*scrollY:\s*window\.scrollY/);
+    });
+
+    it('wheel включает scrollX/scrollY', () => {
+      const script = captureInjectedScript();
+      expect(script).toMatch(/wheel[\s\S]*scrollX:\s*window\.scrollX/);
+    });
+
+    it('mousedown/mouseup/click включают scrollX/scrollY', () => {
+      const script = captureInjectedScript();
+      expect(script).toMatch(/mousedown[\s\S]*scrollX:\s*window\.scrollX/);
+      expect(script).toMatch(/mouseup[\s\S]*scrollX:\s*window\.scrollX/);
+      expect(script).toMatch(/click[\s\S]*scrollX:\s*window\.scrollX/);
+    });
+  });
 });

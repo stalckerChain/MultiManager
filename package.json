@@ -1,6 +1,6 @@
 {
   "name": "multimanager",
-  "version": "1.3.2",
+  "version": "1.3.4",
   "description": "MVP кроссплатформенного антидетект-браузера с API для ИИ",
   "main": "src/index.js",
   "scripts": {

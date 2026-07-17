@@ -179,6 +179,39 @@ describe('MultiController', () => {
       );
     });
 
+    it('учитывает scroll master при пересчёте координат', async () => {
+      controller.setMaster('master-1');
+      controller.setWindowPosition('master-1', 0, 0, 1920, 1080);
+      controller.setWindowPosition('slave-1', 0, 0, 1920, 1080);
+      await controller.addSlave('slave-1');
+
+      await controller.onMousePressed({ x: 100, y: 300, button: 0, clickCount: 1, scrollX: 0, scrollY: 100 });
+
+      expect(mockCdp.dispatchMouseEvent).toHaveBeenCalledWith(
+        'slave-1',
+        'mousePressed',
+        expect.objectContaining({ x: 100, y: 200 })
+      );
+    });
+
+    it('учитывает scroll master и slave одновременно', async () => {
+      controller.setMaster('master-1');
+      controller.setWindowPosition('master-1', 0, 0, 1920, 1080);
+      controller.setWindowPosition('slave-1', 0, 0, 1920, 1080);
+      await controller.addSlave('slave-1');
+      const slaveData = controller.slaves.get('slave-1');
+      slaveData.scroll = { scrollX: 0, scrollY: 50 };
+
+      // masterViewportY = 400 - 100 = 300; slaveY = 300 - 50 = 250
+      await controller.onMousePressed({ x: 100, y: 400, button: 0, clickCount: 1, scrollX: 0, scrollY: 100 });
+
+      expect(mockCdp.dispatchMouseEvent).toHaveBeenCalledWith(
+        'slave-1',
+        'mousePressed',
+        expect.objectContaining({ x: 100, y: 250 })
+      );
+    });
+
     it('координаты не уходят в минус', async () => {
       controller.setMaster('master-1');
       controller.setWindowPosition('master-1', 100, 100, 1920, 1080);
@@ -191,6 +224,90 @@ describe('MultiController', () => {
       expect(calls.length).toBeGreaterThan(0);
       expect(calls[0][2].x).toBeGreaterThanOrEqual(0);
       expect(calls[0][2].y).toBeGreaterThanOrEqual(0);
+    });
+  });
+
+  // Регрессия: рассинхрон курсора после прокрутки колесом.
+  // Раньше scroll считался накоплением дельт → slaveScroll опережал реальный
+  // window.scrollY, masterScroll не вычитался из page-координат. Курсор в slave
+  // «уплывал» после скролла, клики уходили мимо. Фикс: реальный scroll из событий.
+  describe('регрессия: рассинхрон курсора после wheel-скролла', () => {
+    it('_toSlaveCoords вычитает masterScroll из page-координат (баг 1)', () => {
+      controller.setMaster('master-1');
+      controller.setWindowPosition('master-1', 0, 0, 1920, 1080);
+      controller.setWindowPosition('slave-1', 0, 0, 1920, 1080);
+      controller.slaves.set('slave-1', { scroll: { scrollX: 0, scrollY: 0 } });
+
+      // master прокручен на 300, slave — нет. page y=500 → viewport y=200.
+      const coords = controller._toSlaveCoords(100, 500, 'slave-1', 0, 300);
+      expect(coords).toEqual({ x: 100, y: 200 });
+    });
+
+    it('onMouseMoved пробрасывает реальный masterScroll в целевую точку', async () => {
+      controller.setMaster('master-1');
+      controller.setWindowPosition('master-1', 0, 0, 1920, 1080);
+      controller.setWindowPosition('slave-1', 0, 0, 1920, 1080);
+      await controller.addSlave('slave-1');
+
+      await controller.onMouseMoved({ x: 100, y: 500, scrollX: 0, scrollY: 300 });
+
+      const smoother = controller.smoothers.get('slave-1');
+      expect(smoother._target).toEqual({ x: 100, y: 200 });
+    });
+
+    it('_broadcastMouse (клик) использует реальный masterScroll — клик после скролла не уходит мимо', async () => {
+      controller.setMaster('master-1');
+      controller.setWindowPosition('master-1', 0, 0, 1920, 1080);
+      controller.setWindowPosition('slave-1', 0, 0, 1920, 1080);
+      await controller.addSlave('slave-1');
+
+      await controller.onMousePressed({ x: 100, y: 500, button: 0, clickCount: 1, scrollX: 0, scrollY: 300 });
+
+      expect(mockCdp.dispatchMouseEvent).toHaveBeenCalledWith(
+        'slave-1',
+        'mousePressed',
+        expect.objectContaining({ x: 100, y: 200 })
+      );
+    });
+
+    it('scrollTo пишет реальный scroll мастера из события, а не накапливает дельты (баг 3)', async () => {
+      controller.setMaster('master-1');
+      await controller.addSlave('slave-1');
+
+      await controller.scrollTo({ deltaY: 40, scrollX: 0, scrollY: 250 });
+
+      expect(controller.masterScroll).toEqual({ scrollX: 0, scrollY: 250 });
+    });
+
+    it('scrollTo без scrollX/scrollY в событии не ломает masterScroll', async () => {
+      controller.setMaster('master-1');
+      await controller.addSlave('slave-1');
+      controller.masterScroll = { scrollX: 0, scrollY: 100 };
+
+      await controller.scrollTo({ deltaY: 40 });
+
+      expect(controller.masterScroll).toEqual({ scrollX: 0, scrollY: 100 });
+    });
+
+    it('slaveScroll синхронизируется реальным window.scrollY после серии wheel (баг 2)', async () => {
+      controller.setMaster('master-1');
+      await controller.addSlave('slave-1');
+      // Реальный scroll страницы slave отличается от суммы отправленных дельт.
+      mockCdp.getPageScroll.mockResolvedValue({ scrollX: 0, scrollY: 512 });
+
+      await controller.scrollTo({ deltaY: 200, scrollX: 0, scrollY: 200 });
+      await new Promise(r => setTimeout(r, 40));
+
+      const slaveData = controller.slaves.get('slave-1');
+      expect(slaveData.scroll).toEqual({ scrollX: 0, scrollY: 512 });
+    });
+
+    it('masterScroll имеет формат {scrollX, scrollY} в конструкторе и после stop', () => {
+      expect(controller.masterScroll).toEqual({ scrollX: 0, scrollY: 0 });
+      controller.setMaster('master-1');
+      controller.masterScroll = { scrollX: 10, scrollY: 20 };
+      controller.stop();
+      expect(controller.masterScroll).toEqual({ scrollX: 0, scrollY: 0 });
     });
   });
 

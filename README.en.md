@@ -1,4 +1,4 @@
-# MultiManager v1.3.1
+# MultiManager v1.3.4 (Multi-Control Real-Scroll Sync)
 
 Industrial cross-platform anti-detect browser with a graphical interface and local REST API / WebSocket for autonomous AI agents (AdsPower alternative), built on the CloakBrowser C++ core.
 

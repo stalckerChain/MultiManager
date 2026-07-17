@@ -371,9 +371,33 @@ if (event.type === 'keyDown' && event.key === 'Enter') {
 
 ## Версия
 
-Текущая: v0.14.0 (Coordinate fix: page→viewport конвертация + multi-tab sync)
+Текущая: v0.15.0 (Real-scroll coordinate sync: устранён рассинхрон курсора после wheel-скролла)
 
 ## История версий
+
+### v0.15.0 — Real-scroll coordinate sync (fix рассинхрона курсора после прокрутки колесом)
+
+**Проблема:** После прокрутки колесом курсор в slave переставал совпадать по позиции с master, клики уходили мимо цели. До скролла синхронизация работала корректно.
+
+**Корень (три бага):**
+1. **`masterScroll` не вычитался в `_toSlaveCoords`.** Координаты считались как `pageX_master - slaveScroll`, что верно только когда master и slave прокручены одинаково.
+2. **`slaveScroll` опережал реальный scroll страницы (гонка).** В `_runScrollSequence` `slaveData.scroll` наращивался на `dx/dy` в момент ОТПРАВКИ wheel через CDP, но реальный `window.scrollY` slave менялся асинхронно (+`SCROLL_TICK_MS`). К следующему `mousemove` предполагаемый scroll опережал реальность.
+3. **Накопление дельт вместо реального значения.** `masterScroll`/`slaveScroll` суммировали `deltaY` событий. Реальное смещение контента (инерция, плавный скролл, трекпад) отличается от суммы `deltaY` → рассинхрон гарантирован.
+
+**Исправление:** перестали считать scroll аккумулятором дельт, берём РЕАЛЬНЫЙ `window.scrollX/scrollY` у master и slave.
+
+1. `SYNC_EVENT_SCRIPT` передаёт `window.scrollX/scrollY` мастера в событиях `mousemove`, `mousedown`, `mouseup`, `wheel`, `click`.
+2. `_toSlaveCoords(pageX, pageY, slaveId, masterScrollX, masterScrollY)` конвертирует `page → viewport мастера → viewport slave`: `masterViewportX = pageX - masterScrollX`, затем `slaveX = masterViewportX - slaveScroll.scrollX + offsetX`.
+3. После завершения серии wheel (`_runScrollSequence`) вызывается `_syncSlaveScroll(slaveId)` → читает реальный `window.scrollY` slave через `getPageScroll` и пишет в `slaveData.scroll` (устраняет гонку и накопление).
+4. `scrollTo` больше не накапливает дельты — берёт реальный scroll мастера из события. Формат `masterScroll` приведён к единому `{scrollX, scrollY}` (конструктор, `stop`, `scrollTo`).
+5. `MouseSmoother` не тронут — Безье-траектория строится поверх корректной целевой точки.
+
+| Файл | Изменение |
+|------|-----------|
+| `src/multi-control/cdp-manager.js` | `SYNC_EVENT_SCRIPT`: `mousemove`/`mousedown`/`mouseup`/`wheel`/`click` шлют `window.scrollX/scrollY` |
+| `src/multi-control/index.js` | `_toSlaveCoords`: параметры `masterScrollX/Y` + конвертация page→viewport мастера→viewport slave; `onMouseMoved`/`_broadcastMouse` пробрасывают master scroll из события; `scrollTo` пишет реальный scroll (не дельты); новый `_syncSlaveScroll` после серии wheel; формат `masterScroll` унифицирован `{scrollX, scrollY}` |
+| `tests/unit/multi-control.test.js` | Регрессионный блок «рассинхрон курсора после wheel-скролла»: masterScroll в `_toSlaveCoords`, проброс в onMouseMoved/click, реальный scroll в `scrollTo`, `_syncSlaveScroll`, формат masterScroll |
+| `tests/unit/cdp-manager.test.js` | Блок «SYNC_EVENT_SCRIPT передаёт реальный scroll мастера»: проверка наличия `window.scrollX/scrollY` в обработчиках mousemove/wheel/mousedown/mouseup/click |
 
 ### v0.14.0 — Coordinate fix: page→viewport конвертация + multi-tab sync
 

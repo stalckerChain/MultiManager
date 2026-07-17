@@ -25,10 +25,10 @@ const SYNC_EVENT_SCRIPT = `
     else { if (_timer) { clearTimeout(_timer); _timer = null; } _buf = null; SEND(JSON.stringify(msg)); }
   }
 
-  document.addEventListener('mousemove', function(e) { emit('mouseMove', { x: e.pageX, y: e.pageY }); }, true);
-  document.addEventListener('mousedown', function(e) { emit('mouseDown', { x: e.pageX, y: e.pageY, button: e.button, clickCount: e.detail || 1 }); }, true);
-  document.addEventListener('mouseup', function(e) { emit('mouseUp', { x: e.pageX, y: e.pageY, button: e.button }); }, true);
-  document.addEventListener('wheel', function(e) { emit('scroll', { x: e.pageX, y: e.pageY, deltaX: e.deltaX, deltaY: e.deltaY }); }, true);
+  document.addEventListener('mousemove', function(e) { emit('mouseMove', { x: e.pageX, y: e.pageY, scrollX: window.scrollX, scrollY: window.scrollY }); }, true);
+  document.addEventListener('mousedown', function(e) { emit('mouseDown', { x: e.pageX, y: e.pageY, button: e.button, clickCount: e.detail || 1, scrollX: window.scrollX, scrollY: window.scrollY }); }, true);
+  document.addEventListener('mouseup', function(e) { emit('mouseUp', { x: e.pageX, y: e.pageY, button: e.button, scrollX: window.scrollX, scrollY: window.scrollY }); }, true);
+  document.addEventListener('wheel', function(e) { emit('scroll', { x: e.pageX, y: e.pageY, deltaX: e.deltaX, deltaY: e.deltaY, scrollX: window.scrollX, scrollY: window.scrollY }); }, true);
   document.addEventListener('keydown', function(e) {
     emit('keyDown', { key: e.key, code: e.code, windowsVirtualKeyCode: e.keyCode });
     if (e.key.length === 1 && !e.ctrlKey && !e.metaKey && !e.altKey) {
@@ -43,7 +43,7 @@ const SYNC_EVENT_SCRIPT = `
   }, true);
   document.addEventListener('keyup', function(e) { emit('keyUp', { key: e.key, code: e.code, windowsVirtualKeyCode: e.keyCode }); }, true);
   document.addEventListener('click', function(e) {
-    emit('click', { x: e.pageX, y: e.pageY, button: e.button, clickCount: e.detail || 1 });
+    emit('click', { x: e.pageX, y: e.pageY, button: e.button, clickCount: e.detail || 1, scrollX: window.scrollX, scrollY: window.scrollY });
   }, true);
   document.addEventListener('visibilitychange', function() { if (!document.hidden) { emit('tabActivated', {}); } });
 })();

@@ -10,7 +10,7 @@ class MultiController {
     this.slaves = new Map();
     this.smoothers = new Map();
     this.active = false;
-    this.masterScroll = { x: 0, y: 0 };
+    this.masterScroll = { scrollX: 0, scrollY: 0 };
     this.windowPositions = new Map();
     this.cdp = cdpManagerRef || null;
     this.tabMapping = new Map();
@@ -222,7 +222,7 @@ class MultiController {
     return 'left';
   }
 
-  _toSlaveCoords(pageX, pageY, slaveId) {
+  _toSlaveCoords(pageX, pageY, slaveId, masterScrollX = 0, masterScrollY = 0) {
     const slavePos = this.windowPositions.get(slaveId);
     const masterPos = this.windowPositions.get(this.masterId);
 
@@ -231,8 +231,11 @@ class MultiController {
 
     const slaveScroll = this.slaves.get(slaveId)?.scroll || { scrollX: 0, scrollY: 0 };
 
-    const slaveX = pageX - slaveScroll.scrollX + offsetX;
-    const slaveY = pageY - slaveScroll.scrollY + offsetY;
+    // page -> viewport мастера, затем viewport мастера -> viewport slave
+    const masterViewportX = pageX - masterScrollX;
+    const masterViewportY = pageY - masterScrollY;
+    const slaveX = masterViewportX - (slaveScroll.scrollX || 0) + offsetX;
+    const slaveY = masterViewportY - (slaveScroll.scrollY || 0) + offsetY;
 
     return { x: Math.max(0, Math.round(slaveX)), y: Math.max(0, Math.round(slaveY)) };
   }
@@ -260,8 +263,10 @@ class MultiController {
   async onMouseMoved(params) {
     if (!this.active) return;
 
+    const masterScrollX = params.scrollX || 0;
+    const masterScrollY = params.scrollY || 0;
     for (const [slaveId] of this.slaves) {
-      const coords = this._toSlaveCoords(params.x || 0, params.y || 0, slaveId);
+      const coords = this._toSlaveCoords(params.x || 0, params.y || 0, slaveId, masterScrollX, masterScrollY);
       const smoother = this.smoothers.get(slaveId);
       if (smoother) smoother.setTarget(coords.x, coords.y);
     }
@@ -337,8 +342,13 @@ class MultiController {
     if (!this.active || !this.cdp) return;
     const totalY = params.deltaY || 0;
     const totalX = params.deltaX || 0;
-    this.masterScroll.scrollX = (this.masterScroll.scrollX || 0) + totalX;
-    this.masterScroll.scrollY = (this.masterScroll.scrollY || 0) + totalY;
+    // Реальный scroll мастера берём из события (window.scrollX/scrollY), а не накапливаем дельты.
+    if (typeof params.scrollX === 'number' || typeof params.scrollY === 'number') {
+      this.masterScroll = {
+        scrollX: params.scrollX || 0,
+        scrollY: params.scrollY || 0,
+      };
+    }
     const steps = Math.max(1, Math.ceil(Math.max(Math.abs(totalY), Math.abs(totalX)) / SCROLL_STEP_PX));
 
     const promises = [];
@@ -357,6 +367,7 @@ class MultiController {
       const stepY = totalY / steps;
       const fire = () => {
         if (i >= steps || !this.active || !this.slaves.has(slaveId)) {
+          this._syncSlaveScroll(slaveId);
           resolve();
           return;
         }
@@ -377,6 +388,8 @@ class MultiController {
           slaveData.scroll.scrollY = (slaveData.scroll.scrollY || 0) + dy;
         }
         if (isLast) {
+          // После отправки последнего wheel даём браузеру докрутиться и берём реальный scroll.
+          setTimeout(() => this._syncSlaveScroll(slaveId), SCROLL_TICK_MS);
           resolve();
         } else {
           setTimeout(fire, SCROLL_TICK_MS);
@@ -384,6 +397,17 @@ class MultiController {
       };
       fire();
     });
+  }
+
+  async _syncSlaveScroll(slaveId) {
+    if (!this.cdp || !this.slaves.has(slaveId)) return;
+    try {
+      const scroll = await this.cdp.getPageScroll(slaveId);
+      const slaveData = this.slaves.get(slaveId);
+      if (slaveData) slaveData.scroll = scroll;
+    } catch (err) {
+      logger.debug({ slaveId, error: err.message }, 'Multi-control: ошибка синхронизации slave scroll');
+    }
   }
 
   _dispatchSlaveMove(slaveId, x, y) {
@@ -407,9 +431,11 @@ class MultiController {
       slaveCount: this.slaves.size,
       masterId: this.masterId,
     }, 'Multi-control: BROADCAST to slaves');
+    const masterScrollX = params.scrollX || 0;
+    const masterScrollY = params.scrollY || 0;
     for (const [id] of this.slaves) {
       try {
-        const coords = this._toSlaveCoords(params.x || 0, params.y || 0, id);
+        const coords = this._toSlaveCoords(params.x || 0, params.y || 0, id, masterScrollX, masterScrollY);
         const session = this._getSlaveSession(id);
         const cdpBtn = this._toCdpButton(params.button);
         if (session) {
