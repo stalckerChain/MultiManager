@@ -1,4 +1,4 @@
-# MultiManager v1.3.4 (Multi-Control Real-Scroll Sync)
+# MultiManager v1.3.2 (Multi-Control Real-Scroll Sync)
 
 工业级跨平台反检测浏览器，配备图形界面和本地 REST API / WebSocket，支持自主 AI 代理（AdsPower 替代方案），基于 CloakBrowser C++ 内核构建。
 

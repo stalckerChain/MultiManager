@@ -1,53 +1,26 @@
 # Changelog
 
-## v1.3.4 (Multi-Control Real-Scroll Sync)
+## v1.3.2
 
 ### Исправления
 
-- **[BUG] Multi-Control: курсор в slave рассинхронизировался после прокрутки колесом — клики уходили мимо цели.**
+**Multi-Control**
+
+- **[BUG] Курсор в slave рассинхронизировался после прокрутки колесом — клики уходили мимо цели.**
   До скролла синхронизация работала, после — курсор «уплывал». Три причины:
   1. `masterScroll` не вычитался в `_toSlaveCoords` — координаты считались как `pageX_master - slaveScroll`, что верно только при одинаковой прокрутке master и slave.
   2. `slaveScroll` опережал реальный `window.scrollY` страницы (гонка): в `_runScrollSequence` scroll наращивался в момент отправки wheel, а браузер докручивался асинхронно.
   3. Накопление дельт вместо реального значения — сумма `deltaY` не равна реальному смещению контента (инерция, плавный скролл, трекпад).
   **Фикс:** перешли на РЕАЛЬНЫЙ `window.scrollX/scrollY`. `SYNC_EVENT_SCRIPT` передаёт scroll мастера в событиях мыши/скролла; `_toSlaveCoords` конвертирует `page → viewport мастера → viewport slave`; после серии wheel `_syncSlaveScroll` читает реальный scroll slave через `getPageScroll`; `scrollTo` пишет реальный scroll вместо накопления дельт. `MouseSmoother` не тронут.
 
-- **[CHORE] Multi-Control: унифицирован формат `masterScroll`.**
+- **[BUG] Синхронизация ломалась при открытии нового таба.**
+  `setActiveMasterTab` вызывался только для `mouseDown` (исключения: `mouseMove`, `scroll`, `keyUp`, `charInput`). При переключении на новый таб `activeMasterTab` не обновлялся → `_getSlaveSession` искал slave-сессию по устаревшему табу → события шли не в тот slave.
+  **Фикс:** убран фильтр исключений — `setActiveMasterTab` вызывается для ВСЕХ событий от master.
+
+- **[CHORE] Унифицирован формат `masterScroll`.**
   В конструкторе был `{x, y}`, в `stop()` — `{scrollX, scrollY}`. Приведено к единому `{scrollX, scrollY}` везде (конструктор, `stop`, `scrollTo`).
 
-### Тесты
-
-- Добавлен регрессионный блок в `tests/unit/multi-control.test.js` — «рассинхрон курсора после wheel-скролла»: вычитание masterScroll, проброс scroll в onMouseMoved/click, реальный scroll в `scrollTo`, `_syncSlaveScroll`, формат masterScroll.
-- Добавлен блок в `tests/unit/cdp-manager.test.js` — «SYNC_EVENT_SCRIPT передаёт реальный scroll мастера»: проверка `window.scrollX/scrollY` в обработчиках mousemove/wheel/mousedown/mouseup/click.
-- Всего 716 тестов, все проходят.
-
----
-
-## v1.3.3 (Multi-Control Coordinate Fix)
-
-### Исправления
-
-- **[BUG] Multi-Control: координаты кликов и hover не синхронизировались после прокрутки страницы.**
-  \_toSlaveCoords\ конвертировала page-координаты в viewport неверно: \pageX - masterScrollX + slaveScrollX + offsetX\ давала \clientX + slaveScrollX + offsetX\ вместо \clientX + offsetX\. Клик по dropdown после прокрутки попадал мимо целевого элемента.
-  **Фикс:** формула изменена на \pageX - slaveScrollX + offsetX\ — правильная конвертация page→viewport.
-
-- **[BUG] Multi-Control: \masterScroll\ не обновлялся при прокрутке — координаты дрейфовали.**
-  \masterScroll\ был статическим снапшотом при инициализации. После прокрутки master-страницы формула конвертации координат становилась всё менее точной.
-  **Фикс:** \masterScroll\ теперь обновляется накоплением дельт в \scrollTo\.
-
-- **[BUG] Multi-Control: синхронизация ломалась при открытии нового таба.**
-  \setActiveMasterTab\ вызывался только для \mouseDown\ (исключения: \mouseMove\, \scroll\, \keyUp\, \charInput\). При переключении на новый таб \ctiveMasterTab\ не обновлялся → \_getSlaveSession\ искал slave-сессию по устаревшему табу → события шли не в тот slave.
-  **Фикс:** убран фильтр исключений — \setActiveMasterTab\ вызывается для ВСЕХ событий от master.
-
-### Тесты
-
-- Обновлён тест \учитывает scroll slave при пересчёте координат\ — теперь проверяет slave scroll вместо master scroll.
-- Всего 707 тестов, все проходят.
-
----
-
-## v1.3.2
-
-### Исправления
+**Browser / GUI / Build**
 
 - **[BUG] Browser Start: `getBrowserPath()` не находила браузер в Electron fork — "CloakBrowser не установлен".**
   При запуске core-движка из GUI через `child_process.fork` переменная `HOME` может быть не задана на Windows, а `USERPROFILE` всегда доступна. Старый порядок `HOME || USERPROFILE` не работал в fork-окружении Electron. Дополнительно: `fs.existsSync(null)` выбрасывал `TypeError` если `getBrowserPath()` возвращал `null`.
@@ -67,9 +40,11 @@
 
 ### Тесты
 
-- Добавлены `tests/unit/browser-get-path.test.js` — source-level и функциональные тесты для `getBrowserPath` (USERPROFILE优先, null-guard, fallback logic).
-- Добавлены `tests/unit/copy-backend.test.js` — регрессионные тесты для `copy-backend.js` (источник `src/`, `statSync` вместо `isDirectory`).
-- Всего 707 тестов, все проходят.
+- Регрессионный блок в `tests/unit/multi-control.test.js` — «рассинхрон курсора после wheel-скролла»: вычитание masterScroll, проброс scroll в onMouseMoved/click, реальный scroll в `scrollTo`, `_syncSlaveScroll`, формат masterScroll.
+- Блок в `tests/unit/cdp-manager.test.js` — «SYNC_EVENT_SCRIPT передаёт реальный scroll мастера»: проверка `window.scrollX/scrollY` в обработчиках mousemove/wheel/mousedown/mouseup/click.
+- `tests/unit/browser-get-path.test.js` — тесты для `getBrowserPath` (USERPROFILE-приоритет, null-guard, fallback logic).
+- `tests/unit/copy-backend.test.js` — регрессионные тесты для `copy-backend.js` (источник `src/`, `statSync` вместо `isDirectory`).
+- Всего 719 тестов, все проходят.
 
 ---
 
