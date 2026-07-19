@@ -40,6 +40,7 @@ function createMockProfileLogger() {
 }
 
 function isProcessAlive(pid) {
+  if (!pid || pid <= 0) return false;
   try {
     process.kill(pid, 0);
     return true;
@@ -312,6 +313,36 @@ describe('Browser — process health check (isProcessAlive)', () => {
     err.code = 'EPERM';
     process.kill.mockImplementation(() => { throw err; });
     expect(isProcessAlive(7777)).toBe(true);
+  });
+
+  it('isProcessAlive возвращает false при EINVAL (Windows: процесс не найден)', () => {
+    const err = new Error('invalid argument');
+    err.code = 'EINVAL';
+    process.kill.mockImplementation(() => { throw err; });
+    expect(isProcessAlive(8888)).toBe(false);
+  });
+
+  it('isProcessAlive возвращает false при ENOENT', () => {
+    const err = new Error('no such process');
+    err.code = 'ENOENT';
+    process.kill.mockImplementation(() => { throw err; });
+    expect(isProcessAlive(9000)).toBe(false);
+  });
+
+  it('isProcessAlive возвращает false для pid = 0', () => {
+    expect(isProcessAlive(0)).toBe(false);
+  });
+
+  it('isProcessAlive возвращает false для отрицательного pid', () => {
+    expect(isProcessAlive(-1)).toBe(false);
+  });
+
+  it('isProcessAlive возвращает false для null pid', () => {
+    expect(isProcessAlive(null)).toBe(false);
+  });
+
+  it('isProcessAlive возвращает false для undefined pid', () => {
+    expect(isProcessAlive(undefined)).toBe(false);
   });
 });
 

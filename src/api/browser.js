@@ -91,10 +91,14 @@ const HEALTH_CHECK_INTERVAL_MS = 5000;
 let healthCheckTimer = null;
 
 function isProcessAlive(pid) {
+  if (!pid || pid <= 0) return false;
   try {
     process.kill(pid, 0);
     return true;
   } catch (e) {
+    // EPERM — процесс существует, но нет прав (считаем живым)
+    // ESRCH — процесс не найден (мёртв)
+    // EINVAL — невалидный сигнал, на Windows = процесс не найден
     return e.code === 'EPERM';
   }
 }

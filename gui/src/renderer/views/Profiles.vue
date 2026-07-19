@@ -115,7 +115,7 @@
 </template>
 
 <script setup>
-import { ref, computed, watch } from 'vue';
+import { ref, computed, watch, onUnmounted } from 'vue';
 import { useTranslation } from 'i18next-vue';
 import { useProfilesStore } from '../stores/profiles.js';
 import { useBrowserStore } from '../stores/browser.js';
@@ -293,6 +293,23 @@ watch(() => appStore.initialized, (ready) => {
   if (ready) {
     profilesStore.fetchAll().catch(() => {});
     syncStore.fetchStatus().catch(() => {});
+  }
+}, { immediate: true });
+
+let statusPollTimer = null;
+
+onUnmounted(() => {
+  if (statusPollTimer) clearInterval(statusPollTimer);
+});
+
+watch(runningProfiles, (profiles) => {
+  if (profiles.length > 0 && !statusPollTimer) {
+    statusPollTimer = setInterval(() => {
+      profilesStore.fetchAll().catch(() => {});
+    }, 10000);
+  } else if (profiles.length === 0 && statusPollTimer) {
+    clearInterval(statusPollTimer);
+    statusPollTimer = null;
   }
 }, { immediate: true });
 </script>

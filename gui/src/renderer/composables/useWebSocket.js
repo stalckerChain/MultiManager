@@ -21,6 +21,7 @@ export function useWebSocket() {
     ws.onopen = () => {
       connected.value = true;
       reconnectDelay = 1000;
+      profilesStore.fetchAll();
       console.log('[WS] Connected to', url);
     };
 
