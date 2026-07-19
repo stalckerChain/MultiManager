@@ -5,6 +5,7 @@ import {
   setMasterKey, clearMasterKey, hasMasterKey,
   SECRET_FIELDS, PREFIX,
 } from '../../src/crypto/index.js';
+import * as cryptoModule from '../../src/crypto/index.js';
 
 describe('Crypto Module', () => {
   let masterKey;
@@ -181,5 +182,29 @@ describe('Crypto Module', () => {
     expect(parts[0]).toMatch(/^[0-9a-f]{32}$/);
     expect(parts[1]).toMatch(/^[0-9a-f]+$/);
     expect(parts[2]).toMatch(/^[0-9a-f]{32}$/);
+  });
+
+  it('decrypt returns blob as-is when tag is too short', () => {
+    const encrypted = encrypt('test', masterKey);
+    const parts = encrypted.split(':');
+    // Replace tag with a 4-byte (too short) hex string
+    const shortTag = 'aabbccdd';
+    const tampered = `${parts[0]}:${parts[1]}:${shortTag}`;
+    const result = decrypt(tampered, masterKey);
+    expect(result).toBe(tampered);
+  });
+
+  it('decrypt returns blob as-is when tag is too long', () => {
+    const encrypted = encrypt('test', masterKey);
+    const parts = encrypted.split(':');
+    // Replace tag with a 20-byte (too long) hex string
+    const longTag = 'aabbccddeeff00112233445566778899aabbccdd';
+    const tampered = `${parts[0]}:${parts[1]}:${longTag}`;
+    const result = decrypt(tampered, masterKey);
+    expect(result).toBe(tampered);
+  });
+
+  it('setupPasswordMode is not exported', () => {
+    expect(cryptoModule.setupPasswordMode).toBeUndefined();
   });
 });

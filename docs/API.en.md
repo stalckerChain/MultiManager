@@ -412,6 +412,19 @@ Stop browser. Force-kills after 5 seconds if not terminated.
 
 ---
 
+### POST /api/browser/shutdown
+
+Mass stop all running browsers. Graceful shutdown: SIGTERM → wait → SIGKILL.
+
+**Response (200):**
+```json
+{
+  "stopped": 3
+}
+```
+
+---
+
 ### GET /api/browser/:id/status
 
 Get browser status.
@@ -515,7 +528,7 @@ Auto-login to Zerion extension (extension ID: `klghhnkeealcohjjanjjdaeeggmfmlpl`
 
 ---
 
-## Multi-Control (Window Sync) — v0.13.0
+## Multi-Control (Window Sync) — v0.15.0
 
 Broadcasts actions from master window to all slave windows via CDP (Chrome DevTools Protocol).
 
@@ -527,6 +540,8 @@ Broadcasts actions from master window to all slave windows via CDP (Chrome DevTo
 - **Multi-tab**: HTTP `/json` polling every 300ms to detect natively opened tabs. Tab mapping 1:N via `Map<masterTargetId, Map<slaveId, slaveTargetId>>` + `tabIndex` matrix
 - **Focus activation**: Chain `Target.activateTarget` → `Page.bringToFront` → `DOM.focus` → `body.focus()` for DOM input focus in slaves
 - **Double dispatch**: When typing in DOM elements, keys are sent to slaves twice (CDP + native hook)
+
+> **Platform Limitation:** Native OS keyboard hooks (WH_KEYBOARD_LL) are only available on Windows. On macOS/Linux, keyboard synchronization uses CDP-only mode — browser chrome shortcuts (Ctrl+T, Ctrl+W) are not captured.
 
 ### GET /api/multi-control/status
 
@@ -1172,7 +1187,7 @@ Update automation settings. If paths are not provided, default values are used (
 
 ### GET /api/projects
 
-List all projects synced from `stAuto0/projects/*.py`.
+List of all projects from database.
 
 **Response (200):**
 ```json
@@ -1194,7 +1209,7 @@ List all projects synced from `stAuto0/projects/*.py`.
 
 ### POST /api/projects/sync
 
-Scan `stAuto0/projects/*.py` directory, add new projects, deactivate removed ones. Ignores `__init__.py`, `base.py`, `loader.py`. If `stAuto0_path` is not configured, default path `~/AI/stAuto0` is used.
+Scan `stAuto0/projects/*.py` + `stAuto0/config/projects.py`, add new projects, deactivate removed ones. Config projects take precedence. Ignores `__init__.py`, `base.py`, `loader.py`. If `stAuto0_path` is not configured, default path `~/AI/stAuto0` is used.
 
 **Response (200):**
 ```json
@@ -1255,6 +1270,200 @@ Delete a project from the database.
 
 ---
 
+## Matrix
+
+### GET /api/matrix
+
+Full matrix: Projects×Profiles. Projects from database (only `is_active=1`), profiles, and checkbox marks.
+
+**Response (200):**
+```json
+{
+  "projects": [
+    {
+      "name": "concrete",
+      "display_name": "Concrete",
+      "is_active": 1,
+      "allowed_profile_ids": ["uuid1", "uuid2"]
+    }
+  ],
+  "profiles": [
+    { "id": "uuid", "number": 1, "name": "auto_001", "status": "stopped" }
+  ],
+  "matrix": [
+    {
+      "project_name": "concrete",
+      "profile_id": "uuid",
+      "is_enabled": 1,
+      "config_override": "{}",
+      "profile_name": "auto_001",
+      "project_display": "Concrete"
+    }
+  ]
+}
+```
+
+### PUT /api/matrix
+
+Batch update matrix checkboxes. Atomic transaction.
+
+**Request Body:**
+```json
+{
+  "entries": [
+    { "project_name": "concrete", "profile_id": "uuid", "is_enabled": 1 },
+    { "project_name": "allscale", "profile_id": "uuid", "is_enabled": 0 }
+  ]
+}
+```
+
+**Response (200):**
+```json
+{
+  "updated": 2
+}
+```
+
+---
+
+## Runs
+
+### GET /api/runs
+
+List runs with pagination. Sorted by `created_at DESC`.
+
+**Parameters:** `?page=1&limit=20`
+
+**Response (200):**
+```json
+{
+  "items": [
+    {
+      "id": "uuid",
+      "name": "Run 2026-07-13 12:00",
+      "status": "pending",
+      "parallel_limit": 2,
+      "total_tasks": 5,
+      "completed_tasks": 0,
+      "success_tasks": 0,
+      "failed_tasks": 0,
+      "started_at": null,
+      "completed_at": null,
+      "created_at": "2026-07-13 12:00:00"
+    }
+  ],
+  "total": 1,
+  "page": 1,
+  "limit": 20
+}
+```
+
+### POST /api/runs
+
+Create a new run from currently enabled matrix entries (`is_enabled=1`).
+
+**Request Body:**
+```json
+{
+  "name": "Daily run 2026-07-13",
+  "parallel_limit": 3
+}
+```
+
+**Response (201):**
+```json
+{
+  "run_id": "uuid",
+  "tasks_created": 10,
+  "name": "Daily run 2026-07-13"
+}
+```
+
+**Response (400):** `{ "error": "No enabled entries in matrix" }`
+
+### GET /api/runs/:id
+
+Get run with all run_tasks.
+
+**Response (200):**
+```json
+{
+  "id": "uuid",
+  "name": "Daily run",
+  "status": "running",
+  "parallel_limit": 2,
+  "total_tasks": 5,
+  "completed_tasks": 2,
+  "success_tasks": 2,
+  "failed_tasks": 0,
+  "tasks": [
+    {
+      "id": 1,
+      "run_id": "uuid",
+      "project_name": "concrete",
+      "profile_id": "uuid",
+      "status": "success",
+      "exit_code": 0,
+      "log_file_path": "logs/runs/uuid/auto_001.log",
+      "attempts": 1,
+      "started_at": "2026-07-13 12:00:00",
+      "completed_at": "2026-07-13 12:05:00"
+    }
+  ]
+}
+```
+
+### POST /api/runs/:id/start
+
+Start run execution. Only for `pending` status.
+
+**Response (200):**
+```json
+{
+  "status": "started",
+  "run_id": "uuid"
+}
+```
+
+### POST /api/runs/:id/cancel
+
+Cancel run execution. Kills active processes, marks all running/pending tasks as `failed`.
+
+**Response (200):**
+```json
+{
+  "status": "cancelled",
+  "run_id": "uuid"
+}
+```
+
+---
+
+## Internal API (stAuto0 Callback)
+
+### POST /api/internal/runs/:id/task-status
+
+Callback endpoint for stAuto0. Updates status of one matrix cell. Localhost only.
+
+**Request Body:**
+```json
+{
+  "project_name": "concrete",
+  "profile_name": "auto_001",
+  "status": "success",
+  "attempts": 2
+}
+```
+
+**Response (200):**
+```json
+{
+  "ok": true
+}
+```
+
+---
+
 ## Profile Statuses
 
 | Status | Description |
@@ -1279,3 +1488,4 @@ Delete a project from the database.
 | 412 | Proxy unavailable |
 | 500 | Internal server error |
 | 502 | Proxy/rotation error / CDP port not found |
+| 503 | Auth token not initialized |

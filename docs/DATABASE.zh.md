@@ -142,14 +142,109 @@ SQLite 数据库，使用 WAL 日志和 ACID 事务。
 
 ---
 
+### projects
+
+存储来自 stAuto0 的自动化项目/脚本。
+
+| 字段 | 类型 | 描述 |
+|------|------|------|
+| `name` | TEXT PK | 项目名称（concrete, allscale...） |
+| `display_name` | TEXT | 人类可读名称 |
+| `module_path` | TEXT | 模块导入路径 |
+| `class_name` | TEXT | Python 类名 |
+| `is_active` | INTEGER | 1/0 — 项目是否启用 |
+| `default_config` | TEXT | JSON 默认配置 |
+| `created_at` | DATETIME | 创建时间 |
+| `updated_at` | DATETIME | 更新时间 |
+
+**索引：**
+- 无（主键为 `name`）
+
+**触发器：**
+- `update_projects_timestamp` — 自动更新 `updated_at`
+
+---
+
+### project_profile_config
+
+项目×配置文件标记矩阵（复选框）。
+
+| 字段 | 类型 | 描述 |
+|------|------|------|
+| `project_name` | TEXT | 外键关联 projects(name) |
+| `profile_id` | TEXT | 外键关联 profiles(id) |
+| `is_enabled` | INTEGER | 0/1 — 矩阵中的复选框 |
+| `config_override` | TEXT | JSON 参数覆盖 |
+
+**复合主键：** `(project_name, profile_id)`
+
+**索引：**
+- `idx_project_profile_config_project` — 按项目搜索
+- `idx_project_profile_config_profile` — 按配置文件搜索
+
+**级联删除：** 删除项目或配置文件时，记录会被删除。
+
+---
+
+### runs
+
+批量任务（批处理运行）。
+
+| 字段 | 类型 | 描述 |
+|------|------|------|
+| `id` | TEXT PK | UUIDv4 |
+| `name` | TEXT | 运行名称 |
+| `status` | TEXT | pending / running / completed / partial / cancelled |
+| `parallel_limit` | INTEGER | 最大并发账户数 |
+| `total_tasks` | INTEGER | 总单元格数 |
+| `completed_tasks` | INTEGER | 已完成 |
+| `success_tasks` | INTEGER | 成功 |
+| `failed_tasks` | INTEGER | 失败 |
+| `started_at` | DATETIME | 开始时间 |
+| `completed_at` | DATETIME | 完成时间 |
+| `created_at` | DATETIME | 创建时间 |
+
+**索引：**
+- `idx_runs_status` — 按状态搜索
+- `idx_runs_created_at` — 按时间排序
+
+---
+
+### run_tasks
+
+特定运行中的每个矩阵单元格。
+
+| 字段 | 类型 | 描述 |
+|------|------|------|
+| `id` | INTEGER PK | 自增 ID |
+| `run_id` | TEXT | 外键关联 runs(id) |
+| `project_name` | TEXT | 外键关联 projects(name) |
+| `profile_id` | TEXT | 外键关联 profiles(id) |
+| `status` | TEXT | pending / running / success / failed |
+| `exit_code` | INTEGER | Python 退出码 |
+| `log_file_path` | TEXT | 日志文件路径 |
+| `attempts` | INTEGER | 尝试次数 |
+| `started_at` | DATETIME | 开始时间 |
+| `completed_at` | DATETIME | 完成时间 |
+
+**索引：**
+- `idx_run_tasks_run_id` — 按运行搜索
+- `idx_run_tasks_profile_id` — 按配置文件搜索
+
+**级联删除：** 删除运行时，其所有任务会被删除。
+
+---
+
 ## 关系
 
 ```
 profiles ──┬── proxies (proxy_id)
            ├── cookies (profile_id) [CASCADE DELETE]
            ├── profile_logs (profile_id) [CASCADE DELETE]
-           └── task_executions (profile_id)
-tasks ─────┴── task_executions (task_id) [CASCADE DELETE]
+           └── project_profile_config (profile_id) [CASCADE DELETE]
+projects ──┬── project_profile_config (project_name) [CASCADE DELETE]
+           └── run_tasks (project_name)
+runs ──────┴── run_tasks (run_id) [CASCADE DELETE]
 ```
 
 ## WAL 模式

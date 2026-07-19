@@ -4,7 +4,7 @@ const path = require('path');
 const os = require('os');
 const { getDatabase } = require('../db');
 const { createSystemConfigQueries, createProfileQueries, createProjectQueries, createMatrixQueries } = require('../db/queries');
-const { hasMasterKey, getMasterKeySource, getRecoveryKey, clearRecoveryKey, setupPasswordMode, unlockWithPassword, rotateKey, generateMasterKey, generateRecoveryKey, setMasterKey, clearMasterKey } = require('../crypto');
+const { hasMasterKey, getMasterKeySource, getRecoveryKey, clearRecoveryKey, unlockWithPassword, rotateKey, generateMasterKey, generateRecoveryKey, setMasterKey, clearMasterKey } = require('../crypto');
 const { logger } = require('../logger');
 
 function resolvePath(p) {

@@ -15,7 +15,7 @@
     "bump": "node scripts/bump-version.mjs"
   },
   "dependencies": {
-    "adm-zip": "^0.5.18",
+    "adm-zip": "^0.6.0",
     "better-sqlite3": "^11.7.0",
     "express": "^4.21.0",
     "express-rate-limit": "^8.5.2",

@@ -39,7 +39,8 @@ function decrypt(blob, key) {
   try {
     const iv = Buffer.from(ivHex, 'hex');
     const tag = Buffer.from(tagHex, 'hex');
-    const decipher = crypto.createDecipheriv(ALGORITHM, key, iv);
+    if (tag.length !== TAG_LENGTH) return blob;
+    const decipher = crypto.createDecipheriv(ALGORITHM, key, iv, { authTagLength: TAG_LENGTH });
     decipher.setAuthTag(tag);
     let plain = decipher.update(ciphertext, 'hex', 'utf8');
     plain += decipher.final('utf8');
@@ -216,21 +217,6 @@ function unlockWithPassword(password, db) {
   return true;
 }
 
-function setupPasswordMode(password, db) {
-  const configSet = db.prepare('INSERT OR REPLACE INTO system_config (key, value, updated_at) VALUES (?, ?, CURRENT_TIMESTAMP)');
-  const salt = crypto.randomBytes(32);
-  const key = deriveKeyFromPassword(password, salt);
-  const keyHash = crypto.createHash('sha256').update(key).digest();
-  configSet.run('master_key_source', 'password');
-  configSet.run('master_key_salt', salt.toString('hex'));
-  configSet.run('master_key_hash', keyHash.toString('hex'));
-  configSet.run('recovery_key', generateRecoveryKey(key));
-  masterKey = key;
-  masterKeySource = 'password';
-  clearMasterKey();
-  return true;
-}
-
 function rotateKey(oldKey, newKey, db, profileQueries) {
   const profiles = profileQueries.getAll();
   for (const profile of profiles) {
@@ -274,7 +260,6 @@ module.exports = {
   setMasterKey,
   clearMasterKey,
   unlockWithPassword,
-  setupPasswordMode,
   rotateKey,
   initKeytar,
   getRecoveryKey,

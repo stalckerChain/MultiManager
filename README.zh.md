@@ -262,7 +262,7 @@ requests.post(f"{BASE}/api/browser/{profile['id']}/stop", headers=HEADERS)
 
 ### 系统目录结构：
 
-- `app.db` — WAL 模式的 SQLite 数据库。配置文件（30 列，AES-256-GCM）、代理、Cookie、任务（tasks/task_executions）、system_config。
+- `app.db` — WAL 模式的 SQLite 数据库。配置文件（30 列，AES-256-GCM）、代理、Cookie、项目、项目配置矩阵、运行、运行任务、system_config。
 - `profiles_data/` — 隔离的 Chromium 会话文件夹（每个账户的 `BrowserData/`：Cookies、LocalStorage、Cache）。
 - `extensions/` — 已安装的 Chrome 扩展。
 - `logs/core.log` — 通用系统日志（Pino JSON）。

@@ -267,7 +267,7 @@ All isolated user data is stored at:
 
 ### System Directory Structure:
 
-- `app.db` — SQLite database in WAL mode. Profiles (30 columns, AES-256-GCM), proxies, cookies, tasks (tasks/task_executions), system_config.
+- `app.db` — SQLite database in WAL mode. Profiles (30 columns, AES-256-GCM), proxies, cookies, projects, project_profile_config, runs, run_tasks, system_config.
 - `profiles/{UUID}/BrowserData/` — Isolated Chromium session folders (Cookies, LocalStorage, Cache).
 - `extensions/` — Installed Chrome extensions.
 - `logs/core.log` — General system logs (Pino JSON).

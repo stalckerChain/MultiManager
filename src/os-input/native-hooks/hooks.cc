@@ -79,6 +79,7 @@ static LRESULT CALLBACK KeyboardProc(int nCode, WPARAM wParam, LPARAM lParam) {
     KBDLLHOOKSTRUCT* p = (KBDLLHOOKSTRUCT*)lParam;
 
     KeyEvent* evt = (KeyEvent*)malloc(sizeof(KeyEvent));
+    if (!evt) return CallNextHookEx(g_keyboardHook, nCode, wParam, lParam);
     evt->wParam = wParam;
     evt->vkCode = p->vkCode;
     evt->scanCode = p->scanCode;

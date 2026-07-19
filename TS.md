@@ -1,7 +1,7 @@
 -------------------------------
 ## SOFTWARE REQUIREMENTS SPECIFICATION (SRS) / ТЕХНИЧЕСКОЕ ЗАДАНИЕ
 ## AI-Driven Web Automation Platform на базе антидетект-браузера (MVP аналог AdsPower + ферма автоматизации)
-**Версия системы:** 2.0.0 | **Multi-Control:** 0.13.0 | **Дата ревизии:** 2026-07-13 | **Ф7 Automation Matrix:** ✅
+**Версия системы:** 2.0.0 | **Multi-Control:** 0.15.0 | **Дата ревизии:** 2026-07-19 | **Ф7 Automation Matrix:** ✅
 
 > **Принцип маркировки:** ✅ РЕАЛИЗОВАНО в коде | ⚠️ ЧАСТИЧНО | ❌ НЕ РЕАЛИЗОВАНО (в ТЗ, но в коде нет). Каждое утверждение о статусе подкреплено ссылкой на реальный файл аудита.
 > **Спутник-документ:** [TS_INTEGRATION.md](./TS_INTEGRATION.md) — миграция Python-фреймворка stAuto0 на интеграцию с MultiManager.
@@ -152,7 +152,7 @@ GUI передаёт порт бэкенду через **env-переменну
 - `GET|POST|DELETE /api/cookies/:profileId`, экспорт в JSON/Netscape. ✅ `src/api/cookies.js`, `src/cookie/inject.js`
 - Инжекция в `--user-data-dir` профиля перед запуском. ✅ `src/api/browser.js:289`
 
-### 4.4. Логика синхронизатора (Multi-Control) v0.13.0 ✅ РЕАЛИЗОВАНО
+### 4.4. Логика синхронизатора (Multi-Control) v0.15.0 ✅ РЕАЛИЗОВАНО
 - CDP-синтез мыши/клавиатуры + Native OS hooks (WH_KEYBOARD_LL) для browser chrome. ✅ `src/multi-control/`, `src/os-input/native-hooks/`
 - MouseSmoother (ghost-cursor path(), Безье + Fitts + overshoot), `flush()` перед кликом, микрошаговый скролл. ✅ `src/multi-control/mouse-smoothing.js`
 - Tab Mapping 1:N (`Map<masterTargetId, Map<slaveId, slaveTargetId>>`). ✅ `src/multi-control/cdp-manager.js`
@@ -338,7 +338,7 @@ Python: `connect_over_cdp("http://127.0.0.1:9331")`.
 - Коды ошибок бэкенда (`ERR_PROXY_REFUSED`) локализуются на фронтенде.
 
 ### 9.10. Automation Matrix ✅ (Roadmap Ф7)
-- **Матрица** (`AutomationMatrix.vue`): таблица Проекты (колонки) × Профили (строки) с чекбоксами на пересечениях. Проекты загружаются из `stAuto0/config/projects.py` (только active). Чекбоксы ограничены `allowed_profile_ids` из `PROJECT_FLAGS.accounts`. Фильтр профилей. Кнопка «Создать задачу» → создаёт run.
+- **Матрица** (`AutomationMatrix.vue`): таблица Проекты (колонки) × Профили (строки) с чекбоксами на пересечениях. Проекты загружаются из БД через `GET /api/matrix` (только `is_active=1`). Чекбоксы ограничены `allowed_profile_ids` из `PROJECT_FLAGS.accounts`. Фильтр профилей. Кнопка «Создать задачу» → создаёт run.
 - **Задачи** (`AutomationRuns.vue`): список созданных runs со статусами. Раскрываемая цветная матрица: ⚪=pending, 🔵=running, 🟢=success, 🔴=failed. Кнопки «Выполнить» и «Отмена».
 - **История** (`AutomationHistory.vue`): выполненные runs с ленивой подгрузкой (infinite scroll/pagination).
 - Pinia store: `stores/automation.js` — fetchMatrix, updateMatrix, createRun, startRun, fetchRuns, fetchRun.
@@ -400,7 +400,7 @@ Python: `connect_over_cdp("http://127.0.0.1:9331")`.
 | 23 | Window Arranger cross-platform | ✅ | ⚠️ (Windows-only) | ToDo §4 |
 | 24 | Migration Wizard (AdsPower) | ❌ заморожено | ❌ | ToDo §5 |
 | 25 | Cloud Sync | ❌ заморожено | ❌ | ToDo §6 |
-| 26 | Multi-Control v0.13.0 | ✅ | ✅ | — |
+| 26 | Multi-Control v0.15.0 | ✅ | ✅ | — |
 | 27 | Fingerprint Generator | ✅ | ✅ | — |
 | 28 | Proxy Manager + ротация | ✅ | ✅ | — |
 | 29 | Extensions Manager | ✅ | ✅ | — |

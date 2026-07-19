@@ -142,14 +142,109 @@ Stores system configuration.
 
 ---
 
+### projects
+
+Stores automation projects/scripts from stAuto0.
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `name` | TEXT PK | Project name (concrete, allscale...) |
+| `display_name` | TEXT | Human-readable name |
+| `module_path` | TEXT | Module path for import |
+| `class_name` | TEXT | Python class name |
+| `is_active` | INTEGER | 1/0 — whether project is enabled |
+| `default_config` | TEXT | JSON default configuration |
+| `created_at` | DATETIME | Creation date |
+| `updated_at` | DATETIME | Update date |
+
+**Indexes:**
+- None (PK on `name`)
+
+**Triggers:**
+- `update_projects_timestamp` — Auto-update `updated_at`
+
+---
+
+### project_profile_config
+
+Matrix of Project×Profile marks (checkboxes).
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `project_name` | TEXT | FK → projects(name) |
+| `profile_id` | TEXT | FK → profiles(id) |
+| `is_enabled` | INTEGER | 0/1 — checkbox in matrix |
+| `config_override` | TEXT | JSON parameter override |
+
+**Composite PK:** `(project_name, profile_id)`
+
+**Indexes:**
+- `idx_project_profile_config_project` — Search by project
+- `idx_project_profile_config_profile` — Search by profile
+
+**Cascade Delete:** When a project or profile is deleted, the record is removed.
+
+---
+
+### runs
+
+Group task (batch run).
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `id` | TEXT PK | UUIDv4 |
+| `name` | TEXT | Run name |
+| `status` | TEXT | pending / running / completed / partial / cancelled |
+| `parallel_limit` | INTEGER | Max concurrent accounts |
+| `total_tasks` | INTEGER | Total cells |
+| `completed_tasks` | INTEGER | Completed |
+| `success_tasks` | INTEGER | Successful |
+| `failed_tasks` | INTEGER | Failed |
+| `started_at` | DATETIME | Start time |
+| `completed_at` | DATETIME | Completion time |
+| `created_at` | DATETIME | Creation date |
+
+**Indexes:**
+- `idx_runs_status` — Search by status
+- `idx_runs_created_at` — Sort by time
+
+---
+
+### run_tasks
+
+Each matrix cell within a specific run.
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `id` | INTEGER PK | Auto-increment |
+| `run_id` | TEXT | FK → runs(id) |
+| `project_name` | TEXT | FK → projects(name) |
+| `profile_id` | TEXT | FK → profiles(id) |
+| `status` | TEXT | pending / running / success / failed |
+| `exit_code` | INTEGER | Python exit code |
+| `log_file_path` | TEXT | Log file path |
+| `attempts` | INTEGER | Number of attempts |
+| `started_at` | DATETIME | Start time |
+| `completed_at` | DATETIME | Completion time |
+
+**Indexes:**
+- `idx_run_tasks_run_id` — Search by run
+- `idx_run_tasks_profile_id` — Search by profile
+
+**Cascade Delete:** When a run is deleted, all its tasks are removed.
+
+---
+
 ## Relationships
 
 ```
 profiles ──┬── proxies (proxy_id)
            ├── cookies (profile_id) [CASCADE DELETE]
            ├── profile_logs (profile_id) [CASCADE DELETE]
-           └── task_executions (profile_id)
-tasks ─────┴── task_executions (task_id) [CASCADE DELETE]
+           └── project_profile_config (profile_id) [CASCADE DELETE]
+projects ──┬── project_profile_config (project_name) [CASCADE DELETE]
+           └── run_tasks (project_name)
+runs ──────┴── run_tasks (run_id) [CASCADE DELETE]
 ```
 
 ## WAL Mode

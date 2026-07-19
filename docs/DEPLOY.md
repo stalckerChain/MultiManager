@@ -76,6 +76,31 @@ npm install
 
 ---
 
+## 2.1. Runtime Environment
+
+### Переменные окружения
+- `PORT=N` — порт Core-движка (передаётся GUI через env; автоинкремент 3000–3100 при конфликте)
+- `--api-token=SECRET` — токен авторизации (передаётся GUI через CLI-аргумент)
+
+### Совместимость
+- **Core:** Node.js ≥ 20.x
+- **GUI:** Electron 34.x (использует свой Node.js ABI). Native-модули (`better-sqlite3`, `koffi`) должны быть собраны под Electron: `cd gui && npx electron-rebuild -f`
+
+### Интеграция stAuto0
+- **Директория:** `~/AI/stAuto0` (автоопределение) или настраивается в GUI → Settings → Automation
+- **Python:** `~/AI/stAuto0/venv/Scripts/python.exe` (Windows) или system Python
+- **Проекты:** `stAuto0/projects/*.py` + `stAuto0/config/projects.py` — синхронизация через `POST /api/projects/sync`
+
+### First-run flow
+1. При первом запуске генерируется токен авторизации
+2. OS Keyring (keytar) сохраняет мастер-ключ; при недоступности — fallback в таблицу `system_config` БД
+3. Опционально: установить мастер-пароль в Settings → Security (PBKDF2, 210000 итераций)
+4. Recovery-key показывается 1 раз — сохраните в надёжном месте
+5. Логи: `logs/core.log` (системный), `logs/profile_[ID].log` (профиль), `logs/runs/{run_id}/` (задачи)
+6. Бэкапы: `backups/app_YYYYMMDD_HHmmss.db` (ротация 7 дней)
+
+---
+
 ## 3. Запуск в режиме разработки (Dev)
 
 ### 1. Запустить Core-движок

@@ -412,6 +412,19 @@ Authorization: Bearer <token>
 
 ---
 
+### POST /api/browser/shutdown
+
+批量停止所有运行中的浏览器。优雅关闭：SIGTERM → 等待 → SIGKILL。
+
+**响应 (200)：**
+```json
+{
+  "stopped": 3
+}
+```
+
+---
+
 ### GET /api/browser/:id/status
 
 获取浏览器状态。
@@ -515,7 +528,7 @@ Authorization: Bearer <token>
 
 ---
 
-## Multi-Control（窗口同步）— v0.13.0
+## Multi-Control（窗口同步）— v0.15.0
 
 通过 CDP（Chrome DevTools Protocol）将主窗口的操作广播到所有从窗口。
 
@@ -527,6 +540,8 @@ Authorization: Bearer <token>
 - **多标签页**：每 300ms HTTP `/json` 轮询检测原生打开的标签页。标签映射 1:N 通过 `Map<masterTargetId, Map<slaveId, slaveTargetId>>` + `tabIndex` 矩阵
 - **焦点激活**：链式调用 `Target.activateTarget` → `Page.bringToFront` → `DOM.focus` → `body.focus()` 以在从窗口中设置 DOM 输入焦点
 - **双重分发**：在 DOM 元素中输入时，按键会发送到从窗口两次（CDP + 原生钩子）
+
+> **平台限制：** 原生 OS 键盘钩子（WH_KEYBOARD_LL）仅在 Windows 上可用。在 macOS/Linux 上，键盘同步使用纯 CDP 模式 — 浏览器 chrome 快捷键（Ctrl+T、Ctrl+W）不会被拦截。
 
 ### GET /api/multi-control/status
 
@@ -1150,7 +1165,7 @@ Authorization: Bearer <token>
 
 ### GET /api/projects
 
-获取从 `stAuto0/projects/*.py` 同步的所有项目列表。
+获取数据库中的所有项目列表。
 
 **响应 (200):**
 ```json
@@ -1172,7 +1187,7 @@ Authorization: Bearer <token>
 
 ### POST /api/projects/sync
 
-扫描 `stAuto0/projects/*.py` 目录，添加新项目，停用已删除的项目。忽略 `__init__.py`、`base.py`、`loader.py`。如果未配置 `stAuto0_path`，则使用默认路径 `~/AI/stAuto0`。
+扫描 `stAuto0/projects/*.py` + `stAuto0/config/projects.py`，添加新项目，停用已删除的项目。配置文件中的项目优先。忽略 `__init__.py`、`base.py`、`loader.py`。如果未配置 `stAuto0_path`，则使用默认路径 `~/AI/stAuto0`。
 
 **响应 (200):**
 ```json
@@ -1233,6 +1248,200 @@ Authorization: Bearer <token>
 
 ---
 
+## 矩阵
+
+### GET /api/matrix
+
+完整矩阵：项目×配置文件。项目从数据库读取（仅 `is_active=1`），配置文件和复选框标记。
+
+**响应 (200)：**
+```json
+{
+  "projects": [
+    {
+      "name": "concrete",
+      "display_name": "Concrete",
+      "is_active": 1,
+      "allowed_profile_ids": ["uuid1", "uuid2"]
+    }
+  ],
+  "profiles": [
+    { "id": "uuid", "number": 1, "name": "auto_001", "status": "stopped" }
+  ],
+  "matrix": [
+    {
+      "project_name": "concrete",
+      "profile_id": "uuid",
+      "is_enabled": 1,
+      "config_override": "{}",
+      "profile_name": "auto_001",
+      "project_display": "Concrete"
+    }
+  ]
+}
+```
+
+### PUT /api/matrix
+
+批量更新矩阵复选框。原子事务。
+
+**请求体：**
+```json
+{
+  "entries": [
+    { "project_name": "concrete", "profile_id": "uuid", "is_enabled": 1 },
+    { "project_name": "allscale", "profile_id": "uuid", "is_enabled": 0 }
+  ]
+}
+```
+
+**响应 (200)：**
+```json
+{
+  "updated": 2
+}
+```
+
+---
+
+## 运行
+
+### GET /api/runs
+
+运行列表，支持分页。按 `created_at DESC` 排序。
+
+**参数：** `?page=1&limit=20`
+
+**响应 (200)：**
+```json
+{
+  "items": [
+    {
+      "id": "uuid",
+      "name": "Run 2026-07-13 12:00",
+      "status": "pending",
+      "parallel_limit": 2,
+      "total_tasks": 5,
+      "completed_tasks": 0,
+      "success_tasks": 0,
+      "failed_tasks": 0,
+      "started_at": null,
+      "completed_at": null,
+      "created_at": "2026-07-13 12:00:00"
+    }
+  ],
+  "total": 1,
+  "page": 1,
+  "limit": 20
+}
+```
+
+### POST /api/runs
+
+从当前启用的矩阵条目（`is_enabled=1`）创建新运行。
+
+**请求体：**
+```json
+{
+  "name": "Daily run 2026-07-13",
+  "parallel_limit": 3
+}
+```
+
+**响应 (201)：**
+```json
+{
+  "run_id": "uuid",
+  "tasks_created": 10,
+  "name": "Daily run 2026-07-13"
+}
+```
+
+**响应 (400)：** `{ "error": "No enabled entries in matrix" }`
+
+### GET /api/runs/:id
+
+获取运行及其所有 run_tasks。
+
+**响应 (200)：**
+```json
+{
+  "id": "uuid",
+  "name": "Daily run",
+  "status": "running",
+  "parallel_limit": 2,
+  "total_tasks": 5,
+  "completed_tasks": 2,
+  "success_tasks": 2,
+  "failed_tasks": 0,
+  "tasks": [
+    {
+      "id": 1,
+      "run_id": "uuid",
+      "project_name": "concrete",
+      "profile_id": "uuid",
+      "status": "success",
+      "exit_code": 0,
+      "log_file_path": "logs/runs/uuid/auto_001.log",
+      "attempts": 1,
+      "started_at": "2026-07-13 12:00:00",
+      "completed_at": "2026-07-13 12:05:00"
+    }
+  ]
+}
+```
+
+### POST /api/runs/:id/start
+
+启动运行执行。仅限 `pending` 状态。
+
+**响应 (200)：**
+```json
+{
+  "status": "started",
+  "run_id": "uuid"
+}
+```
+
+### POST /api/runs/:id/cancel
+
+取消运行执行。终止活动进程，将所有运行中/待处理任务标记为 `failed`。
+
+**响应 (200)：**
+```json
+{
+  "status": "cancelled",
+  "run_id": "uuid"
+}
+```
+
+---
+
+## 内部 API（stAuto0 回调）
+
+### POST /api/internal/runs/:id/task-status
+
+stAuto0 回调端点。更新一个矩阵单元格的状态。仅限 localhost。
+
+**请求体：**
+```json
+{
+  "project_name": "concrete",
+  "profile_name": "auto_001",
+  "status": "success",
+  "attempts": 2
+}
+```
+
+**响应 (200)：**
+```json
+{
+  "ok": true
+}
+```
+
+---
+
 ## 配置文件状态
 
 | 状态 | 描述 |
@@ -1257,3 +1466,4 @@ Authorization: Bearer <token>
 | 412 | 代理不可用 |
 | 500 | 服务器内部错误 |
 | 502 | 代理/轮换错误 / CDP 端口未找到 |
+| 503 | 授权令牌未初始化 |
