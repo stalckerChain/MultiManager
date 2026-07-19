@@ -179,7 +179,24 @@ async function checkProxy(proxy, timeout = 10000) {
 
 async function rotateProxy(rotationUrl, timeout = 10000) {
   return new Promise((resolve, reject) => {
-    const url = new URL(rotationUrl);
+    let url;
+    try {
+      url = new URL(rotationUrl);
+    } catch {
+      return reject(new Error('Invalid rotation URL'));
+    }
+
+    if (url.protocol !== 'http:' && url.protocol !== 'https:') {
+      return reject(new Error('Rotation URL must use http or https protocol'));
+    }
+
+    const hostname = url.hostname;
+    if (hostname === 'localhost' || hostname === '127.0.0.1' || hostname === '::1' ||
+        hostname.startsWith('192.168.') || hostname.startsWith('10.') ||
+        hostname.startsWith('172.') || hostname === '0.0.0.0') {
+      return reject(new Error('Rotation URL cannot point to private/local addresses'));
+    }
+
     const client = url.protocol === 'https:' ? https : http;
 
     const req = client.get(rotationUrl, { timeout }, (res) => {

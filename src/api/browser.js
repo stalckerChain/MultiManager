@@ -12,7 +12,7 @@ const { getExtensionsDir } = require('./extensions');
 const { humanType } = require('../typing');
 const { hasMasterKey, getMasterKey } = require('../crypto');
 const { validate, browserTypeSchema } = require('./validate');
-const { notFound, conflict, preconditionFailed, badGateway, serverError, asyncHandler } = require('./errors');
+const { notFound, conflict, preconditionFailed, badRequest, badGateway, serverError, asyncHandler } = require('./errors');
 const cdp = require('../cdp/client');
 
 function toPSEncoded(script) {
@@ -583,8 +583,10 @@ async function createCdpSession(port) {
 async function waitForSelector(ws, sessionId, selector, timeout = 15000) {
   const start = Date.now();
   while (Date.now() - start < timeout) {
-    const result = await cdp.call(ws, 'Runtime.evaluate', {
-      expression: `document.querySelector('${selector}') !== null`,
+    const result = await cdp.call(ws, 'Runtime.callFunctionOn', {
+      functionDeclaration: `function(sel) { return document.querySelector(sel) !== null; }`,
+      arguments: [{ type: 'string', value: selector }],
+      returnByValue: true,
     }, { sessionId });
     if (result && result.result && result.result.value) return;
     await new Promise(r => setTimeout(r, 200));
@@ -595,8 +597,10 @@ async function waitForSelector(ws, sessionId, selector, timeout = 15000) {
 async function waitForSelectorHidden(ws, sessionId, selector, timeout = 10000) {
   const start = Date.now();
   while (Date.now() - start < timeout) {
-    const result = await cdp.call(ws, 'Runtime.evaluate', {
-      expression: `(function(){ const el = document.querySelector('${selector}'); return el === null || el.offsetParent === null || el.style.display === 'none'; })()`,
+    const result = await cdp.call(ws, 'Runtime.callFunctionOn', {
+      functionDeclaration: `function(sel) { const el = document.querySelector(sel); return el === null || el.offsetParent === null || el.style.display === 'none'; }`,
+      arguments: [{ type: 'string', value: selector }],
+      returnByValue: true,
     }, { sessionId });
     if (result && result.result && result.result.value) return;
     await new Promise(r => setTimeout(r, 200));
@@ -627,9 +631,10 @@ async function zerionLogin(port, password) {
 
     await waitForSelector(ws, sessionId, "input[type='password']", 15000);
 
-    const escaped = password.replace(/\\/g, '\\\\').replace(/'/g, "\\'");
-    await cdp.call(ws, 'Runtime.evaluate', {
-      expression: `document.querySelector("input[type='password']").value = '${escaped}'`,
+    await cdp.call(ws, 'Runtime.callFunctionOn', {
+      functionDeclaration: `function(pw) { document.querySelector("input[type='password']").value = pw; }`,
+      arguments: [{ type: 'string', value: password }],
+      returnByValue: true,
     }, { sessionId });
 
     await cdp.call(ws, 'Input.dispatchKeyEvent', {

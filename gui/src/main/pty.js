@@ -8,6 +8,21 @@ let ptyProcess = null;
 let currentFile = null;
 let senderRef = null;
 
+function isAllowedLogPath(filePath) {
+  const home = process.env.USERPROFILE || process.env.HOME || '';
+  const allowedDirs = [
+    path.join(home, 'AI'),
+  ];
+  try {
+    const electron = require('electron');
+    if (electron.app && typeof electron.app.getPath === 'function') {
+      allowedDirs.push(path.join(electron.app.getPath('userData'), 'logs'));
+    }
+  } catch {}
+  const resolved = path.resolve(filePath);
+  return allowedDirs.some(dir => resolved.startsWith(dir));
+}
+
 function init(mainWindow) {
   ipcMain.handle('pty:start', (event, filePath) => {
     return startPty(filePath, event.sender);
@@ -23,6 +38,10 @@ function startPty(filePath, sender) {
 
   if (!filePath || !fs.existsSync(filePath)) {
     return { success: false, error: 'File not found' };
+  }
+
+  if (!isAllowedLogPath(filePath)) {
+    return { success: false, error: 'Path not in allowed log directory' };
   }
 
   currentFile = filePath;

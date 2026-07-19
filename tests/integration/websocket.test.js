@@ -4,12 +4,16 @@ import WebSocket from 'ws';
 import { app } from '../../src/core/app.js';
 import { setupWebSocket, broadcast, broadcastStatus, broadcastLog } from '../../src/core/websocket.js';
 
+const TEST_WS_TOKEN = 'test-ws-token-' + Date.now();
+
 describe('WebSocket', () => {
   let server;
   let port;
   const clients = [];
 
   beforeAll(async () => {
+    const { setToken } = require('../../src/api/auth');
+    setToken(TEST_WS_TOKEN);
     server = http.createServer(app);
     setupWebSocket(server);
     await new Promise((resolve) => server.listen(0, resolve));
@@ -31,7 +35,7 @@ describe('WebSocket', () => {
 
   function connect() {
     return new Promise((resolve, reject) => {
-      const ws = new WebSocket(`ws://127.0.0.1:${port}/ws`);
+      const ws = new WebSocket(`ws://127.0.0.1:${port}/ws?token=${TEST_WS_TOKEN}`);
       clients.push(ws);
       ws.on('open', () => resolve(ws));
       ws.on('error', reject);

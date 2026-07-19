@@ -13,8 +13,14 @@ export const useAppStore = defineStore('app', () => {
 
   async function init() {
     if (window.electronAPI) {
-      port.value = await window.electronAPI.getPort();
-      token.value = await window.electronAPI.getToken();
+      if (window.electronAPI.getPortAndToken) {
+        const result = await window.electronAPI.getPortAndToken();
+        port.value = result.port;
+        token.value = result.token;
+      } else {
+        port.value = await window.electronAPI.getPort();
+        token.value = await window.electronAPI.getToken();
+      }
     }
     setBaseURL(port.value);
     setAuthToken(token.value);

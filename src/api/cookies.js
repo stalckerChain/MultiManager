@@ -34,8 +34,9 @@ router.post('/:profileId/import', validate(cookieImportSchema), async (req, res)
   const { format, content } = req.body;
 
   let cookies;
+  let tmpPath;
   try {
-    const tmpPath = path.join('/tmp', `cookies_${Date.now()}.txt`);
+    tmpPath = path.join('/tmp', `cookies_${Date.now()}.txt`);
     await fs.promises.writeFile(tmpPath, content);
 
     if (format === 'json') {
@@ -43,10 +44,12 @@ router.post('/:profileId/import', validate(cookieImportSchema), async (req, res)
     } else {
       cookies = parseNetscapeCookies(tmpPath);
     }
-
-    await fs.promises.unlink(tmpPath);
   } catch (err) {
     return res.status(400).json({ error: 'Ошибка парсинга куки', details: err.message });
+  } finally {
+    if (tmpPath) {
+      await fs.promises.unlink(tmpPath).catch(() => {});
+    }
   }
 
   cookieQueries.deleteByProfileId(req.params.profileId);

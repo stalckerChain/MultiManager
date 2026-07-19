@@ -49,6 +49,7 @@ async function findFreePort(start = 3000, end = 3100) {
 }
 
 async function startCore() {
+  coreToken = crypto.randomBytes(32).toString('hex');
   corePort = await findFreePort();
   return startCoreProcess();
 }

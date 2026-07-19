@@ -114,16 +114,16 @@ async function listExtensions(dir) {
   return extensions;
 }
 
-router.get('/', (req, res) => {
+router.get('/', async (req, res) => {
   try {
-    const extensions = listExtensions();
+    const extensions = await listExtensions();
     res.json(extensions);
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
 });
 
-router.post('/', (req, res) => {
+router.post('/', async (req, res) => {
   try {
     const { name, path: extPath } = req.body;
 
@@ -146,15 +146,21 @@ router.post('/', (req, res) => {
     }
 
     fs.cpSync(extPath, targetPath, { recursive: true });
-    fs.writeFileSync(path.join(targetPath, '.enabled'), 'true');
 
-    const manifest = getManifest(targetPath);
+    let manifest;
+    try {
+      manifest = await validateExtensionDir(targetPath);
+    } catch (err) {
+      fs.rmSync(targetPath, { recursive: true, force: true });
+      return res.status(400).json({ error: err.message });
+    }
+
     res.status(201).json({
       id: targetName,
-      name: resolveMSG(manifest?.name, targetPath) || targetName,
-      version: manifest?.version || '1.0.0',
-      description: resolveMSG(manifest?.description, targetPath) || '',
-      enabled: true,
+      name: resolveMSG(manifest.name, targetPath) || targetName,
+      version: manifest.version || '1.0.0',
+      description: resolveMSG(manifest.description, targetPath) || '',
+      enabled: false,
       path: targetPath,
     });
   } catch (err) {
@@ -188,15 +194,21 @@ router.post('/from-store', async (req, res) => {
       fs.rmSync(targetPath, { recursive: true, force: true });
     }
     zip.extractAllTo(targetPath, true);
-    fs.writeFileSync(path.join(targetPath, '.enabled'), 'true');
 
-    const manifest = getManifest(targetPath);
+    let manifest;
+    try {
+      manifest = await validateExtensionDir(targetPath);
+    } catch (err) {
+      fs.rmSync(targetPath, { recursive: true, force: true });
+      return res.status(400).json({ error: err.message });
+    }
+
     res.status(201).json({
       id: extId,
-      name: resolveMSG(manifest?.name, targetPath) || extId,
-      version: manifest?.version || '1.0.0',
-      description: resolveMSG(manifest?.description, targetPath) || '',
-      enabled: true,
+      name: resolveMSG(manifest.name, targetPath) || extId,
+      version: manifest.version || '1.0.0',
+      description: resolveMSG(manifest.description, targetPath) || '',
+      enabled: false,
       path: targetPath,
     });
   } catch (err) {
@@ -243,15 +255,21 @@ router.post('/from-zip', async (req, res) => {
           fs.writeFileSync(fullPath, entry.getData());
         }
       }
-      fs.writeFileSync(path.join(targetPath, '.enabled'), 'true');
 
-      const manifest = getManifest(targetPath);
+      let manifest;
+      try {
+        manifest = await validateExtensionDir(targetPath);
+      } catch (err) {
+        fs.rmSync(targetPath, { recursive: true, force: true });
+        return res.status(400).json({ error: err.message });
+      }
+
       return res.status(201).json({
         id: targetName,
-        name: resolveMSG(manifest?.name, targetPath) || targetName,
-        version: manifest?.version || '1.0.0',
-        description: resolveMSG(manifest?.description, targetPath) || '',
-        enabled: true,
+        name: resolveMSG(manifest.name, targetPath) || targetName,
+        version: manifest.version || '1.0.0',
+        description: resolveMSG(manifest.description, targetPath) || '',
+        enabled: false,
         path: targetPath,
       });
     }
@@ -263,21 +281,44 @@ router.post('/from-zip', async (req, res) => {
       fs.rmSync(targetPath, { recursive: true, force: true });
     }
     zip.extractAllTo(targetPath, true);
-    fs.writeFileSync(path.join(targetPath, '.enabled'), 'true');
 
-    const manifest = getManifest(targetPath);
+    let manifest;
+    try {
+      manifest = await validateExtensionDir(targetPath);
+    } catch (err) {
+      fs.rmSync(targetPath, { recursive: true, force: true });
+      return res.status(400).json({ error: err.message });
+    }
+
     res.status(201).json({
       id: targetName,
-      name: resolveMSG(manifest?.name, targetPath) || targetName,
-      version: manifest?.version || '1.0.0',
-      description: resolveMSG(manifest?.description, targetPath) || '',
-      enabled: true,
+      name: resolveMSG(manifest.name, targetPath) || targetName,
+      version: manifest.version || '1.0.0',
+      description: resolveMSG(manifest.description, targetPath) || '',
+      enabled: false,
       path: targetPath,
     });
   } catch (err) {
     res.status(500).json({ error: `Failed to install from zip: ${err.message}` });
   }
 });
+
+async function validateExtensionDir(extPath) {
+  const manifest = await getManifest(extPath);
+  if (!manifest) {
+    throw new Error('Missing or invalid manifest.json');
+  }
+  if (!manifest.name) {
+    throw new Error('manifest.json missing "name" field');
+  }
+  if (!manifest.version) {
+    throw new Error('manifest.json missing "version" field');
+  }
+  if (!manifest.manifest_version || ![2, 3].includes(manifest.manifest_version)) {
+    throw new Error('manifest.json must have manifest_version 2 or 3');
+  }
+  return manifest;
+}
 
 function downloadWithRedirects(urlStr, maxRedirects) {
   return new Promise((resolve, reject) => {
@@ -321,7 +362,7 @@ function extractExtensionId(urlOrId) {
 
 function extractZipFromCrx(buffer) {
   if (buffer.slice(0, 4).toString() !== 'Cr24') {
-    return buffer;
+    throw new Error('Not a valid CRX file: bad magic bytes');
   }
 
   const version = buffer.readUInt32LE(4);
@@ -339,7 +380,7 @@ function extractZipFromCrx(buffer) {
     return buffer.subarray(headerSize);
   }
 
-  return buffer;
+  throw new Error(`Unsupported CRX version: ${version}`);
 }
 
 router.delete('/:id', (req, res) => {
@@ -393,15 +434,18 @@ router.post('/:id/assign-all', (req, res) => {
     const profiles = db.prepare('SELECT id, extensions FROM profiles').all();
     let assigned = 0;
 
-    for (const profile of profiles) {
-      let exts = [];
-      try { exts = JSON.parse(profile.extensions || '[]'); } catch { exts = []; }
-      if (!exts.includes(req.params.id)) {
-        exts.push(req.params.id);
-        db.prepare('UPDATE profiles SET extensions = ? WHERE id = ?').run(JSON.stringify(exts), profile.id);
-        assigned++;
+    const assignTx = db.transaction(() => {
+      for (const profile of profiles) {
+        let exts = [];
+        try { exts = JSON.parse(profile.extensions || '[]'); } catch { exts = []; }
+        if (!exts.includes(req.params.id)) {
+          exts.push(req.params.id);
+          db.prepare('UPDATE profiles SET extensions = ? WHERE id = ?').run(JSON.stringify(exts), profile.id);
+          assigned++;
+        }
       }
-    }
+    });
+    assignTx();
 
     res.json({ assigned });
   } catch (err) {

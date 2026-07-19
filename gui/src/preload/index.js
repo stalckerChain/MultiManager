@@ -2,7 +2,7 @@ const { contextBridge, ipcRenderer } = require('electron');
 
 contextBridge.exposeInMainWorld('electronAPI', {
   getPort: () => ipcRenderer.invoke('get-port'),
-  getToken: () => ipcRenderer.invoke('get-token'),
+  getPortAndToken: () => ipcRenderer.invoke('get-port-and-token'),
   quitApp: () => ipcRenderer.invoke('quit-app'),
   hooksStart: () => ipcRenderer.invoke('hooks:start'),
   hooksStop: () => ipcRenderer.invoke('hooks:stop'),

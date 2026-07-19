@@ -60,9 +60,11 @@ beforeAll(async () => {
   const { setToken } = require('../../src/api/auth');
   const { initDatabase } = require('../../src/db');
   const { app } = require('../../src/core/app');
+  const { setMasterKey } = require('../../src/crypto');
 
   setToken(TEST_TOKEN);
   db = initDatabase();
+  setMasterKey(crypto.randomBytes(32), 'test');
 
   db.prepare("INSERT OR REPLACE INTO system_config (key, value, updated_at) VALUES ('stAuto0_path', ?, CURRENT_TIMESTAMP)").run(process.cwd());
   db.prepare("INSERT OR REPLACE INTO system_config (key, value, updated_at) VALUES ('python_path', ?, CURRENT_TIMESTAMP)").run(process.platform === 'win32' ? 'cmd.exe' : 'echo');

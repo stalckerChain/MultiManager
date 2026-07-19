@@ -29,6 +29,9 @@ router.get('/crypto-status', (req, res) => {
 router.get('/recovery-key', (req, res) => {
   const db = getDatabase();
   const key = getRecoveryKey(db);
+  if (key) {
+    clearRecoveryKey(db);
+  }
   res.json({ recovery_key: key || '' });
 });
 
@@ -56,13 +59,12 @@ router.post('/set-master-password', (req, res) => {
   configQueries.set('master_key_hash', keyHash.toString('hex'));
 
   const recovery = generateRecoveryKey(key);
-  configQueries.set('recovery_key', recovery);
 
   clearMasterKey();
   setMasterKey(key, 'password');
 
   logger.info('Master-пароль установлен');
-  res.json({ status: 'success' });
+  res.json({ status: 'success', recovery_key: recovery });
 });
 
 router.post('/change-master-password', (req, res) => {
@@ -91,13 +93,12 @@ router.post('/change-master-password', (req, res) => {
   configQueries.set('master_key_hash', keyHash.toString('hex'));
 
   const recovery = generateRecoveryKey(key);
-  configQueries.set('recovery_key', recovery);
 
   clearMasterKey();
   setMasterKey(key, 'password');
 
   logger.info('Мастер-пароль изменён');
-  res.json({ status: 'success' });
+  res.json({ status: 'success', recovery_key: recovery });
 });
 
 router.get('/automation', (req, res) => {

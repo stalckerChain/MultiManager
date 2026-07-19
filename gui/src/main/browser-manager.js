@@ -41,7 +41,8 @@ function getCloakBrowserBinary() {
     .reverse();
 
   for (const ver of versions) {
-    const bin = path.join(cacheDir, ver, 'chrome.exe');
+    const binName = process.platform === 'win32' ? 'chrome.exe' : 'chrome';
+    const bin = path.join(cacheDir, ver, binName);
     if (fs.existsSync(bin)) return bin;
   }
   return null;

@@ -16,6 +16,11 @@ class NativeKeyboardHooks extends EventEmitter {
   start() {
     if (this.running) return;
 
+    if (process.platform !== 'win32') {
+      logger.warn('NATIVE-HOOKS: Keyboard hooks only supported on Windows');
+      return;
+    }
+
     try {
       const addonPath = path.join(__dirname, 'build', 'Release', 'hooks.node');
       this._addon = require(addonPath);

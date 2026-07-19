@@ -21,7 +21,7 @@
 **Технологический стек Core:**
 - Node.js ≥ 20.x, Express 4.x, better-sqlite3 (WAL + ACID), pino (логирование), ws (WebSocket), socks (SOCKS5-proxy), adm-zip, ghost-cursor, tree-kill, koffi (FFI для нативных Windows-хуков)
 
-**Тестирование:** Vitest (unit + integration), 654 теста (42 файла). ✅ `tests/`, `vitest.config.js`
+**Тестирование:** Vitest (unit + integration), 737 тестов (47 файлов). ✅ `tests/`, `vitest.config.js`
 
 -------------------------------
 ## 2. Безопасность и авторизация локального API ✅ РЕАЛИЗОВАНО
@@ -29,6 +29,10 @@
 - **Локальный хост:** Core открывает порт только на `127.0.0.1`. ✅ `src/index.js:27`
 - **Handshake:** GUI при fork Core передаёт токен как `--api-token=SECRET_VALUE` и порт через **env `PORT=N`** (см. примечание в §3.2). ✅ `gui/src/main/core-manager.js:60,70`
 - **Авторизация:** Все HTTP-запросы требуют `Authorization: Bearer SECRET`. Middleware возвращает 401 при отсутствии/несовпадении токена. Если токен не инициализирован — 503. ✅ `src/api/auth.js`
+- **Master Key Gate:** POST/PUT/DELETE к `/api/profiles`, `/api/proxies`, `/api/cookies` блокируются (503) пока master key не инициализирован. GET-запросы работают. ✅ `src/core/app.js`
+- **WebSocket Authentication:** `/ws` требует `?token=` query parameter. Без валидного токена — `ws.close(4401)`. ✅ `src/core/websocket.js`
+- **Recovery Key One-Time:** Recovery key показывается один раз (в ответе POST /set-master-password) и удаляется из БД. GET /recovery-key удаляет строку после показа. ✅ `src/api/settings.js`, `src/crypto/index.js`
+- **Core Token Rotation:** `coreToken` ротируется при каждом `startCore()`. ✅ `gui/src/main/core-manager.js`
 - **Доступ для ИИ-агентов:** Токен доступен для копирования в Settings GUI. ✅ `gui/src/renderer/views/Settings.vue`
 - **Health:** `GET /health` — `{"status":"ok"}` (до middleware авторизации). ✅ `src/core/app.js:20`
 
@@ -166,6 +170,7 @@ GUI передаёт порт бэкенду через **env-переменну
 ### 4.6. Менеджер расширений (Extensions Manager) ✅ РЕАЛИЗОВАНО
 - `CRUD /api/extensions`, `POST /api/extensions/:id/toggle`, `POST /api/extensions/:id/assign-all`. ✅ `src/api/extensions.js`
 - Установка из папки, Chrome Web Store, ZIP/CRX (v2+v3). i18n `__MSG_*__`. Загрузка через `--load-extension` + CDP `chrome.developerPrivate.loadUnpacked`. ✅ `src/api/browser.js:180-222`
+- **Валидация manifest** (v1.4.0): проверяется `manifest.json` с полями `name`, `version`, `manifest_version` (2 или 3). `.enabled` не создаётся автоматически — включать через toggle. CRX парсер отвергает невалидные magic bytes и неизвестные версии.
 
 ### 4.7. Управление окнами (Window Arranger) ⚠️ ЧАСТИЧНО
 - `GET /api/window-arranger/windows`, `/grid`, `/cascade`, `/focus/:windowId`. ✅ `src/api/window-arranger.js`
@@ -200,9 +205,10 @@ GUI передаёт порт бэкенду через **env-переменну
 1. **Дефолт: OS Keyring** (`keytar`). Случайный 256-бит ключ генерируется 1 раз при первом старте, сохраняется в Windows Credential Manager (win32) / macOS Keychain (darwin) / libsecret/Secret Service (linux). ✅ `src/crypto/index.js:initMasterKey()`
 2. **Фоллбэк: system_config** — если keytar недоступен, ключ хранится в `system_config` таблице БД. ✅ `src/crypto/index.js`
 3. **Опция: Мастер-пароль.** В Settings пользователь задаёт пароль → PBKDF2 (210000 итераций, SHA-256, salt из system_config) → ключ в RAM на время сессии. ✅ `src/api/settings.js:set-master-password`, `gui/.../Settings.vue`
-4. **Recovery-key.** Показывается 1 раз в Settings. ✅ `src/api/settings.js:recovery-key`, `gui/.../Settings.vue`
+4. **Recovery-key.** Показывается 1 раз при установке пароля (в ответе API). Не хранится в БД. ✅ `src/api/settings.js`
+5. **Plaintext fallback удалён** — `initMasterKey()` не генерирует и не хранит ключ открытым текстом. Если keytar недоступен и пароль не установлен — система работает в режиме ожидания пароля (503 для secret-writing операций). ✅ `src/crypto/index.js`
 
-**Шифруемые колонки:** `email_password`, `twitter_password`, `twitter_auth_token`, `discord_password`, `discord_token`, `wallet_password`.
+**Шифруемые колонки:** `email_password`, `twitter_password`, `twitter_auth_token`, `discord_password`, `discord_token`, `wallet_password`. Additionally: `proxies.username`, `proxies.password` (v1.4.0).
 
 **Формат хранения:** `aes-256-gcm:<iv_hex>:<ciphertext_hex>:<tag_hex>` (GCM даёт аутентификацию + целостность).
 
@@ -219,7 +225,7 @@ GUI передаёт порт бэкенду через **env-переменну
 | `/api/browser/:id/zerion-login` | POST | Авто-логин Zerion (логика перенесена из `stAuto0/Core/browser.py::login_zerion`). | ✅ `src/api/browser.js` |
 | `/api/profiles/batch` | POST | Массовый импорт для Wallet Factory (1 транзакция вместо N запросов). Тело `{accounts: [...]}`. | ✅ `src/api/profiles.js:24-81` |
 
-> **`/api/internal/profiles` минует часть шифрования:** Python-агенту нужен cleartext для работы. Этот endpoint защищён тем же Bearer-token, но логируется как `[INTERNAL]` для аудита.
+> **`/api/internal/profiles` не возвращает секреты** (v1.4.0): секретные поля (`email_password`, `twitter_password`, `twitter_auth_token`, `discord_password`, `discord_token`, `wallet_password`) и proxy credentials удалены из ответа. Возвращается только `has_auth` (boolean) для прокси.
 
 ### 4.13. Авто-логин Zerion по CDP ✅ РЕАЛИЗОВАНО (Roadmap Ф2 + Ф4)
 > Логика перенесена из Python (`stAuto0/Core/browser.py:348 login_zerion`) в Node.js. Python получает уже залогиненный `ws_endpoint`.

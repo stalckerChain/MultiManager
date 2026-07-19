@@ -1,5 +1,98 @@
 # Changelog
 
+## v1.4.0 (Security Hardening)
+
+### Безопасность
+
+- **[SEC] WebSocket `/ws` требует аутентификации.**
+  Любой localhost-процесс мог подключиться к WebSocket и получать логи/статусы профилей без токена.
+  **Фикс:** при подключении проверяется `?token=` query parameter. Без валидного токена — `ws.close(4401)`. Фронтенд передаёт токен в WS URL. ✅ `src/core/websocket.js`, `gui/src/renderer/composables/useWebSocket.js`
+
+- **[SEC] Recovery key показывается один раз и удаляется из БД.**
+  `/api/settings/recovery-key` возвращал base64-encoded master key, который оставался в `system_config` навсегда. Любой authenticated клиент мог расшифровать все секреты.
+  **Фикс:** `GET /recovery-key` удаляет строку после показа. `POST /set-master-password` и `POST /change-master-password` возвращают recovery key в ответе, не храня в БД. `clearRecoveryKey()` теперь делает `DELETE` вместо пустой строки. ✅ `src/api/settings.js`, `src/crypto/index.js`
+
+- **[SEC] Убран plaintext fallback master key.**
+  Если `keytar` недоступен, ключ хранился как hex в `system_config` SQLite — любой процесс с доступом к файлу БД мог прочитать ключ.
+  **Фикс:** `initMasterKey()` не генерирует и не хранит ключ открытым текстом. Если keytar недоступен и пароль не установлен — возвращает `null`, система работает в режиме ожидания пароля. ✅ `src/crypto/index.js`
+
+- **[SEC] Блокировка записи секретов до инициализации master key.**
+  Сервер стартовал до завершения `initMasterKey()`. Ранние запросы на создание профилей/прокси могли сохранять секреты без шифрования.
+  **Фикс:** добавлен `requireMasterKey` middleware — блокирует POST/PUT/DELETE к `/api/profiles`, `/api/proxies`, `/api/cookies` пока ключ не готов (503). GET-запросы работают. ✅ `src/core/app.js`
+
+- **[SEC] Секреты удалены из Internal API.**
+  `/api/internal/profiles` возвращал расшифрованные пароли, auth-токены и proxy credentials (username/password/connection_string) любому authenticated клиенту.
+  **Фикс:** секретные поля (`email_password`, `twitter_password`, `twitter_auth_token`, `discord_password`, `discord_token`, `wallet_password`) удалены из ответа. Proxy credentials заменены на `has_auth` (boolean). Удалена функция `buildProxyString`. ✅ `src/api/internal.js`
+
+- **[SEC] Proxy credentials теперь шифруются в SQLite.**
+  `proxies.username` и `proxies.password` хранились открытым текстом. Любой процесс с доступом к БД мог прочитать прокси-авторизацию.
+  **Фикс:** добавлены `encryptProxyFields()` / `decryptProxyRow()` — шифрование при записи, расшифровка при чтении. Паттерн аналогиченSECRET_FIELDS для профилей. ✅ `src/db/queries.js`, `src/api/proxies.js`
+
+- **[SEC] CDP password injection исправлен.**
+  Wallet password вставлялся в JavaScript через string interpolation (`password.replace(...)`). Пароль с `'` или `\n` мог выполнить произвольный JS.
+  **Фикс:** `Runtime.callFunctionOn` с isolated function и arguments array вместо string interpolation. ✅ `src/api/browser.js`
+
+- **[SEC] CDP selectors injection исправлен.**
+  `waitForSelector` / `waitForSelectorHidden` конкатенировали CSS-селектор в `document.querySelector('${selector}')`.
+  **Фикс:** `Runtime.callFunctionOn` с selector как аргументом функции. ✅ `src/api/browser.js`
+
+- **[SEC] Extension installation теперь валидирует manifest.**
+  Расширения устанавливались без проверки `manifest.json`. Автоматически создавался `.enabled` файл.
+  **Фикс:** добавлена `validateExtensionDir()` — проверяет наличие `manifest.json` с полями `name`, `version`, `manifest_version` (2 или 3). `.enabled` больше не создаётся автоматически — включать через toggle. ✅ `src/api/extensions.js`
+
+- **[SEC] CRX парсер отвергает неизвестные версии.**
+  `extractZipFromCrx` возвращал исходный буфер для не-CRX файлов и неизвестных версий, что позволяло обработать произвольный файл как zip.
+  **Фикс:** reject для невалидных magic bytes и неизвестных CRX-версий. ✅ `src/api/extensions.js`
+
+- **[SEC] Cookie temp-файл всегда удаляется.**
+  Cookie content записывался в `/tmp/cookies_<timestamp>.txt` и удалялся только при успехе. При ошибке парсинга файл оставался с сырыми куки.
+  **Фикс:** `try/finally` block — unlink выполняется всегда. ✅ `src/api/cookies.js`
+
+- **[SEC] Proxy rotation SSRF защищён.**
+  `rotateProxy()`.fetchал любой URL без валидации. Возможен SSRF на localhost/приватные сети.
+  **Фикс:** валидация scheme (http/https) и блокировка private/local адресов. ✅ `src/proxy/index.js`
+
+- **[SEC] pty log tail валидирует пути.**
+  Renderer мог запросить tail произвольного файла.
+  **Фикс:** `isAllowedLogPath()` проверяет что путь в allowed directories. ✅ `gui/src/main/pty.js`
+
+- **[SEC] Core token ротируется при каждом старте.**
+  `coreToken` генерировался один раз при загрузке модуля и не менялся.
+  **Фикс:** ротация при каждом `startCore()`. ✅ `gui/src/main/core-manager.js`
+
+- **[SEC] Browser manager ищет бинарник по платформе.**
+  `getCloakBrowserBinary()` искал только `chrome.exe`. На Linux/macOS не находил браузер.
+  **Фикс:** platform-appropriate binary name. ✅ `gui/src/main/browser-manager.js`
+
+### Исправления
+
+- **[BUG] `listExtensions()` вызывалась без await в sync route.**
+  `router.get('/')` вызывал async `listExtensions()` без await — возвращал Promise вместо массива.
+  **Фикс:** route handler сделан async + await. ✅ `src/api/extensions.js`
+
+- **[BUG] Matrix JSON.parse без try/catch.**
+  `JSON.parse(proj.default_config || '{}')` мог упасть при битом конфиге и крашнуть route.
+  **Фикс:** обёрнуто в try/catch с fallback на `{}`. ✅ `src/api/matrix.js`
+
+- **[BUG] Native addon загружался без platform check.**
+  `.node` addon загружался на всех платформах — на Linux/macOS падал.
+  **Фикс:** `process.platform === 'win32'` guard с graceful degradation. ✅ `src/os-input/native-hooks/index.js`
+
+- **[BUG] Missing `badRequest` import в browser.js.**
+  `badRequest` использовалась в `zerion-login` но не импортировалась из `errors`.
+  **Фикс:** добавлен импорт. ✅ `src/api/browser.js`
+
+- **[CHORE] Extension assign-all обёрнут в транзакцию.**
+  Итерация по профилям с UPDATE без транзакции — частичная ошибка оставляла inconsistent state.
+  **Фикс:** `db.transaction()`. ✅ `src/api/extensions.js`
+
+### Тесты
+
+- Обновлены тесты: `extensions.test.js` (CRX reject), `pty.test.js` (electron mock), `websocket.test.js` (token auth), `api-real.test.js` (master key setup)
+- Всего: **737 тестов** (47 файлов), все проходят
+
+---
+
 ## v1.3.2
 
 ### Исправления

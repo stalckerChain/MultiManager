@@ -153,23 +153,15 @@ async function initMasterKey(db) {
       masterKeySource = 'system_config';
       return masterKey;
     }
-    masterKey = generateMasterKey();
-    masterKeySource = 'system_config';
-    configSet.run('master_key', masterKey.toString('hex'));
-    configSet.run('master_key_source', 'system_config');
-    const recovery = generateRecoveryKey(masterKey);
-    configSet.run('recovery_key', recovery);
-    return masterKey;
+    // keytar unavailable, no fallback — must set a password
+    return null;
   }
 
   if (sourceVal === 'password') {
     const salt = configGet.get('master_key_salt');
     if (!salt) {
-      masterKey = generateMasterKey();
-      masterKeySource = 'system_config';
-      configSet.run('master_key', masterKey.toString('hex'));
-      configSet.run('master_key_source', 'system_config');
-      return masterKey;
+      // Password source configured but no salt — must re-setup password
+      return null;
     }
     return null;
   }
@@ -192,13 +184,8 @@ async function initMasterKey(db) {
     return masterKey;
   }
 
-  masterKey = generateMasterKey();
-  masterKeySource = 'system_config';
-  configSet.run('master_key', masterKey.toString('hex'));
-  configSet.run('master_key_source', 'system_config');
-  const recovery = generateRecoveryKey(masterKey);
-  configSet.run('recovery_key', recovery);
-  return masterKey;
+  // No keytar, no password — return null, must set password
+  return null;
 }
 
 function unlockWithPassword(password, db) {
@@ -239,8 +226,8 @@ function getRecoveryKey(db) {
 }
 
 function clearRecoveryKey(db) {
-  const configSet = db.prepare('INSERT OR REPLACE INTO system_config (key, value, updated_at) VALUES (?, ?, CURRENT_TIMESTAMP)');
-  configSet.run('recovery_key', '');
+  const configDel = db.prepare('DELETE FROM system_config WHERE key = ?');
+  configDel.run('recovery_key');
 }
 
 module.exports = {

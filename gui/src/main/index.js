@@ -160,6 +160,7 @@ if (process.platform === 'win32') {
 
   ipcMain.handle('get-port', () => getCorePort());
   ipcMain.handle('get-token', () => getCoreToken());
+  ipcMain.handle('get-port-and-token', () => ({ port: getCorePort(), token: getCoreToken() }));
   ipcMain.handle('quit-app', async () => {
     app.isQuitting = true;
     await gracefulShutdown();

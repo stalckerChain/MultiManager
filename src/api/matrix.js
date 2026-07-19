@@ -28,7 +28,12 @@ function createMatrixRouter(opts = {}) {
 
     // Build allowed_profile_ids for each active project based on accounts config
     const projectsWithAllowed = activeProjects.map(proj => {
-      const config = JSON.parse(proj.default_config || '{}');
+      let config;
+      try {
+        config = JSON.parse(proj.default_config || '{}');
+      } catch {
+        config = {};
+      }
       let allowedProfileIds = profileList.map(p => p.id);
 
       if (config.accounts && config.accounts.length > 0) {

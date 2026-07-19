@@ -1,8 +1,16 @@
 const express = require('express');
 const rateLimit = require('express-rate-limit');
 const { authMiddleware } = require('../api/auth');
+const { hasMasterKey } = require('../crypto');
 const { logger } = require('../logger');
 const { ApiError } = require('../api/errors');
+
+function requireMasterKey(req, res, next) {
+  if (!hasMasterKey() && req.method !== 'GET') {
+    return res.status(503).json({ error: 'Master key not initialized', code: 'MASTER_KEY_NOT_READY' });
+  }
+  next();
+}
 const profilesRouter = require('../api/profiles');
 const proxiesRouter = require('../api/proxies');
 const cookiesRouter = require('../api/cookies');
@@ -40,9 +48,9 @@ app.get('/health', (req, res) => {
   res.json({ status: 'ok' });
 });
 
-app.use('/api/profiles', profilesRouter);
-app.use('/api/proxies', proxiesRouter);
-app.use('/api/cookies', cookiesRouter);
+app.use('/api/profiles', requireMasterKey, profilesRouter);
+app.use('/api/proxies', requireMasterKey, proxiesRouter);
+app.use('/api/cookies', requireMasterKey, cookiesRouter);
 app.use('/api/browser', browserRouter);
 app.use('/api/multi-control', multiControlRouter);
 app.use('/api/window-arranger', windowArrangerRouter);

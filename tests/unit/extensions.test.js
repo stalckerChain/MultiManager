@@ -48,10 +48,9 @@ describe('extractExtensionId', () => {
 });
 
 describe('extractZipFromCrx', () => {
-  it('пропускает буфер без Cr24 магии', () => {
+  it('выбрасывает ошибку для буфера без Cr24 магии', () => {
     const buf = Buffer.from('PK\x03\x04some zip data');
-    const result = extractZipFromCrx(buf);
-    expect(result).toBe(buf);
+    expect(() => extractZipFromCrx(buf)).toThrow('Not a valid CRX file');
   });
 
   it('извлекает ZIP из CRX v3', () => {

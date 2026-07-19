@@ -82,6 +82,15 @@ router.put('/:id', validate(proxyUpdateSchema), (req, res) => {
   }
 
   const { type, host, port, username, password, proxy_rotation_url, is_active } = req.body;
+
+  const { encrypt, hasMasterKey, getMasterKey } = require('../crypto');
+  let encUsername = username;
+  let encPassword = password;
+  if (hasMasterKey()) {
+    const key = getMasterKey();
+    if (username !== undefined && username !== null) encUsername = encrypt(String(username), key);
+    if (password !== undefined && password !== null) encPassword = encrypt(String(password), key);
+  }
   
   db.prepare(`
     UPDATE proxies 
@@ -97,8 +106,8 @@ router.put('/:id', validate(proxyUpdateSchema), (req, res) => {
     type || null,
     host || null,
     port || null,
-    username !== undefined ? username : null,
-    password !== undefined ? password : null,
+    encUsername !== undefined ? encUsername : null,
+    encPassword !== undefined ? encPassword : null,
     proxy_rotation_url !== undefined ? proxy_rotation_url : null,
     is_active !== undefined ? (is_active ? 1 : 0) : null,
     req.params.id

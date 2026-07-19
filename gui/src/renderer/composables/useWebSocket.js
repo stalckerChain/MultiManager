@@ -14,7 +14,7 @@ export function useWebSocket() {
     if (!appStore.port) return;
     if (ws && ws.readyState === WebSocket.OPEN) return;
 
-    const url = `ws://127.0.0.1:${appStore.port}/ws`;
+    const url = `ws://127.0.0.1:${appStore.port}/ws?token=${appStore.token}`;
     console.log('[WS] Connecting to', url);
     ws = new WebSocket(url);
 

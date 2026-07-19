@@ -180,35 +180,68 @@ function createProxyQueries(db) {
   const deleteById = db.prepare('DELETE FROM proxies WHERE id = ?');
   const findByHostPort = db.prepare('SELECT * FROM proxies WHERE host = ? AND port = ?');
 
+  const PROXY_SECRET_FIELDS = ['username', 'password'];
+
+  function encryptProxyFields(data) {
+    const key = hasMasterKey() ? getMasterKey() : null;
+    if (!key) return data;
+    const out = { ...data };
+    for (const field of PROXY_SECRET_FIELDS) {
+      if (out[field] !== undefined && out[field] !== null) {
+        out[field] = encrypt(String(out[field]), key);
+      }
+    }
+    return out;
+  }
+
+  function decryptProxyRow(row) {
+    if (!hasMasterKey() || !row) return row;
+    const key = getMasterKey();
+    const out = { ...row };
+    for (const field of PROXY_SECRET_FIELDS) {
+      if (out[field]) {
+        const decrypted = decrypt(out[field], key);
+        if (decrypted !== null) out[field] = decrypted;
+      }
+    }
+    return out;
+  }
+
+  function decryptProxyRows(rows) {
+    if (!hasMasterKey() || !rows) return rows;
+    return rows.map(r => decryptProxyRow(r));
+  }
+
   return {
     create(data) {
+      const enc = encryptProxyFields(data);
       const result = insert.run(
-        data.type,
-        data.host,
-        data.port,
-        data.username || null,
-        data.password || null,
-        data.proxy_rotation_url || null
+        enc.type,
+        enc.host,
+        enc.port,
+        enc.username || null,
+        enc.password || null,
+        enc.proxy_rotation_url || null
       );
-      return getById.get(result.lastInsertRowid);
+      return decryptProxyRow(getById.get(result.lastInsertRowid));
     },
 
     getById(id) {
-      return getById.get(id);
+      return decryptProxyRow(getById.get(id));
     },
 
     getAll() {
-      return getAll.all();
+      return decryptProxyRows(getAll.all());
     },
 
     updateLastIp(id, ip) {
       updateLastIp.run(ip, id);
-      return getById.get(id);
+      return decryptProxyRow(getById.get(id));
     },
 
     updateActive(id, isActive) {
       updateActive.run(isActive ? 1 : 0, id);
-      return getById.get(id);
+      return decryptProxyRow(getById.get(id));
     },
 
     delete(id) {
@@ -216,7 +249,7 @@ function createProxyQueries(db) {
     },
 
     findByHostPort(host, port) {
-      return findByHostPort.get(host, port);
+      return decryptProxyRow(findByHostPort.get(host, port));
     },
   };
 }

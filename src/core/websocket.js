@@ -4,10 +4,23 @@ const { logger } = require('../logger');
 let wss = null;
 const clients = new Set();
 
+function getToken() {
+  return require('../api/auth').getToken();
+}
+
 function setupWebSocket(server) {
   wss = new WebSocketServer({ server, path: '/ws' });
 
-  wss.on('connection', (ws) => {
+  wss.on('connection', (ws, req) => {
+    const url = new URL(req.url, `http://${req.headers.host}`);
+    const token = url.searchParams.get('token') || '';
+    const expectedToken = getToken();
+
+    if (!expectedToken || token !== expectedToken) {
+      ws.close(4401, 'Unauthorized');
+      return;
+    }
+
     clients.add(ws);
     logger.info({ total: clients.size }, 'WebSocket client connected');
 
