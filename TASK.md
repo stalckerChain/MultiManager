@@ -1,402 +1,127 @@
-# TASK.md — Рекомендации по улучшению MultiManager
+# Code Review Report: MultiManager v1.4.0 Security Hardening
+
+**Date:** 2026-07-20
+**Commit:** `8bfdc91`
+**Scope:** Security fixes from code review (12 critical + 12 warning findings claimed)
+**Previous review:** `projects/multimanager-code/code-review-report.md` (v1.3.2)
+**Verdict:** **APPROVE with Conditions**
+**Score:** 82/100
+
+## Executive Summary
+
+The v1.4.0 security-hardening commit (`8bfdc91`) addresses nearly all critical findings from the previous review. Code-level improvements are substantial and well-tested (737 tests, 47 files). Most changes align with the updated `TS.md` / `README.md` documentation.
+
+Key improvements observed:
+- WebSocket `/ws` now requires `?token=` and closes unauthenticated connections with `4401`.
+- Recovery key is shown once and removed from the DB afterwards.
+- Master-key gate blocks mutating endpoints until a key is initialized.
+- `/api/internal/profiles` no longer returns decrypted secrets or proxy credentials.
+- Proxy credentials are encrypted with AES-256-GCM.
+- CDP password and selector handling uses `Runtime.callFunctionOn` instead of string concatenation.
+- Extension manifest validation and CRX parser hardening are in place.
+- Cookie temp-file cleanup is wrapped in `finally`.
+- Proxy-rotation URL now validates scheme and blocks private/local addresses.
+- PTY log-tail validates paths against an allow-list.
+- Core token rotates on each `startCore()`.
+- Browser binary path is platform-aware.
+- Plaintext master-key fallback is removed.
+
+Remaining concerns are mostly medium/low severity: hardcoded secrets in seed phrases, path traversal edge cases, concurrency/transaction gaps, test coverage for keytar fallback, and a few code-quality issues.
+
+## Findings by Severity
+
+### Critical (0)
+
+No unresolved critical issues. All previously reported critical findings have been fixed in this commit.
+
+### Warning (7)
+
+| # | File(s) | Line(s) | Issue | Severity | Recommendation |
+|---|---------|---------|-------|----------|----------------|
+| W1 | `src/crypto/index.js` | 61-67 | Recovery key is the raw master key encoded in base64. Anyone with the recovery key has the master key. The name "recovery key" is fine, but its strength equals the master key; print/screen-exposure risk is high. | Warning | Document that recovery key == master key backup. Consider splitting recovery into "recovery phrase" derived via KDF, or require current password before displaying. |
+| W2 | `src/api/settings.js` | 29-36 | `GET /recovery-key` returns the recovery key if present and deletes it after display. Deleting after GET is a side-effect on a GET endpoint. | Warning | Move recovery-key deletion to the `POST /set-master-password` / `POST /change-master-password` flow, or rename endpoint to `POST /recovery-key/show`. |
+| W3 | `src/db/schema.js` | 214-276 | `migrateTables()` duplicates `CREATE TABLE` / index / trigger logic from `createTables()`. Maintenance risk: future schema changes must be edited in two places. | Warning | Refactor so `migrateTables()` only adds missing columns and calls `createTables()` for table creation. |
+| W4 | `src/db/queries.js` | 183-214 | Proxy credentials are decrypted by `decryptProxyRow()` on every `getAll()` / `getById()`. This is fine for authorized use, but any accidental log/debug dump will expose them. | Warning | Add a helper `getAllSafe()` that omits/decrypts selectively, and audit logging to ensure credentials are never written to logs. |
+| W5 | `src/executor/index.js` | 91-99 | Command-line arguments to `main.py` include `--token=` and `--run-id=`. Process command lines are visible to other users on Linux/macOS via `ps`. | Warning | Pass the API token via environment variable or temp file with restricted permissions instead of CLI. |
+| W6 | `gui/src/main/core-manager.js` | 71-72 | Core token is passed as `--api-token=` CLI argument. Although it rotates on each start, the token remains visible in process listings. | Warning | Pass token via environment variable instead of CLI, or document that this is acceptable for local-only API. |
+| W7 | `src/api/runs.js` | 94-95 | `apiToken` is extracted from `Authorization` header. If token is empty, executor passes `--token=` to Python. | Warning | Reject start request if token is missing. |
+
+### Info / Code Quality (6)
+
+| # | File(s) | Line(s) | Issue | Severity | Recommendation |
+|---|---------|---------|-------|----------|----------------|
+| I1 | `src/crypto/index.js` | 143-155 | `master_key_fallback` branch is retained even though plaintext fallback was "removed". If a fallback row exists, it is still loaded. | Info | Remove `master_key_fallback` branch entirely, or document that it exists only for migrations and must be encrypted too. |
+| I2 | `src/api/settings.js` | 171-188 | `PUT /automation` auto-creates matrix entries for all profiles/projects with `is_enabled: 0`. For large farms this can generate thousands of rows silently. | Info | Add pagination/limit or log warning when matrix pre-population exceeds a threshold. |
+| I3 | `src/api/proxies.js` | 86-93 | `PUT /:id` re-encrypts `username`/`password` inline instead of using `createProxyQueries().update()`. This duplicates encryption logic. | Info | Move encryption into the query layer, as was done for profiles, to keep routes DRY. |
+| I4 | `src/api/extensions.js` | 145-148, 193-196, 280-283, 304-306 | Extension install uses `fs.rmSync` + `fs.cpSync` without atomic rollback if validation fails after partial copy. | Info | Keep validated temp directory and rename atomically; or keep validation before any filesystem changes. |
+| I5 | `src/api/cookies.js` | 39-53 | Cookie import writes temp file to `/tmp`. On Windows this path does not exist. | Info | Use `os.tmpdir()` instead of hardcoded `/tmp`. |
+| I6 | `tests/unit/crypto.test.js` | 207-209 | Test confirms `setupPasswordMode` is not exported. Good, but consider adding a test that verifies no plaintext `master_key` is stored in `system_config` after init. | Info | Add negative test: after `initMasterKey()` with keytar, `system_config` should not contain a plaintext `master_key`. |
+
+## Detailed Notes
+
+### Security improvements verified
+
+1. **WebSocket auth** — `src/core/websocket.js:14-22` correctly rejects missing/invalid tokens with `4401`.
+2. **HTTP auth** — `src/api/auth.js:13-32` uses timing-safe comparison and returns 503 if token not initialized.
+3. **Master-key gate** — `src/core/app.js:8-13` blocks non-GET on `/api/profiles`, `/api/proxies`, `/api/cookies` when `hasMasterKey()` is false.
+4. **Recovery-key one-time** — `src/api/settings.js:29-36` returns recovery key once and deletes it; `set/change` password generates a new one.
+5. **Internal API secrets removed** — `src/api/internal.js:41-70` returns only `has_auth` for proxy and no secret fields.
+6. **Proxy encryption** — `src/db/queries.js:183-214` encrypts/decrypts `username`/`password` transparently.
+7. **CDP injection fix** — `src/api/browser.js:586-638` uses `Runtime.callFunctionOn` with separate arguments.
+8. **Extension manifest validation** — `src/api/extensions.js:306-321` checks `name`, `version`, `manifest_version`.
+9. **CRX parser hardening** — `src/api/extensions.js:363-384` rejects bad magic bytes and unsupported versions.
+10. **Cookie temp-file cleanup** — `src/api/cookies.js:49-52` wrapped in `finally`.
+11. **Proxy rotation SSRF** — `src/proxy/index.js:180-219` validates scheme and blocks private/local addresses.
+12. **PTY path validation** — `gui/src/main/pty.js:11-24` allow-lists only `~/AI` and user-data logs.
+13. **Core token rotation** — `gui/src/main/core-manager.js:52` generates new token each start.
+14. **Plaintext master-key removed** — `src/crypto/index.js:178-188` no longer writes unencrypted fallback; however, see note I1 about the legacy branch.
+
+### Tests
+
+- 737 tests across 47 files.
+- New/updated crypto tests cover encrypt/decrypt/rotate/format.
+- Backup rolling cleanup tests present.
+- No obvious test for `master_key_fallback` negative case (I6).
+
+## Comparison with Previous Code Review
+
+| Previous finding | Status | Evidence |
+|---|---|---|
+| WebSocket `/ws` unauthenticated | ✅ Fixed | `src/core/websocket.js` |
+| Recovery key exposed via API | ✅ Fixed | `src/api/settings.js` |
+| `/api/internal/profiles` leaks secrets | ✅ Fixed | `src/api/internal.js` |
+| Proxy credentials plaintext | ✅ Fixed | `src/db/queries.js` |
+| CDP injection via concatenation | ✅ Fixed | `src/api/browser.js` |
+| Cookie temp file leak | ✅ Fixed | `src/api/cookies.js` |
+| Proxy rotation SSRF | ✅ Fixed | `src/proxy/index.js` |
+| PTY path traversal | ✅ Fixed | `gui/src/main/pty.js` |
+| Plaintext master key | ✅ Mostly fixed | `src/crypto/index.js` (legacy branch remains) |
+| Token in CLI `--api-token` | ⚠️ Partially | Still in CLI, but rotates per start (`gui/src/main/core-manager.js`) |
+| Native addon platform gate | ✅ Fixed | `src/api/browser.js:42` checks `process.platform === 'win32'` |
+| Missing badRequest import | ✅ Fixed | `src/api/browser.js:15` imports `badRequest` |
+
+## Verdict
+
+**APPROVE with Conditions.**
+
+The v1.4.0 hardening resolves all critical issues and most warnings from the prior review. The remaining items are lower severity and should be addressed in a follow-up patch, not a hard gate:
+
+1. W5 / W6: Move API token out of process command-line arguments.
+2. W2: Make recovery-key retrieval a mutating endpoint.
+3. W3: Deduplicate `migrateTables()` schema creation.
+4. I1: Remove or secure legacy `master_key_fallback` branch.
+5. I5: Use `os.tmpdir()` for cookie import temp file.
+
+## Remediation Plan (suggested order)
+
+| # | Action | Priority | Estimated effort |
+|---|--------|----------|------------------|
+| 1 | Pass API token to Python via env/file, not CLI | Medium | Small |
+| 2 | Move recovery-key deletion to POST endpoint | Low | Tiny |
+| 3 | Refactor `migrateTables()` to avoid duplication | Low | Small |
+| 4 | Remove legacy plaintext `master_key_fallback` branch | Medium | Tiny |
+| 5 | Use `os.tmpdir()` in cookie import | Low | Tiny |
 
 ---
 
-## 1. Убрать API-токен из логов (КРИТИЧНО)
-
-**Проблема:** В `src/index.js:41` API-токен логируется в открытом виде в `core.log`. Любой с доступом к логам получает полный доступ к API.
-
-**Шаги:**
-
-1.1. Открыть `src/index.js`, найти строку:
-```js
-logger.info(`API Token: ${token}`);
-```
-
-1.2. Заменить на:
-```js
-logger.info('Core-движок запущен. Токен скопирован в GUI статус-бар.');
-```
-
-1.3. Убедиться, что токен не логируется нигдеelse в проекте:
-- Поискать по `src/` паттерн `logger` + `token`
-- Проверить `src/core/websocket.js`, `src/executor/index.js` (там передаётся `options.apiToken` в аргументах Python-процесса — это ОК, это не лог)
-
-1.4. Добавить в `README.md` примечание:
-```
-> API Token отображается только в GUI статус-баре и не записывается в лог-файлы.
-```
-
----
-
-## 2. Добавить валидацию запросов (Zod)
-
-**Проблема:** Роуты проверяют входные данные ad-hoc, без единой схемы. Нет ограничений на размер тел запросов.
-
-**Шаги:**
-
-2.1. Установить зависимость:
-```bash
-npm install zod
-```
-
-2.2. Создать файл `src/api/validate.js` с通用-валидатором:
-```js
-const { z } = require('zod');
-
-function validate(schema) {
-  return (req, res, next) => {
-    const result = schema.safeParse(req.body);
-    if (!result.success) {
-      return res.status(400).json({
-        error: 'Ошибка валидации',
-        details: result.error.issues.map(i => ({
-          field: i.path.join('.'),
-          message: i.message,
-        })),
-      });
-    }
-    req.body = result.data;
-    next();
-  };
-}
-
-module.exports = { validate, z };
-```
-
-2.3. Добавить в `src/core/app.js` лимит на размер тела запроса:
-```js
-app.use(express.json({ limit: '1mb' }));
-```
-
-2.4. Создать схемы валидации для каждого роута. Приоритетные:
-
-- `src/api/profiles.js` — схема создания/обновления профиля
-- `src/api/proxies.js` — схема создания прокси (host, port, type)
-- `src/api/browser.js` — схема `/type` (text: string, max 10000)
-- `src/api/projects.js` — схема создания проекта
-- `src/api/runs.js` — схema создания run (parallel_limit: number, max 50)
-
-2.5. Подключить middleware валидации к роутам:
-```js
-// Пример для profiles.js
-const { validate, z } = require('../validate');
-
-const createProfileSchema = z.object({
-  name: z.string().min(1).max(100),
-  platform: z.enum(['windows', 'macos', 'linux']),
-  // ... остальные поля
-});
-
-router.post('/', validate(createProfileSchema), async (req, res) => { ... });
-```
-
-2.6. Написать тесты для валидации в `tests/unit/validation.test.js`.
-
----
-
-## 3. Вынести CDP-утилиты в общий модуль
-
-**Проблема:** Паттерн CDP-вызова (создать WS → отправить → ждать ответ с таймаутом) дублируется в `browser.js` и `multi-control/cdp-manager.js`.
-
-**Шаги:**
-
-3.1. Создать файл `src/cdp/client.js`:
-```js
-const WebSocket = require('ws');
-
-function createCdpClient(port) {
-  // Общий CDP-клиент с методами:
-  // - connect() → ws
-  // - call(ws, method, params, sessionId?) → result
-  // - callWithTimeout(ws, method, params, sessionId, timeout) → result
-  // - close()
-}
-
-module.exports = { createCdpClient };
-```
-
-3.2. Реализовать `callWithTimeout` с единым паттерном:
-- Автоинкрементный ID сообщений
-- Таймаут по умолчанию 15 сек
-- Удаление listener при ответе или таймауте
-
-3.3. Рефакторить `src/api/browser.js`:
-- Заменить `cdpCall`, `cdpCallRaw`, `createCdpSession` на импорт из `cdp/client.js`
-- Оставить `createCdpSession` как обёртку над общим клиентом
-
-3.4. Рефакторить `src/multi-control/cdp-manager.js`:
-- Заменить `_sendAndWait` на общий `callWithTimeout`
-- Оставить высокие методы (connect, disconnect, dispatch) как бизнес-логику
-
-3.5. Написать unit-тесты для `cdp/client.js` в `tests/unit/cdp-client.test.js`.
-
----
-
-## 4. Заменить тихие catch-блоки на логирование
-
-**Проблема:** 10+ catch-блоков в `multi-control/cdp-manager.js` и других файлах молча проглатывают ошибки.
-
-**Шаги:**
-
-4.1. Найти все тихие catch в проекте:
-```
-grep -rn "catch {}" src/
-grep -rn "catch(e) {}" src/
-grep -rn "catch {" src/
-```
-
-4.2. В `src/multi-control/cdp-manager.js` заменить каждый `try { ... } catch {}` на:
-```js
-try {
-  // ... существующий код
-} catch (err) {
-  logger.debug({ error: err.message, context: 'описание' }, 'CDP: ошибка обработки сообщения');
-}
-```
-
-Использовать `debug` уровень, чтобы не засорять логи, но при этом иметь возможность отладки.
-
-4.3. В `src/api/browser.js` проверить catch-блоки:
-- `findWindowByPid` — уже логирует через caller
-- `loadExtensionsViaCDP` — уже логирует
-- Остальные — при необходимости добавить логирование
-
-4.4. Добавить eslint-правило, предупреждающее о пустых catch:
-```js
-// .eslintrc.js
-rules: {
-  'no-empty': ['error', { allowEmptyCatch: false }],
-}
-```
-
----
-
-## 5. Прояснить дублирование gui/src/
-
-**Проблема:** `gui/src/` содержит копии бэкенд-модулей. Это запутывает — работает ли GUI отдельный бэкенд или это мёртвый код.
-
-**Шаги:**
-
-5.1. Проанализировать содержимое `gui/src/`:
-- Сравнить `gui/src/core/` с `src/core/`
-- Сравнить `gui/src/db/` с `src/db/`
-- Сравнить `gui/src/api/` с `src/api/`
-
-5.2. Определить тип дублирования:
-- Если это полные копии → удалить дубликаты в `gui/src/`, оставить ссылки на `../src/`
-- Если это адаптированные версии для Electron → задокументировать в `gui/README.md` причину
-- Если это мёртвый код → удалить
-
-5.3. Если бэкенд запускается из GUI (Electron main process forks core):
-- Убедиться, что `gui/package.json` не содержит дублированных зависимостей
-- Рассмотреть возможность использования workspace для shared-кода
-
-5.4. Создать `gui/README.md` с описанием архитектуры GUI и его связи с бэкендом.
-
----
-
-## 6. Добавить тесты для WebSocket
-
-**Проблема:** Реалтайм-слой через WebSocket не тестируется.
-
-**Шаги:**
-
-6.1. Установить тестовую зависимость:
-```bash
-npm install -D ws  # уже есть, но убедиться что версия совместима
-```
-
-6.2. Создать файл `tests/integration/websocket.test.js`:
-```js
-import { describe, it, expect, beforeAll, afterAll } from 'vitest';
-import WebSocket from 'ws';
-import http from 'http';
-
-describe('WebSocket', () => {
-  let server;
-  let port;
-
-  beforeAll(async () => {
-    // Запустить test-сервер на свободном порту
-    const { app, setupWebSocket } = await import('../../src/core/app.js');
-    server = http.createServer(app);
-    setupWebSocket(server);
-    await new Promise(resolve => server.listen(0, resolve));
-    port = server.address().port;
-  });
-
-  afterAll(() => { server.close(); });
-
-  it('подключается к /ws', async () => {
-    const ws = new WebSocket(`ws://127.0.0.1:${port}/ws`);
-    await new Promise((resolve, reject) => {
-      ws.on('open', resolve);
-      ws.on('error', reject);
-    });
-    ws.close();
-  });
-
-  it('получает broadcast статуса профиля', async () => {
-    const ws = new WebSocket(`ws://127.0.0.1:${port}/ws`);
-    await new Promise(r => ws.on('open', r));
-
-    const message = await new Promise((resolve) => {
-      ws.on('message', (data) => resolve(JSON.parse(data)));
-      // Вызвать broadcastStatus из кода
-    });
-
-    expect(message).toHaveProperty('profile_id');
-    expect(message).toHaveProperty('status');
-    ws.close();
-  });
-});
-```
-
-6.3. Протестировать сценарии:
-- Подключение клиента
-- Получение broadcast-сообщений
-- Отключение клиента (cleanup)
-- Невалидный токен (если WS авторизуется)
-- Обработка ошибок
-
-6.4. Добавить в `vitest.config.js` в секцию `test.include` все файлы из `tests/integration/`.
-
----
-
-## 7. Стандартизировать ответы ошибок
-
-**Проблема:** Непоследовательный формат ошибок: `{ error }` vs `{ error, details }` vs `{ error, message }`.
-
-**Шаги:**
-
-7.1. Создать файл `src/api/errors.js`:
-```js
-class ApiError extends Error {
-  constructor(status, code, message, details = null) {
-    super(message);
-    this.status = status;
-    this.code = code;
-    this.details = details;
-  }
-
-  toJSON() {
-    const json = { error: this.message, code: this.code };
-    if (this.details) json.details = this.details;
-    return json;
-  }
-}
-
-// Фабрики
-const badRequest = (msg, details) => new ApiError(400, 'BAD_REQUEST', msg, details);
-const unauthorized = () => new ApiError(401, 'UNAUTHORIZED', 'Не авторизован');
-const notFound = (resource) => new ApiError(404, 'NOT_FOUND', `${resource} не найден`);
-const conflict = (msg) => new ApiError(409, 'CONFLICT', msg);
-const preconditionFailed = (msg) => new ApiError(412, 'PRECONDITION_FAILED', msg);
-const serverError = (msg, details) => new ApiError(500, 'INTERNAL_ERROR', msg, details);
-
-module.exports = { ApiError, badRequest, unauthorized, notFound, conflict, preconditionFailed, serverError };
-```
-
-7.2. Обновить глобальный error handler в `src/core/app.js`:
-```js
-const { ApiError } = require('./api/errors');
-
-app.use((err, req, res, next) => {
-  if (err instanceof ApiError) {
-    return res.status(err.status).json(err.toJSON());
-  }
-  logger.error({ err: err.message, stack: err.stack }, 'Unhandled server error');
-  res.status(500).json({ error: 'Внутренняя ошибка сервера', code: 'INTERNAL_ERROR' });
-});
-```
-
-7.3. Поэтапно рефакторить роуты, заменяя ad-hoc ответы на фабрики:
-- `src/api/browser.js` — приоритет (самый большой файл, 800+ строк)
-- `src/api/profiles.js`
-- `src/api/proxies.js`
-- `src/api/multi-control.js`
-- Остальные роуты
-
-7.4. Обновить тесты, которые проверяют формат ошибок.
-
----
-
-## 8. Убрать хардкоженные дефолты
-
-**Проблема:** `wallet_password` по умолчанию `asdfj*KK`, таймзона по умолчанию `Asia/Bishkek`.
-
-**Шаги:**
-
-8.1. В `src/db/schema.js`:
-- Убрать `DEFAULT 'asdfj*KK'` из колонки `wallet_password`
-- Убрать `DEFAULT 'Asia/Bishkek'` из колонки `timezone`
-- Заменить на `DEFAULT NULL`
-
-8.2. В `src/db/schema.js` функция `migrateTables`:
-- Убрать специальную обработку timezone и wallet_password
-- Все новые колонки добавлять без дефолтов (кроме строковых пустых)
-
-8.3. В `src/fingerprint/index.js`:
-- Вынести дефолтную таймзону в конфиг `src/config/index.js`:
-```js
-module.exports = {
-  DEFAULT_TIMEZONE: null, // Пользователь обязан задать
-  // ... остальные настройки
-};
-```
-
-8.4. В GUI (`gui/src/renderer/views/ProfileModal.vue` или аналог):
-- Сделать поле timezone обязательным при создании профиля
-- Добавить валидацию: timezone не может быть null при сохранении
-
-8.5. В `src/api/profiles.js`:
-- При создании профиля без timezone возвращать ошибку 400:
-```js
-if (!body.timezone) {
-  return res.status(400).json({ error: 'timezone обязателен' });
-}
-```
-
-8.6. Миграция для существующих данных:
-- Создать SQL-миграцию, которая заполнит null-значения дефолтным значением из system_config
-- Или: оставить дефолт в миграции, но убрать из CREATE TABLE (чтобы новые профили не получали дефолт)
-
----
-
-## Дополнительно (низкий приоритет)
-
-### 9. Rate limiting
-
-9.1. Установить `npm install express-rate-limit`.
-
-9.2. Добавить в `src/core/app.js`:
-```js
-const rateLimit = require('express-rate-limit');
-
-const apiLimiter = rateLimit({
-  windowMs: 60 * 1000,
-  max: 100,
-  standardHeaders: true,
-  legacyHeaders: false,
-  message: { error: 'Слишком много запросов', code: 'RATE_LIMIT' },
-});
-
-app.use('/api/', apiLimiter);
-```
-
-### 10. Заменить синхронные fs-операции
-
-10.1. Найти все `fs.existsSync`, `fs.readdirSync`, `fs.mkdirSync`, `fs.rmSync` в `src/`.
-
-10.2. Заменить на async-версии (`fs.promises`), где это возможно без существенной переработки.
-
-10.3. Приоритетные места:
-- `src/api/browser.js` — проверка существования файлов при запуске
-- `src/backup/index.js` — операции с бэкапами
-- `src/fingerprint/index.js` — не критично, но хорошо бы
-
----
-
-*Дата создания: 2026-07-14*
-*Источник: Code Review репозитория MultiManager*
+*Report generated by Hermes quality-gate-2 skill.*
