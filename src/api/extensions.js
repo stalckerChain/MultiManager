@@ -141,19 +141,19 @@ router.post('/', async (req, res) => {
     const targetName = name || path.basename(extPath);
     const targetPath = path.join(extDir, targetName);
 
+    // Validate source before copying
+    let manifest;
+    try {
+      manifest = await validateExtensionDir(extPath);
+    } catch (err) {
+      return res.status(400).json({ error: err.message });
+    }
+
     if (fs.existsSync(targetPath)) {
       fs.rmSync(targetPath, { recursive: true, force: true });
     }
 
     fs.cpSync(extPath, targetPath, { recursive: true });
-
-    let manifest;
-    try {
-      manifest = await validateExtensionDir(targetPath);
-    } catch (err) {
-      fs.rmSync(targetPath, { recursive: true, force: true });
-      return res.status(400).json({ error: err.message });
-    }
 
     res.status(201).json({
       id: targetName,

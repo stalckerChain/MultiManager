@@ -67,7 +67,8 @@ describe('RunExecutor', () => {
     expect(callArgs[0]).toBe('python');
     expect(callArgs[1].join(' ')).toContain('--project=');
     expect(callArgs[1].join(' ')).toContain('--run-id=run-001');
-    expect(callArgs[1].join(' ')).toContain('--token=tok_xxx');
+    expect(callArgs[1].join(' ')).not.toContain('--token=');
+    expect(callArgs[2].env.MM_TOKEN).toBe('tok_xxx');
     expect(callArgs[2].cwd).toBe('C:\\stAuto0');
   });
 

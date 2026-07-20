@@ -94,7 +94,6 @@ class RunExecutor {
       `--range=${range}`,
       `--log-name=${this.run.id}`,
       `--run-id=${this.run.id}`,
-      `--token=${this.options.apiToken}`,
       `--port=${this.options.mmPort}`,
     ];
 
@@ -119,6 +118,7 @@ class RunExecutor {
       child = this.options.spawn(this.options.pythonPath, args, {
         cwd: this.options.stAuto0Path,
         stdio: ['ignore', 'pipe', 'pipe'],
+        env: { ...process.env, MM_TOKEN: this.options.apiToken },
       });
     } catch (err) {
       logStream.end();

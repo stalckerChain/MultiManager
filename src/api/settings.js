@@ -26,7 +26,7 @@ router.get('/crypto-status', (req, res) => {
   });
 });
 
-router.get('/recovery-key', (req, res) => {
+router.post('/recovery-key', (req, res) => {
   const db = getDatabase();
   const key = getRecoveryKey(db);
   if (key) {
@@ -183,6 +183,9 @@ router.put('/automation', (req, res) => {
                 is_enabled: 0,
               });
             }
+          }
+          if (entries.length > 1000) {
+            logger.warn({ count: entries.length, projects: files.length, profiles: profiles.length }, 'Large matrix pre-population');
           }
           matrix.batchUpdate(entries);
         }

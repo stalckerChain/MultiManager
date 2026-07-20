@@ -207,4 +207,14 @@ describe('Crypto Module', () => {
   it('setupPasswordMode is not exported', () => {
     expect(cryptoModule.setupPasswordMode).toBeUndefined();
   });
+
+  it('master_key_fallback branch is removed — no plaintext key in system_config', () => {
+    // After I1 fix, the legacy master_key_fallback branch was removed.
+    // initMasterKey should never write a plaintext master_key to system_config.
+    // This test verifies the branch is gone by checking the source.
+    const fs = require('fs');
+    const path = require('path');
+    const src = fs.readFileSync(path.join(__dirname, '..', '..', 'src', 'crypto', 'index.js'), 'utf8');
+    expect(src).not.toContain('master_key_fallback');
+  });
 });

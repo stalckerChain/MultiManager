@@ -234,6 +234,22 @@ function createProxyQueries(db) {
       return decryptProxyRows(getAll.all());
     },
 
+    getAllSafe() {
+      return getAll.all().map(row => ({
+        id: row.id,
+        type: row.type,
+        host: row.host,
+        port: row.port,
+        has_auth: !!(row.username || row.password),
+        proxy_rotation_url: row.proxy_rotation_url,
+        last_ip: row.last_ip,
+        last_checked_at: row.last_checked_at,
+        is_active: row.is_active,
+        created_at: row.created_at,
+        updated_at: row.updated_at,
+      }));
+    },
+
     updateLastIp(id, ip) {
       updateLastIp.run(ip, id);
       return decryptProxyRow(getById.get(id));
@@ -250,6 +266,35 @@ function createProxyQueries(db) {
 
     findByHostPort(host, port) {
       return decryptProxyRow(findByHostPort.get(host, port));
+    },
+
+    update(id, data) {
+      const enc = encryptProxyFields(data);
+      db.prepare(`
+        UPDATE proxies
+        SET type = COALESCE(?, type),
+            host = COALESCE(?, host),
+            port = COALESCE(?, port),
+            username = COALESCE(?, username),
+            password = COALESCE(?, password),
+            proxy_rotation_url = COALESCE(?, proxy_rotation_url),
+            is_active = COALESCE(?, is_active)
+        WHERE id = ?
+      `).run(
+        enc.type || null,
+        enc.host || null,
+        enc.port || null,
+        enc.username !== undefined ? enc.username : null,
+        enc.password !== undefined ? enc.password : null,
+        enc.proxy_rotation_url !== undefined ? enc.proxy_rotation_url : null,
+        enc.is_active !== undefined ? (enc.is_active ? 1 : 0) : null,
+        id
+      );
+      return decryptProxyRow(getById.get(id));
+    },
+
+    delete(id) {
+      return deleteById.run(id);
     },
   };
 }

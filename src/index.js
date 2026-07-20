@@ -10,7 +10,7 @@ const crypto = require('crypto');
 const args = process.argv.slice(2);
 const tokenArg = args.find(arg => arg.startsWith('--api-token='));
 const portArg = args.find(arg => arg.startsWith('--port='));
-const token = tokenArg ? tokenArg.split('=')[1] : crypto.randomBytes(32).toString('hex');
+const token = tokenArg ? tokenArg.split('=')[1] : process.env.API_TOKEN || crypto.randomBytes(32).toString('hex');
 const port = portArg ? parseInt(portArg.split('=')[1], 10) : (process.env.PORT || 3000);
 
 setToken(token);

@@ -15,6 +15,72 @@ const NEW_PROFILE_COLUMNS = [
   'wallet_password',
 ];
 
+const AUTOMATION_TABLES_SQL = `
+    CREATE TABLE IF NOT EXISTS projects (
+      name TEXT PRIMARY KEY,
+      display_name TEXT NOT NULL DEFAULT '',
+      module_path TEXT NOT NULL DEFAULT '',
+      class_name TEXT NOT NULL DEFAULT '',
+      is_active INTEGER DEFAULT 1,
+      default_config TEXT DEFAULT '{}',
+      created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+      updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
+    );
+
+    CREATE TABLE IF NOT EXISTS project_profile_config (
+      project_name TEXT NOT NULL,
+      profile_id TEXT NOT NULL,
+      is_enabled INTEGER DEFAULT 0,
+      config_override TEXT DEFAULT '{}',
+      PRIMARY KEY (project_name, profile_id),
+      FOREIGN KEY (project_name) REFERENCES projects(name) ON DELETE CASCADE,
+      FOREIGN KEY (profile_id) REFERENCES profiles(id) ON DELETE CASCADE
+    );
+
+    CREATE TABLE IF NOT EXISTS runs (
+      id TEXT PRIMARY KEY,
+      name TEXT DEFAULT '',
+      status TEXT DEFAULT 'pending' CHECK(status IN ('pending','running','completed','partial','cancelled')),
+      parallel_limit INTEGER DEFAULT 2,
+      total_tasks INTEGER DEFAULT 0,
+      completed_tasks INTEGER DEFAULT 0,
+      success_tasks INTEGER DEFAULT 0,
+      failed_tasks INTEGER DEFAULT 0,
+      started_at DATETIME,
+      completed_at DATETIME,
+      created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+    );
+
+    CREATE TABLE IF NOT EXISTS run_tasks (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      run_id TEXT NOT NULL,
+      project_name TEXT NOT NULL,
+      profile_id TEXT NOT NULL,
+      status TEXT DEFAULT 'pending' CHECK(status IN ('pending','running','success','failed')),
+      exit_code INTEGER,
+      log_file_path TEXT,
+      attempts INTEGER,
+      started_at DATETIME,
+      completed_at DATETIME,
+      FOREIGN KEY (run_id) REFERENCES runs(id) ON DELETE CASCADE,
+      FOREIGN KEY (project_name) REFERENCES projects(name),
+      FOREIGN KEY (profile_id) REFERENCES profiles(id)
+    );
+
+    CREATE INDEX IF NOT EXISTS idx_project_profile_config_project ON project_profile_config(project_name);
+    CREATE INDEX IF NOT EXISTS idx_project_profile_config_profile ON project_profile_config(profile_id);
+    CREATE INDEX IF NOT EXISTS idx_runs_status ON runs(status);
+    CREATE INDEX IF NOT EXISTS idx_runs_created_at ON runs(created_at);
+    CREATE INDEX IF NOT EXISTS idx_run_tasks_run_id ON run_tasks(run_id);
+    CREATE INDEX IF NOT EXISTS idx_run_tasks_profile_id ON run_tasks(profile_id);
+
+    CREATE TRIGGER IF NOT EXISTS update_projects_timestamp
+    AFTER UPDATE ON projects
+    BEGIN
+      UPDATE projects SET updated_at = CURRENT_TIMESTAMP WHERE name = NEW.name;
+    END;
+`;
+
 function createTables(db) {
   db.exec(`
     CREATE TABLE IF NOT EXISTS profiles (
@@ -104,69 +170,6 @@ function createTables(db) {
     CREATE INDEX IF NOT EXISTS idx_cookies_profile_id ON cookies(profile_id);
     CREATE INDEX IF NOT EXISTS idx_profile_logs_profile_id ON profile_logs(profile_id);
     CREATE INDEX IF NOT EXISTS idx_profile_logs_created_at ON profile_logs(created_at);
-    CREATE TABLE IF NOT EXISTS projects (
-      name TEXT PRIMARY KEY,
-      display_name TEXT NOT NULL DEFAULT '',
-      module_path TEXT NOT NULL DEFAULT '',
-      class_name TEXT NOT NULL DEFAULT '',
-      is_active INTEGER DEFAULT 1,
-      default_config TEXT DEFAULT '{}',
-      created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-      updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
-    );
-
-    CREATE TABLE IF NOT EXISTS project_profile_config (
-      project_name TEXT NOT NULL,
-      profile_id TEXT NOT NULL,
-      is_enabled INTEGER DEFAULT 0,
-      config_override TEXT DEFAULT '{}',
-      PRIMARY KEY (project_name, profile_id),
-      FOREIGN KEY (project_name) REFERENCES projects(name) ON DELETE CASCADE,
-      FOREIGN KEY (profile_id) REFERENCES profiles(id) ON DELETE CASCADE
-    );
-
-    CREATE TABLE IF NOT EXISTS runs (
-      id TEXT PRIMARY KEY,
-      name TEXT DEFAULT '',
-      status TEXT DEFAULT 'pending' CHECK(status IN ('pending','running','completed','partial','cancelled')),
-      parallel_limit INTEGER DEFAULT 2,
-      total_tasks INTEGER DEFAULT 0,
-      completed_tasks INTEGER DEFAULT 0,
-      success_tasks INTEGER DEFAULT 0,
-      failed_tasks INTEGER DEFAULT 0,
-      started_at DATETIME,
-      completed_at DATETIME,
-      created_at DATETIME DEFAULT CURRENT_TIMESTAMP
-    );
-
-    CREATE TABLE IF NOT EXISTS run_tasks (
-      id INTEGER PRIMARY KEY AUTOINCREMENT,
-      run_id TEXT NOT NULL,
-      project_name TEXT NOT NULL,
-      profile_id TEXT NOT NULL,
-      status TEXT DEFAULT 'pending' CHECK(status IN ('pending','running','success','failed')),
-      exit_code INTEGER,
-      log_file_path TEXT,
-      attempts INTEGER,
-      started_at DATETIME,
-      completed_at DATETIME,
-      FOREIGN KEY (run_id) REFERENCES runs(id) ON DELETE CASCADE,
-      FOREIGN KEY (project_name) REFERENCES projects(name),
-      FOREIGN KEY (profile_id) REFERENCES profiles(id)
-    );
-
-    CREATE INDEX IF NOT EXISTS idx_project_profile_config_project ON project_profile_config(project_name);
-    CREATE INDEX IF NOT EXISTS idx_project_profile_config_profile ON project_profile_config(profile_id);
-    CREATE INDEX IF NOT EXISTS idx_runs_status ON runs(status);
-    CREATE INDEX IF NOT EXISTS idx_runs_created_at ON runs(created_at);
-    CREATE INDEX IF NOT EXISTS idx_run_tasks_run_id ON run_tasks(run_id);
-    CREATE INDEX IF NOT EXISTS idx_run_tasks_profile_id ON run_tasks(profile_id);
-
-    CREATE TRIGGER IF NOT EXISTS update_projects_timestamp
-    AFTER UPDATE ON projects
-    BEGIN
-      UPDATE projects SET updated_at = CURRENT_TIMESTAMP WHERE name = NEW.name;
-    END;
 
     CREATE TRIGGER IF NOT EXISTS update_profiles_timestamp
     AFTER UPDATE ON profiles
@@ -186,6 +189,7 @@ function createTables(db) {
       UPDATE system_config SET updated_at = CURRENT_TIMESTAMP WHERE key = NEW.key;
     END;
 
+    ${AUTOMATION_TABLES_SQL}
   `);
 }
 
@@ -211,68 +215,9 @@ function migrateTables(db) {
     mig();
   }
 
-  // Создаём новые automation-таблицы если их нет (только эти таблицы, без createTables)
+  // Создаём automation-таблицы если их нет (используем тот же SQL что и createTables)
   if (db.pragma('table_info(projects)').length === 0) {
-    db.exec(`
-      CREATE TABLE IF NOT EXISTS projects (
-        name TEXT PRIMARY KEY,
-        display_name TEXT NOT NULL DEFAULT '',
-        module_path TEXT NOT NULL DEFAULT '',
-        class_name TEXT NOT NULL DEFAULT '',
-        is_active INTEGER DEFAULT 1,
-        default_config TEXT DEFAULT '{}',
-        created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-        updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
-      );
-      CREATE TABLE IF NOT EXISTS project_profile_config (
-        project_name TEXT NOT NULL,
-        profile_id TEXT NOT NULL,
-        is_enabled INTEGER DEFAULT 0,
-        config_override TEXT DEFAULT '{}',
-        PRIMARY KEY (project_name, profile_id),
-        FOREIGN KEY (project_name) REFERENCES projects(name) ON DELETE CASCADE,
-        FOREIGN KEY (profile_id) REFERENCES profiles(id) ON DELETE CASCADE
-      );
-      CREATE TABLE IF NOT EXISTS runs (
-        id TEXT PRIMARY KEY,
-        name TEXT DEFAULT '',
-        status TEXT DEFAULT 'pending' CHECK(status IN ('pending','running','completed','partial','cancelled')),
-        parallel_limit INTEGER DEFAULT 2,
-        total_tasks INTEGER DEFAULT 0,
-        completed_tasks INTEGER DEFAULT 0,
-        success_tasks INTEGER DEFAULT 0,
-        failed_tasks INTEGER DEFAULT 0,
-        started_at DATETIME,
-        completed_at DATETIME,
-        created_at DATETIME DEFAULT CURRENT_TIMESTAMP
-      );
-      CREATE TABLE IF NOT EXISTS run_tasks (
-        id INTEGER PRIMARY KEY AUTOINCREMENT,
-        run_id TEXT NOT NULL,
-        project_name TEXT NOT NULL,
-        profile_id TEXT NOT NULL,
-        status TEXT DEFAULT 'pending' CHECK(status IN ('pending','running','success','failed')),
-        exit_code INTEGER,
-        log_file_path TEXT,
-        attempts INTEGER,
-        started_at DATETIME,
-        completed_at DATETIME,
-        FOREIGN KEY (run_id) REFERENCES runs(id) ON DELETE CASCADE,
-        FOREIGN KEY (project_name) REFERENCES projects(name),
-        FOREIGN KEY (profile_id) REFERENCES profiles(id)
-      );
-      CREATE INDEX IF NOT EXISTS idx_project_profile_config_project ON project_profile_config(project_name);
-      CREATE INDEX IF NOT EXISTS idx_project_profile_config_profile ON project_profile_config(profile_id);
-      CREATE INDEX IF NOT EXISTS idx_runs_status ON runs(status);
-      CREATE INDEX IF NOT EXISTS idx_runs_created_at ON runs(created_at);
-      CREATE INDEX IF NOT EXISTS idx_run_tasks_run_id ON run_tasks(run_id);
-      CREATE INDEX IF NOT EXISTS idx_run_tasks_profile_id ON run_tasks(profile_id);
-      CREATE TRIGGER IF NOT EXISTS update_projects_timestamp
-      AFTER UPDATE ON projects
-      BEGIN
-        UPDATE projects SET updated_at = CURRENT_TIMESTAMP WHERE name = NEW.name;
-      END;
-    `);
+    db.exec(AUTOMATION_TABLES_SQL);
   }
 }
 

@@ -58,7 +58,7 @@ function startCoreProcess() {
   const { fork } = require('child_process');
   log('INFO', 'startCore: forking', isDev ? '(dev)' : '(packaged)', CORE_PATH);
 
-  const forkEnv = { ...process.env, PORT: corePort };
+  const forkEnv = { ...process.env, PORT: corePort, API_TOKEN: coreToken };
 
   if (!isDev) {
     const asarNodeModules = path.join(
@@ -68,9 +68,7 @@ function startCoreProcess() {
     log('INFO', 'NODE_PATH:', asarNodeModules);
   }
 
-  coreProcess = fork(CORE_PATH, [
-    `--api-token=${coreToken}`,
-  ], {
+  coreProcess = fork(CORE_PATH, [], {
     env: forkEnv,
     stdio: 'pipe',
   });

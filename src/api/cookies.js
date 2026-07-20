@@ -1,5 +1,6 @@
 const express = require('express');
 const path = require('path');
+const os = require('os');
 const fs = require('fs');
 const { getDatabase, createCookieQueries, createProfileQueries } = require('../db');
 const { parseJsonCookies, parseNetscapeCookies, exportCookiesToJson } = require('../cookie');
@@ -36,7 +37,7 @@ router.post('/:profileId/import', validate(cookieImportSchema), async (req, res)
   let cookies;
   let tmpPath;
   try {
-    tmpPath = path.join('/tmp', `cookies_${Date.now()}.txt`);
+    tmpPath = path.join(os.tmpdir(), `cookies_${Date.now()}.txt`);
     await fs.promises.writeFile(tmpPath, content);
 
     if (format === 'json') {

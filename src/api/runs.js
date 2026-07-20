@@ -77,6 +77,11 @@ function createRunsRouter(opts = {}) {
       return res.status(400).json({ error: 'Only pending runs can be started' });
     }
 
+    const apiToken = req.headers.authorization?.replace('Bearer ', '') || '';
+    if (!apiToken) {
+      return res.status(401).json({ error: 'API token is required to start runs' });
+    }
+
     getRuns().updateStatus(req.params.id, 'running', new Date().toISOString());
 
     const profileQueries = createProfileQueries(getDb());
@@ -91,7 +96,7 @@ function createRunsRouter(opts = {}) {
     const executor = new RunExecutor(run, {
       stAuto0Path,
       pythonPath,
-      apiToken: req.headers.authorization?.replace('Bearer ', '') || '',
+      apiToken,
       mmPort: req.socket.localPort || process.env.PORT || 3000,
       spawn,
       logger,

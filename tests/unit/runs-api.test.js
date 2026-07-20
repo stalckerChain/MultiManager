@@ -160,7 +160,9 @@ describe('POST /api/runs/:id/start', () => {
 
   it('starts a pending run', async () => {
     const run = runQueries.create({ name: 'Test' });
-    const res = await request(app).post(`/api/runs/${run.id}/start`);
+    const res = await request(app)
+      .post(`/api/runs/${run.id}/start`)
+      .set('Authorization', 'Bearer test-token');
     expect(res.status).toBe(200);
     expect(res.body.status).toBe('started');
     // Status is initially set to 'running'; executor may finalize to 'partial'

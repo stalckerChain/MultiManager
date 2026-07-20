@@ -147,13 +147,7 @@ async function initMasterKey(db) {
       masterKeySource = 'keytar';
       return key;
     }
-    const fallback = configGet.get('master_key_fallback');
-    if (fallback) {
-      masterKey = Buffer.from(fallback.value, 'hex');
-      masterKeySource = 'system_config';
-      return masterKey;
-    }
-    // keytar unavailable, no fallback — must set a password
+    // keytar unavailable — must set a password
     return null;
   }
 

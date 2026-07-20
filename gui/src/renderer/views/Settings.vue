@@ -201,7 +201,7 @@ async function fetchCryptoStatus() {
 
 async function fetchRecoveryKey() {
   try {
-    const { data } = await client.get('/api/settings/recovery-key');
+    const { data } = await client.post('/api/settings/recovery-key');
     recoveryKeyValue.value = data.recovery_key || '';
   } catch {
     recoveryKeyValue.value = '';

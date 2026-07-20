@@ -83,37 +83,9 @@ router.put('/:id', validate(proxyUpdateSchema), (req, res) => {
 
   const { type, host, port, username, password, proxy_rotation_url, is_active } = req.body;
 
-  const { encrypt, hasMasterKey, getMasterKey } = require('../crypto');
-  let encUsername = username;
-  let encPassword = password;
-  if (hasMasterKey()) {
-    const key = getMasterKey();
-    if (username !== undefined && username !== null) encUsername = encrypt(String(username), key);
-    if (password !== undefined && password !== null) encPassword = encrypt(String(password), key);
-  }
-  
-  db.prepare(`
-    UPDATE proxies 
-    SET type = COALESCE(?, type),
-        host = COALESCE(?, host),
-        port = COALESCE(?, port),
-        username = COALESCE(?, username),
-        password = COALESCE(?, password),
-        proxy_rotation_url = COALESCE(?, proxy_rotation_url),
-        is_active = COALESCE(?, is_active)
-    WHERE id = ?
-  `).run(
-    type || null,
-    host || null,
-    port || null,
-    encUsername !== undefined ? encUsername : null,
-    encPassword !== undefined ? encPassword : null,
-    proxy_rotation_url !== undefined ? proxy_rotation_url : null,
-    is_active !== undefined ? (is_active ? 1 : 0) : null,
-    req.params.id
-  );
-
-  const updated = queries.getById(req.params.id);
+  const updated = queries.update(req.params.id, {
+    type, host, port, username, password, proxy_rotation_url, is_active,
+  });
   res.json(updated);
 });
 
