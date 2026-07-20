@@ -53,7 +53,7 @@ AI-Driven Web Automation Platform — кроссплатформенный ан�
 
 ```
 MultiManager/
-├── TS.md                     # ТЕХНИЧЕСКОЕ ЗАДАНИЕ (MultiManager v1.3.1)
+├── TS.md                     # ТЕХНИЧЕСКОЕ ЗАДАНИЕ (MultiManager v1.4.0)
 ├── TS_INTEGRATION.md         # ТЗ интеграции stAuto0 с MultiManager
 ├── TS_ADDON.txt              # Источник: контекст Web3 Automation Platform
 ├── ToDo.md                   # Реестр нереализованного функционала

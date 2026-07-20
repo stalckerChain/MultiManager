@@ -1,7 +1,7 @@
 -------------------------------
 ## SOFTWARE REQUIREMENTS SPECIFICATION (SRS) / ТЕХНИЧЕСКОЕ ЗАДАНИЕ
 ## AI-Driven Web Automation Platform на базе антидетект-браузера (MVP аналог AdsPower + ферма автоматизации)
-**Версия системы:** 2.0.0 | **Multi-Control:** 0.15.0 | **Дата ревизии:** 2026-07-19 | **Ф7 Automation Matrix:** ✅
+**Версия системы:** 1.4.0 | **Multi-Control:** 0.15.0 | **Дата ревизии:** 2026-07-20 | **Ф7 Automation Matrix:** ✅
 
 > **Принцип маркировки:** ✅ РЕАЛИЗОВАНО в коде | ⚠️ ЧАСТИЧНО | ❌ НЕ РЕАЛИЗОВАНО (в ТЗ, но в коде нет). Каждое утверждение о статусе подкреплено ссылкой на реальный файл аудита.
 > **Спутник-документ:** [TS_INTEGRATION.md](./TS_INTEGRATION.md) — миграция Python-фреймворка stAuto0 на интеграцию с MultiManager.
@@ -269,7 +269,7 @@ Zerion ID: `klghhnkeealcohjjanjjdaeeggmfmlpl`. Flow:
 
 -------------------------------
 ## 6. Стратегия тестирования ✅ РЕАЛИЗОВАНО
-Фреймворк **Vitest v3.x**, 654 теста (42 файла). Запуск: `npm test`, `npm run test:watch`.
+Фреймворк **Vitest v3.x**, 737 тестов (47 файлов). Запуск: `npm test`, `npm run test:watch`.
 
 **Unit (24 файла):** парсеры прокси/куки, fingerprint, auth middleware, расширения, CDP Manager, Multi-Control, Window Arranger, Human-like Typing, backup, crypto.
 
@@ -306,6 +306,37 @@ Python: `connect_over_cdp("http://127.0.0.1:9331")`.
 - Electron + Vue 3 + Vite + electron-builder (NSIS/DMG/AppImage). ✅ `gui/package.json`
 - Tailwind CSS + Ant Design Vue (`ant-design-vue ^4.2.6`).
 - HTTP + WebSocket к Core (127.0.0.1:порт).
+
+
+## 8.1. Нефункциональные требования (NFR) ✅
+
+### Производительность
+- **Старт Core:** время инициализации < 3 сек (включая initMasterKey, initDatabase, backup).
+- **Лимит профилей:** до 500 профилей в БД без деградации UI (виртуализация таблицы).
+- **Concurrent browsers:** до 10 одновременных процессов CloakBrowser (семафор в RunExecutor).
+- **API latency:** медианный ответ < 100ms для CRUD-операций (better-sqlite3 WAL mode).
+
+### Безопасность
+- **Шифрование:** AES-256-GCM для секретов профилей и прокси (master-key гибрид: keytar/PBKDF2). ✅ §2, §4.11
+- **Аутентификация:** Bearer-токен для API, ?token= для WebSocket. Токен ротируется при каждом старте. ✅ §2
+- **Master-key gate:** mutating endpoints блокируются (503) до инициализации master key. ✅ §2
+- **SSRF protection:** валидация scheme + блокировка private/local адресов в proxy rotation. ✅ §4.2
+- **Рекавери-ключ:** one-time, удаляется из БД после показа. ✅ §2
+
+### Доступность
+- **Graceful shutdown:** SIGTERM → ожидание 8 сек → SIGKILL (tree-kill). ✅ §4.9
+- **Error recovery:** heartbeat каждые 5 сек (PID check), health-check при запуске. ✅ §4.9
+- **Mutex при старте:** duplicate start → 409 Conflict. ✅ §4.1
+
+### Логирование
+- **Фреймворк:** Pino (core.log + profile_[ID].log). ✅ §5
+- **Уровни:** info (операции), warn (ошибки API), error (краши), debug (trace).
+- **Ротация:** Rolling Window backup (7 дней), логи браузеров — в папке профиля.
+
+### Мониторинг
+- **WebSocket heartbeat:** periodical status polling (10 сек) как страховка от потери broadcast'ов. ✅ §10.3
+- **Anti-Zombie:** PID health-check каждые 5 сек, graceful shutdown при потере процесса. ✅ §4.9
+- **Run status:** Executor автоматически финализирует статус run после завершения всех процессов. ✅ §4.14
 
 ## 9. Функциональные экраны GUI
 
@@ -376,8 +407,13 @@ Python: `connect_over_cdp("http://127.0.0.1:9331")`.
 
 > **Параллельный трек (TS_INTEGRATION.md):** миграция stAuto0 идёт фазами ФА–ФД и стыкуется с MultiManager Ф1–Ф4 (API-контракт).
 
+| **Ф8 (deferred)** | **Cookie Manager: drag-and-drop + пре-валидатор.** Добавить загрузку .json/.txt файлов с куки через drag-and-drop в GUI. Пре-валидатор: сводка по найденным куки (количество, домены, срок действия) перед импортом. | gui/src/renderer/views/CookieImportModal.vue | Ф4 |
+| **Ф9 (deferred)** | **Window Arranger: группировка по профилям + cross-platform.** Режим расстановки «Группировка по профилям» в GUI. Замена PowerShell-зависимости на кроссплатформенное решение (node-ffi-napi / CDP Browser.setWindowBounds). | src/api/window-arranger.js, gui/src/renderer/views/WindowArranger.vue | Ф4 |
+
+> **Статус Ф8/Ф9:** отложены (deferred). Задачи зафиксированы в ToDo.md §§1–4. Решение по включению в следующий итерации — после завершения текущего цикла безопасности.
+
 -------------------------------
-## 12. Сводная таблица статусов (аудит 2026-07-13, Ф7 ✅)
+## 12. Сводная таблица статусов (аудит 2026-07-20, Ф7 ✅)
 
 | # | Фича | В ТЗ | В коде | Приоритет |
 |---|------|------|--------|-----------|
@@ -402,8 +438,8 @@ Python: `connect_over_cdp("http://127.0.0.1:9331")`.
 | 19 | RunExecutor (parallel spawn) | ✅ | ✅ `src/executor/index.js` | Ф7 ✅ |
 | 20 | GUI: Automation Matrix / Runs / History | ✅ | ✅ `gui/.../Automation*.vue`, `stores/automation.js` | Ф7 ✅ |
 | 21 | stAuto0: run()→bool, --run-id, callback | ✅ | ✅ внешний репо stAuto0 | Ф7 ✅ |
-| 22 | Cookie drag-and-drop + валидатор | ✅ | ⚠️ | ToDo §2 |
-| 23 | Window Arranger cross-platform | ✅ | ⚠️ (Windows-only) | ToDo §4 |
+| 22 | Cookie drag-and-drop + валидатор | ✅ | ⚠️ deferred | Ф8 (ToDo §2) |
+| 23 | Window Arranger cross-platform | ✅ | ⚠️ deferred | Ф9 (ToDo §4) |
 | 24 | Migration Wizard (AdsPower) | ❌ заморожено | ❌ | ToDo §5 |
 | 25 | Cloud Sync | ❌ заморожено | ❌ | ToDo §6 |
 | 26 | Multi-Control v0.15.0 | ✅ | ✅ | — |
