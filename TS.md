@@ -27,11 +27,11 @@
 ## 2. Безопасность и авторизация локального API ✅ РЕАЛИЗОВАНО
 
 - **Локальный хост:** Core открывает порт только на `127.0.0.1`. ✅ `src/index.js:27`
-- **Handshake:** GUI при fork Core передаёт токен как `--api-token=SECRET_VALUE` и порт через **env `PORT=N`** (см. примечание в §3.2). ✅ `gui/src/main/core-manager.js:60,70`
+- **Handshake:** GUI при fork Core передаёт токен через **env `API_TOKEN=SECRET`** и порт через **env `PORT=N`** (см. примечание в §3.2). ✅ `gui/src/main/core-manager.js:61,71`
 - **Авторизация:** Все HTTP-запросы требуют `Authorization: Bearer SECRET`. Middleware возвращает 401 при отсутствии/несовпадении токена. Если токен не инициализирован — 503. ✅ `src/api/auth.js`
 - **Master Key Gate:** POST/PUT/DELETE к `/api/profiles`, `/api/proxies`, `/api/cookies` блокируются (503) пока master key не инициализирован. GET-запросы работают. ✅ `src/core/app.js`
 - **WebSocket Authentication:** `/ws` требует `?token=` query parameter. Без валидного токена — `ws.close(4401)`. ✅ `src/core/websocket.js`
-- **Recovery Key One-Time:** Recovery key показывается один раз (в ответе POST /set-master-password) и удаляется из БД. GET /recovery-key удаляет строку после показа. ✅ `src/api/settings.js`, `src/crypto/index.js`
+- **Recovery Key One-Time:** Recovery key показывается один раз (в ответе POST /set-master-password) и удаляется из БД. POST /recovery-key удаляет строку после показа (POST вместо GET из-за side-effect). ✅ `src/api/settings.js`, `src/crypto/index.js`
 - **Core Token Rotation:** `coreToken` ротируется при каждом `startCore()`. ✅ `gui/src/main/core-manager.js`
 - **Доступ для ИИ-агентов:** Токен доступен для копирования в Settings GUI. ✅ `gui/src/renderer/views/Settings.vue`
 - **Health:** `GET /health` — `{"status":"ok"}` (до middleware авторизации). ✅ `src/core/app.js:20`
@@ -131,10 +131,8 @@
 | `attempts` | INTEGER | Сколько попыток заняло |
 | `started_at`, `completed_at` | DATETIME | |
 
-### 3.4. Порт Core (исправление расхождения)
-GUI передаёт порт бэкенду через **env-переменную `PORT=N`** ✅ `gui/src/main/core-manager.js:60`, а не через CLI `--port=N`, как утверждал старый TS.md §3.2. `--api-token=` передаётся как CLI-аргумент. ✅ `gui/src/main/core-manager.js:70-71`
-
-**Опциональная правка (Roadmap Ф4):** дополнительно принимать `--port=N` для консистентности с `--api-token=` и упрощения документации.
+### 3.4. Порт и токен Core (env-переменные)
+GUI передаёт порт бэкенду через **env-переменную `PORT=N`** ✅ `gui/src/main/core-manager.js:61`, а токен — через **env-переменную `API_TOKEN=SECRET`** ✅ `gui/src/main/core-manager.js:61`. CLI-аргументы `--api-token=` и `--port=` поддерживаются как fallback для ручного запуска (обратно совместимо).
 
 -------------------------------
 ## 4. Функциональные модули системы

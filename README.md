@@ -61,7 +61,7 @@ MultiManager/
 ├── package.json              # Зависимости бэкенда и скрипты
 ├── vitest.config.js          # Vitest
 ├── src/                      # БЭКЕНД (Core-движок)
-│   ├── index.js              # Точка входа (fork с --api-token, env PORT)
+│   ├── index.js              # Точка входа (fork с env API_TOKEN, env PORT)
 │   ├── core/
 │   │   ├── app.js            # Express + маршруты API
 │   │   └── websocket.js      # WebSocket для реалтайм-событий
@@ -160,8 +160,8 @@ npm test
 ### Параметры ручного запуска Core (без GUI)
 
 ```bash
-node src/index.js --api-token=YOUR_SECRET_TOKEN
-# Порт через env: PORT=3005 node src/index.js --api-token=YOUR_SECRET_TOKEN
+API_TOKEN=YOUR_SECRET_TOKEN node src/index.js
+# Или с явным портом: API_TOKEN=YOUR_SECRET_TOKEN PORT=3005 node src/index.js
 ```
 
 ### Сборка Windows Installer / Portable

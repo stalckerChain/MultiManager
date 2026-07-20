@@ -10,7 +10,7 @@
 
 - **[SEC] Recovery key показывается один раз и удаляется из БД.**
   `/api/settings/recovery-key` возвращал base64-encoded master key, который оставался в `system_config` навсегда. Любой authenticated клиент мог расшифровать все секреты.
-  **Фикс:** `GET /recovery-key` удаляет строку после показа. `POST /set-master-password` и `POST /change-master-password` возвращают recovery key в ответе, не храня в БД. `clearRecoveryKey()` теперь делает `DELETE` вместо пустой строки. ✅ `src/api/settings.js`, `src/crypto/index.js`
+  **Фикс:** `POST /recovery-key` удаляет строку после показа (POST вместо GET из-за side-effect). `POST /set-master-password` и `POST /change-master-password` возвращают recovery key в ответе, не храня в БД. `clearRecoveryKey()` теперь делает `DELETE` вместо пустой строки. ✅ `src/api/settings.js`, `src/crypto/index.js`
 
 - **[SEC] Убран plaintext fallback master key.**
   Если `keytar` недоступен, ключ хранился как hex в `system_config` SQLite — любой процесс с доступом к файлу БД мог прочитать ключ.

@@ -406,7 +406,7 @@ python scripts/migrate_profile_dirs.py
 > Создание окружения: `python -m venv venv && venv\Scripts\activate && pip install -r requirements.txt` (Windows) / `python3 -m venv venv && source venv/bin/activate && pip install -r requirements.txt` (Linux/macOS).
 
 ### 9.3. Без GUI (headless ферма)
-- MultiManager Core работает как демон (без Electron). Запускается: `node src/index.js --api-token=SECRET --port=3000` или через systemd/Task Scheduler.
+- MultiManager Core работает как демон (без Electron). Запускается: `API_TOKEN=SECRET PORT=3000 node src/index.js` или через systemd/Task Scheduler.
 - Внешний планировщик дёргает `POST /api/runs/{id}/start`.
 - GUI опционален для мониторинга.
 
@@ -474,7 +474,7 @@ python scripts/migrate_profile_dirs.py
 
 | Фаза | Статус | Ключевое |
 |------|--------|----------|
-| Ф1 Core/health | ✅ | `GET /health` есть (`src/core/app.js:23-25`). За Bearer-auth (`app.use(authMiddleware)` до `/health`), но stAuto0 `is_core_alive()` (`Core/multimanager.py:37-42`) считает **401 признаком живого Core** → авто-детект работает корректно. Демон запускается (`src/index.js --api-token= --port=`). |
+| Ф1 Core/health | ✅ | `GET /health` есть (`src/core/app.js:23-25`). За Bearer-auth (`app.use(authMiddleware)` до `/health`), но stAuto0 `is_core_alive()` (`Core/multimanager.py:37-42`) считает **401 признаком живого Core** → авто-детект работает корректно. Демон запускается (`API_TOKEN= PORT=3000 node src/index.js`). |
 | Ф2 crypto/secrets | ✅ | AES-256-GCM (`src/crypto/index.js`). Шифруются 6 полей (`email_password, twitter_password, twitter_auth_token, discord_password, discord_token, wallet_password`). Расшифровка через `decryptRowSafe` — **только при master-ключе в памяти**. |
 | Ф3 backup | ✅ | `src/backup/index.js` — hot backup + rolling window (коммит `6e29a46`). |
 | **Ф4 Profiles/Browser (критичная точка стыковки)** | ✅ | `POST /api/browser/:id/start` возвращает **настоящий** `ws_endpoint` — НЕ заглушка (`src/api/browser.js:415-421`). cdpPort ловится из stderr регексом `/DevTools listening on ws:\/\/127\.0\.0\.1:(\d+)/` (`browser.js:346-349`). `GET /api/internal/profiles?range=` отдаёт **расшифрованные секреты + готовую `connection_string` прокси** (`src/api/internal.js:46-63`). `POST /api/profiles/batch` генерирует fingerprint автоматически. `POST /api/browser/:id/stop` — tree-kill (SIGTERM→SIGKILL). |

@@ -8,7 +8,7 @@ REST API for anti-detect browser management. All requests require an authorizati
 Authorization: Bearer <token>
 ```
 
-Token is generated on first launch or passed via `--api-token=SECRET`.
+Token is generated on first launch or passed via `API_TOKEN` environment variable.
 
 ---
 
@@ -1125,9 +1125,9 @@ Change master password.
 
 ---
 
-### GET /api/settings/recovery-key
+### POST /api/settings/recovery-key
 
-Get recovery key (requires master password).
+Get recovery key (requires master password). Uses POST instead of GET because the operation has a side-effect (key is deleted from DB after display).
 
 **Response (200):**
 ```json

@@ -8,7 +8,7 @@
 Authorization: Bearer <token>
 ```
 
-令牌在首次启动时生成，或通过 `--api-token=SECRET` 传入。
+令牌在首次启动时生成，或通过 `API_TOKEN` 环境变量传入。
 
 ---
 
@@ -1103,9 +1103,9 @@ Authorization: Bearer <token>
 
 ---
 
-### GET /api/settings/recovery-key
+### POST /api/settings/recovery-key
 
-获取恢复密钥（需要主密码）。
+获取恢复密钥（需要主密码）。使用 POST 而非 GET，因为此操作有副作用（显示后从数据库中删除密钥）。
 
 **响应 (200)：**
 ```json

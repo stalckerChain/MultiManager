@@ -8,7 +8,7 @@ REST API для управления антидетект-браузером. В
 Authorization: Bearer <token>
 ```
 
-Токен генерируется при первом запуске или передаётся через `--api-token=SECRET`.
+Токен генерируется при первом запуске или передаётся через env-переменную `API_TOKEN`.
 
 ---
 
@@ -1173,9 +1173,9 @@ ws://127.0.0.1:{PORT}/ws?token={API_TOKEN}
 
 ---
 
-### GET /api/settings/recovery-key
+### POST /api/settings/recovery-key
 
-Получить recovery-ключ (требуется мастер-пароль).
+Получить recovery-ключ (требуется мастер-пароль). Endpoint использует POST вместо GET, т.к. операция имеет side-effect (удаление ключа из БД после показа).
 
 **Ответ (200):**
 ```json

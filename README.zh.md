@@ -136,7 +136,7 @@ npm test
 ### 手动 Core 启动参数（无 GUI）
 
 ```bash
-npm start -- --api-token=YOUR_SECRET_TOKEN --port=3005
+API_TOKEN=YOUR_SECRET_TOKEN PORT=3005 npm start
 ```
 
 ### 脚本说明
