@@ -13,14 +13,18 @@
 
         <a-divider type="vertical" />
 
-        <a-dropdown :disabled="runningProfiles.length < 2">
-          <a-button :type="syncStore.active ? 'primary' : 'default'" :loading="syncStore.loading">
+        <a-button v-if="syncStore.active" type="primary" danger :loading="syncStore.loading" @click="syncStore.stopSync()">
+          <template #icon><swap-outlined /></template>
+          Stop Sync
+          <span class="ml-1 text-xs">({{ syncStore.slaveCount }})</span>
+        </a-button>
+        <a-dropdown v-else :disabled="runningProfiles.length < 2">
+          <a-button :loading="syncStore.loading">
             <template #icon><swap-outlined /></template>
-            {{ syncStore.active ? 'Stop Sync' : 'Sync' }}
-            <span v-if="syncStore.active" class="ml-1 text-xs">({{ syncStore.slaveCount }})</span>
+            Sync
           </a-button>
           <template #overlay>
-            <a-menu v-if="!syncStore.active" @click="handleSyncMenu">
+            <a-menu @click="handleSyncMenu">
               <a-menu-item key="label" disabled>
                 <span class="text-slate-400">Выберите Master окно:</span>
               </a-menu-item>
@@ -29,9 +33,6 @@
                 <span class="font-medium">{{ p.name }}</span>
                 <span class="text-xs text-slate-500 ml-2">PID: {{ p.pid }}</span>
               </a-menu-item>
-            </a-menu>
-            <a-menu v-else @click="({ key }) => key === 'stop' && syncStore.stopSync()">
-              <a-menu-item key="stop" danger>Остановить синхронизацию</a-menu-item>
             </a-menu>
           </template>
         </a-dropdown>
