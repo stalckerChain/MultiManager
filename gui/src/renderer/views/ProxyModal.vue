@@ -17,7 +17,10 @@
         </a-select>
       </a-form-item>
       <div class="grid grid-cols-2 gap-3">
-        <a-form-item label="Host">
+        <a-form-item>
+          <template #label>
+            Host <span v-if="form.location" class="text-xs text-slate-400">({{ form.location }})</span>
+          </template>
           <a-input v-model:value="form.host" />
         </a-form-item>
         <a-form-item label="Port">
@@ -70,9 +73,10 @@ watch(() => props.open, (val) => {
       password: props.proxy.password || '',
       proxy_rotation_url: props.proxy.proxy_rotation_url || '',
       is_active: props.proxy.is_active,
+      location: props.proxy.location || '',
     };
   } else if (val) {
-    form.value = { id: null, type: 'socks5', host: '', port: 1080, username: '', password: '', proxy_rotation_url: '', is_active: 0 };
+    form.value = { id: null, type: 'socks5', host: '', port: 1080, username: '', password: '', proxy_rotation_url: '', is_active: 0, location: '' };
   }
 });
 

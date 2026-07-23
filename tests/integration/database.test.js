@@ -135,6 +135,25 @@ describe('Database Queries', () => {
       const updated = queries.getById(created.id);
       expect(updated.last_ip).toBe('1.2.3.4');
     });
+
+    it('обновляет location', () => {
+      const queries = createProxyQueries(db);
+      const created = queries.create({
+        type: 'socks5',
+        host: 'proxy.com',
+        port: 1080,
+      });
+
+      expect(created.location).toBeNull();
+
+      queries.updateLocation(created.id, 'DE(Germany)');
+      const updated = queries.getById(created.id);
+      expect(updated.location).toBe('DE(Germany)');
+
+      queries.updateLocation(created.id, null);
+      const cleared = queries.getById(created.id);
+      expect(cleared.location).toBeNull();
+    });
   });
 
   describe('Cookies', () => {

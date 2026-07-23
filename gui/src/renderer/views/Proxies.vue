@@ -135,6 +135,7 @@ const columns = [
   { title: t('proxies.columns.status'), key: 'status', width: 100 },
   { title: t('proxies.columns.type'), key: 'type', width: 80 },
   { title: t('proxies.columns.connection'), key: 'connection', width: 200 },
+  { title: 'Location', dataIndex: 'location', width: 120 },
   { title: t('proxies.columns.rotation'), dataIndex: 'proxy_rotation_url', width: 150 },
   { title: t('proxies.columns.ping'), dataIndex: 'last_ip', width: 120 },
   { title: 'Accounts', key: 'accounts', width: 200 },

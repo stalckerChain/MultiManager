@@ -129,6 +129,7 @@ function createTables(db) {
       last_ip TEXT,
       last_checked_at DATETIME,
       is_active INTEGER DEFAULT 1,
+      location TEXT,
       created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
       updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
     );
@@ -218,6 +219,15 @@ function migrateTables(db) {
   // Создаём automation-таблицы если их нет (используем тот же SQL что и createTables)
   if (db.pragma('table_info(projects)').length === 0) {
     db.exec(AUTOMATION_TABLES_SQL);
+  }
+
+  // Миграция proxies: добавляем колонку location если её нет
+  const proxyTableExists = db.prepare("SELECT name FROM sqlite_master WHERE type='table' AND name='proxies'").all();
+  if (proxyTableExists.length > 0) {
+    const proxyColumns = db.pragma('table_info(proxies)').map(r => r.name);
+    if (!proxyColumns.includes('location')) {
+      db.exec('ALTER TABLE proxies ADD COLUMN location TEXT');
+    }
   }
 }
 

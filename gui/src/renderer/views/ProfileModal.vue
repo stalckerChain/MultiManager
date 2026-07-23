@@ -65,7 +65,7 @@
           <a-form-item :label="t('profiles.modal.selectProxy')">
             <a-select v-model:value="form.proxy_id" :placeholder="t('profiles.modal.noProxy')" allow-clear>
               <a-select-option v-for="p in proxiesStore.proxies" :key="p.id" :value="p.id">
-                {{ p.type }}://{{ p.host }}:{{ p.port }}
+                {{ p.type }}://{{ p.host }}{{ p.location ? ` - ${p.location}` : '' }} ({{ getAccountsCount(p.id) }})
               </a-select-option>
             </a-select>
           </a-form-item>
@@ -115,12 +115,14 @@ import { ref, watch, reactive } from 'vue';
 import { useTranslation } from 'i18next-vue';
 import { message } from 'ant-design-vue';
 import { useProxiesStore } from '../stores/proxies.js';
+import { useProfilesStore } from '../stores/profiles.js';
 import client from '../api/client.js';
 import AccountsTab from '../components/AccountsTab.vue';
 import WalletsTab from '../components/WalletsTab.vue';
 
 const { t } = useTranslation();
 const proxiesStore = useProxiesStore();
+const profilesStore = useProfilesStore();
 
 const props = defineProps({
   open: Boolean,
@@ -147,6 +149,10 @@ const timezones = [
 
 function filterTimezone(input, option) {
   return option.value.toLowerCase().includes(input.toLowerCase());
+}
+
+function getAccountsCount(proxyId) {
+  return profilesStore.profiles.filter(p => p.proxy_id === proxyId).length;
 }
 
 const form = reactive({
@@ -204,6 +210,9 @@ watch(() => props.open, (isOpen) => {
     fetchExtensions();
     if (proxiesStore.proxies.length === 0) {
       proxiesStore.fetchAll();
+    }
+    if (profilesStore.profiles.length === 0) {
+      profilesStore.fetchAll();
     }
   }
 });

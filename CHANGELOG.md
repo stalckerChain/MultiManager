@@ -1,8 +1,20 @@
 # Changelog
 
-## v1.4.2
+## v1.4.1
+
+### Исправления
+
+- **[BUG] Ctrl+W не закрывал таб в slave при multi-control синхронизации.**
+  Причины: (1) нативный addon `hooks.node` (WH_KEYBOARD_LL) не собирался и отсутствовал в packaged app — OS keyboard hooks не стартовали; (2) путь к addon в packaged режиме содержал лишний `src` сегмент; (3) SYNC_EVENT_SCRIPT не блокировал Ctrl+W и не отправлял `browserAction` event.
+  **Фикс:** (1) добавлен `build:native` скрипт в package.json; (2) исправлен путь в `keyboard-hooks.js` (`resources/backend/os-input/...` вместо `resources/backend/src/os-input/...`); (3) SYNC_EVENT_SCRIPT блокирует Ctrl+W через `e.preventDefault()` и отправляет `browserAction: closeTab` через CDP binding; (4) добавлен negation в `.gitignore` для `src/os-input/native-hooks/build/`. ✅ `src/multi-control/cdp-manager.js`, `src/api/multi-control.js`, `gui/src/main/keyboard-hooks.js`, `.gitignore`, `package.json`
+
+- **[CHORE] SYNC_EVENT_SCRIPT теперь включает modifier keys в emitted events.**
+  `ctrlKey`, `shiftKey`, `altKey`, `metaKey` теперь передаются в keyDown/keyUp событиях через SYNC_EVENT_SCRIPT. Ранее `ctrlKey` отсутствовал, что ломало фильтр в `controller.onKeyDown()`. ✅ `src/multi-control/cdp-manager.js`
 
 ### Улучшения
+
+- **[UX] Кнопка Stop Sync теперь останавливает синхронизацию напрямую.**
+  Ранее при нажатии на кнопку Stop Sync открывалось выпадающее меню с опцией "Остановить синхронизацию". Теперь кнопка останавливает синхронизацию одним кликом без промежуточного меню. Кнопка Sync (выбор Master) по-прежнему работает через dropdown.
 
 - **[UX] Столбец Proxy на главной странице отображает host и port.**
   Ранее столбец Proxy показывал только `Proxy #id`. Теперь отображается `host` (первая строка) и `port` (вторая строка) — аналогично стилю столбца Fingerprint. Клик по колонке Proxy открывает диалог редактирования прокси.
@@ -22,27 +34,8 @@
 - **[FIX] Валидация proxy_rotation_url.**
   Пустая строка `""` теперь корректно обрабатывается (принимается как `null`). URL валидируется только при непустом значении.
 
-### Тесты
-
-- Всего: **747 тестов** (48 файлов), все проходят
-
----
-
-## v1.4.1
-
-### Исправления
-
-- **[BUG] Ctrl+W не закрывал таб в slave при multi-control синхронизации.**
-  Причины: (1) нативный addon `hooks.node` (WH_KEYBOARD_LL) не собирался и отсутствовал в packaged app — OS keyboard hooks не стартовали; (2) путь к addon в packaged режиме содержал лишний `src` сегмент; (3) SYNC_EVENT_SCRIPT не блокировал Ctrl+W и не отправлял `browserAction` event.
-  **Фикс:** (1) добавлен `build:native` скрипт в package.json; (2) исправлен путь в `keyboard-hooks.js` (`resources/backend/os-input/...` вместо `resources/backend/src/os-input/...`); (3) SYNC_EVENT_SCRIPT блокирует Ctrl+W через `e.preventDefault()` и отправляет `browserAction: closeTab` через CDP binding; (4) добавлен negation в `.gitignore` для `src/os-input/native-hooks/build/`. ✅ `src/multi-control/cdp-manager.js`, `src/api/multi-control.js`, `gui/src/main/keyboard-hooks.js`, `.gitignore`, `package.json`
-
-- **[CHORE] SYNC_EVENT_SCRIPT теперь включает modifier keys в emitted events.**
-  `ctrlKey`, `shiftKey`, `altKey`, `metaKey` теперь передаются в keyDown/keyUp событиях через SYNC_EVENT_SCRIPT. Ранее `ctrlKey` отсутствовал, что ломало фильтр в `controller.onKeyDown()`. ✅ `src/multi-control/cdp-manager.js`
-
-### Улучшения
-
-- **[UX] Кнопка Stop Sync теперь останавливает синхронизацию напрямую.**
-  Ранее при нажатии на кнопку Stop Sync открывалось выпадающее меню с опцией "Остановить синхронизацию". Теперь кнопка останавливает синхронизацию одним кликом без промежуточного меню. Кнопка Sync (выбор Master) по-прежнему работает через dropdown.
+- **[FEATURE] Поле Location для прокси (формат `DE(Germany)`).**
+  Добавлено поле `location` в таблицу `proxies`. Локация определяется автоматически при проверке прокси (check) через ip-api.com. Отображается: главная страница (столбец Proxy вместо порта), страница прокси (новый столбец Location), модал редактирования прокси (рядом с Host), dropdown прокси в редактировании аккаунта (`protocol://IP - Location(count)`).
 
 ### Тесты
 

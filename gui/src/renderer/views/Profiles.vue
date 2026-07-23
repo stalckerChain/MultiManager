@@ -69,7 +69,7 @@
         <template v-if="column.key === 'proxy'">
           <div v-if="record.proxy_id && getProxyById(record.proxy_id)" class="cursor-pointer" @click.stop="showEditProxyModal(record.proxy_id)">
             <div class="text-xs">{{ getProxyById(record.proxy_id).host }}</div>
-            <div class="text-xs text-slate-500">{{ getProxyById(record.proxy_id).port }}</div>
+            <div class="text-xs text-slate-500">{{ getProxyById(record.proxy_id).location || getProxyById(record.proxy_id).port }}</div>
           </div>
           <span v-else class="text-slate-500">—</span>
         </template>

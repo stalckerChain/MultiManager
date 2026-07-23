@@ -3,7 +3,7 @@ import { SocksClient } from 'socks';
 import http from 'http';
 import https from 'https';
 import { EventEmitter } from 'events';
-import { parseProxy, parseProxyList, checkProxy, rotateProxy } from '../../src/proxy/index.js';
+import { parseProxy, parseProxyList, checkProxy, rotateProxy, getTimezoneByIp } from '../../src/proxy/index.js';
 
 describe('Proxy Parser', () => {
   it('парсит SOCKS5 прокси с авторизацией', () => {
@@ -280,5 +280,74 @@ describe('rotateProxy', () => {
       return req;
     });
     await expect(rotateProxy('http://slow-proxy/rotate', 50)).rejects.toThrow('Rotation timeout');
+  });
+});
+
+describe('getTimezoneByIp', () => {
+  let origHttpGet;
+
+  beforeEach(() => {
+    origHttpGet = http.get;
+  });
+
+  afterEach(() => {
+    http.get = origHttpGet;
+  });
+
+  function mockIpApi(response) {
+    http.get = vi.fn((url, opts, cb) => {
+      const fakeRes = {
+        on: (event, handler) => {
+          if (event === 'data') handler(Buffer.from(JSON.stringify(response)));
+          if (event === 'end') process.nextTick(handler);
+          return fakeRes;
+        },
+      };
+      process.nextTick(() => cb(fakeRes));
+      return { on: vi.fn() };
+    });
+  }
+
+  it('успешный запрос → ok:true + timezone + location', async () => {
+    mockIpApi({ status: 'success', timezone: 'Europe/Berlin', countryCode: 'DE', country: 'Germany' });
+    const r = await getTimezoneByIp('1.2.3.4');
+    expect(r.ok).toBe(true);
+    expect(r.timezone).toBe('Europe/Berlin');
+    expect(r.location).toBe('DE(Germany)');
+  });
+
+  it('успешный запрос без страны → location = null', async () => {
+    mockIpApi({ status: 'success', timezone: 'UTC' });
+    const r = await getTimezoneByIp('1.2.3.4');
+    expect(r.ok).toBe(true);
+    expect(r.timezone).toBe('UTC');
+    expect(r.location).toBeNull();
+  });
+
+  it('ошибка API → ok:false', async () => {
+    mockIpApi({ status: 'fail', message: 'reserved range' });
+    const r = await getTimezoneByIp('10.0.0.1');
+    expect(r.ok).toBe(false);
+    expect(r.error).toBe('reserved range');
+  });
+
+  it('ошибка сети → ok:false', async () => {
+    http.get = vi.fn((url, opts, cb) => {
+      const req = { on: vi.fn((event, handler) => { if (event === 'error') process.nextTick(() => handler(new Error('ENOTFOUND'))); return req; }) };
+      return req;
+    });
+    const r = await getTimezoneByIp('bad-host');
+    expect(r.ok).toBe(false);
+    expect(r.error).toBe('ENOTFOUND');
+  });
+
+  it('таймаут → ok:false', async () => {
+    http.get = vi.fn((url, opts, cb) => {
+      const req = { on: vi.fn((event, handler) => { if (event === 'timeout') process.nextTick(() => handler()); return req; }), destroy: vi.fn() };
+      return req;
+    });
+    const r = await getTimezoneByIp('slow-host', 50);
+    expect(r.ok).toBe(false);
+    expect(r.error).toBe('Timeout');
   });
 });

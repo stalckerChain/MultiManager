@@ -221,14 +221,17 @@ async function rotateProxy(rotationUrl, timeout = 10000) {
 
 async function getTimezoneByIp(ip, timeout = 5000) {
   return new Promise((resolve) => {
-    const req = http.get(`http://ip-api.com/json/${ip}?fields=status,message,timezone`, { timeout }, (res) => {
+    const req = http.get(`http://ip-api.com/json/${ip}?fields=status,message,timezone,countryCode,country`, { timeout }, (res) => {
       let data = '';
       res.on('data', chunk => data += chunk);
       res.on('end', () => {
         try {
           const json = JSON.parse(data);
-          if (json.status === 'success' && json.timezone) {
-            resolve({ ok: true, timezone: json.timezone });
+          if (json.status === 'success') {
+            const location = (json.countryCode && json.country)
+              ? `${json.countryCode}(${json.country})`
+              : null;
+            resolve({ ok: true, timezone: json.timezone || null, location });
           } else {
             resolve({ ok: false, error: json.message || 'Unknown error' });
           }

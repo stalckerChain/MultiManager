@@ -99,6 +99,7 @@ const proxyCreateSchema = z.object({
   username: z.string().max(200).nullable().optional(),
   password: z.string().max(200).nullable().optional(),
   proxy_rotation_url: z.string().max(2000).nullable().optional().refine(v => !v || z.string().url().safeParse(v).success, 'невалидный URL'),
+  location: z.string().max(50).nullable().optional(),
 });
 
 const proxyUpdateSchema = proxyCreateSchema.partial();

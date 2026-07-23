@@ -134,6 +134,10 @@ router.post('/:id/check', async (req, res) => {
     if (result.detectedType && result.detectedType !== proxy.type) {
       db.prepare('UPDATE proxies SET type = ? WHERE id = ?').run(result.detectedType, req.params.id);
     }
+    const tzResult = await getTimezoneByIp(result.ip);
+    if (tzResult.ok) {
+      queries.updateLocation(req.params.id, tzResult.location || null);
+    }
   } else {
     queries.updateActive(req.params.id, false);
   }

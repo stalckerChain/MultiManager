@@ -169,8 +169,8 @@ function createProfileQueries(db) {
 
 function createProxyQueries(db) {
   const insert = db.prepare(`
-    INSERT INTO proxies (type, host, port, username, password, proxy_rotation_url)
-    VALUES (?, ?, ?, ?, ?, ?)
+    INSERT INTO proxies (type, host, port, username, password, proxy_rotation_url, location)
+    VALUES (?, ?, ?, ?, ?, ?, ?)
   `);
 
   const getById = db.prepare('SELECT * FROM proxies WHERE id = ?');
@@ -221,7 +221,8 @@ function createProxyQueries(db) {
         enc.port,
         enc.username || null,
         enc.password || null,
-        enc.proxy_rotation_url || null
+        enc.proxy_rotation_url || null,
+        enc.location || null
       );
       return decryptProxyRow(getById.get(result.lastInsertRowid));
     },
@@ -245,6 +246,7 @@ function createProxyQueries(db) {
         last_ip: row.last_ip,
         last_checked_at: row.last_checked_at,
         is_active: row.is_active,
+        location: row.location,
         created_at: row.created_at,
         updated_at: row.updated_at,
       }));
@@ -257,6 +259,11 @@ function createProxyQueries(db) {
 
     updateActive(id, isActive) {
       updateActive.run(isActive ? 1 : 0, id);
+      return decryptProxyRow(getById.get(id));
+    },
+
+    updateLocation(id, location) {
+      db.prepare('UPDATE proxies SET location = ? WHERE id = ?').run(location, id);
       return decryptProxyRow(getById.get(id));
     },
 
@@ -278,7 +285,8 @@ function createProxyQueries(db) {
             username = COALESCE(?, username),
             password = COALESCE(?, password),
             proxy_rotation_url = COALESCE(?, proxy_rotation_url),
-            is_active = COALESCE(?, is_active)
+            is_active = COALESCE(?, is_active),
+            location = COALESCE(?, location)
         WHERE id = ?
       `).run(
         enc.type || null,
@@ -288,6 +296,7 @@ function createProxyQueries(db) {
         enc.password !== undefined ? enc.password : null,
         enc.proxy_rotation_url !== undefined ? enc.proxy_rotation_url : null,
         enc.is_active !== undefined ? (enc.is_active ? 1 : 0) : null,
+        enc.location !== undefined ? enc.location : null,
         id
       );
       return decryptProxyRow(getById.get(id));
