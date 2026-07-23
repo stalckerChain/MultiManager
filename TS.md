@@ -1,7 +1,7 @@
 -------------------------------
 ## SOFTWARE REQUIREMENTS SPECIFICATION (SRS) / ТЕХНИЧЕСКОЕ ЗАДАНИЕ
 ## AI-Driven Web Automation Platform на базе антидетект-браузера (MVP аналог AdsPower + ферма автоматизации)
-**Версия системы:** 1.4.2 | **Multi-Control:** 0.15.0 | **Дата ревизии:** 2026-07-23 | **Ф7 Automation Matrix:** ✅
+**Версия системы:** 1.4.1 | **Multi-Control:** 0.15.0 | **Дата ревизии:** 2026-07-24 | **Ф7 Automation Matrix:** ✅
 
 > **Принцип маркировки:** ✅ РЕАЛИЗОВАНО в коде | ⚠️ ЧАСТИЧНО | ❌ НЕ РЕАЛИЗОВАНО (в ТЗ, но в коде нет). Каждое утверждение о статусе подкреплено ссылкой на реальный файл аудита.
 > **Спутник-документ:** [TS_INTEGRATION.md](./TS_INTEGRATION.md) — миграция Python-фреймворка stAuto0 на интеграцию с MultiManager.
@@ -149,7 +149,7 @@ GUI передаёт порт бэкенду через **env-переменну
 - Proxy Checker: тестовый запрос к `api.ipify.org`; при недоступности — 412 Precondition Failed. ✅ `src/api/browser.js:263-276`
 - Автоопределение типа (HTTP→SOCKS5 fallback). ✅ `src/proxy/index.js:163-175`
 - Флаг браузера `--proxy-server={type}://{user}:{pass}@{host}:{port}`. ✅ `src/api/browser.js:307`
-- **GUI (v1.4.2):** единый `ProxyModal.vue` для создания/редактирования прокси. Столбец Connection (host:port в две строки). Столбец Accounts (имена привязанных профилей, кликабельны → редактирование). Кнопка Check доступна в 3 местах (главная, страница прокси, модал).
+- **GUI (v1.4.1):** единый `ProxyModal.vue` для создания/редактирования прокси. Столбец Connection (host:port в две строки). Столбец Accounts (имена привязанных профилей, кликабельны → редактирование). Кнопка Check доступна в 3 местах (главная, страница прокси, модал). Чекбоксы для множественного выбора + кнопки "Check Selected" / "Delete Selected". Пагинация с dropdown размера страницы (10/20/50/100).
 
 ### 4.3. Управление куки (Cookie Import/Export) ✅ РЕАЛИЗОВАНО (частично — GUI)
 - `GET|POST|DELETE /api/cookies/:profileId`, экспорт в JSON/Netscape. ✅ `src/api/cookies.js`, `src/cookie/inject.js`
