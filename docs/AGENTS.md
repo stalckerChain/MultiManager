@@ -215,6 +215,7 @@ npm run dev                     # Watch-режим бэкенда
 cd gui && npm run dev           # Watch-режим GUI
 
 # Сборка
+npm run build:native            # Сборка hooks.node (node-gyp rebuild)
 cd gui && npm run build         # Сборка GUI
 
 # Линтинг

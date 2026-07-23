@@ -55,6 +55,11 @@ let eventCount = 0;
 
 function sendToBackend(event) {
   const data = JSON.stringify(event);
+
+  if (event.ctrlKey && (event.key === 'w' || event.key === 't') && event.type === 'keyDown') {
+    logHook(`CTRL+W/T intercepted: key=${event.key} type=${event.type} ctrlKey=${event.ctrlKey}`);
+  }
+
   const req = http.request({
     hostname: '127.0.0.1',
     port: corePort,
@@ -90,8 +95,8 @@ function findAddon() {
         path.join(__dirname, '..', '..', '..', 'src', 'os-input', 'native-hooks', 'build', 'Debug', 'hooks.node'),
       ]
     : [
-        path.join(process.resourcesPath, 'backend', 'src', 'os-input', 'native-hooks', 'build', 'Release', 'hooks.node'),
-        path.join(process.resourcesPath, 'backend', 'src', 'os-input', 'native-hooks', 'build', 'Debug', 'hooks.node'),
+        path.join(process.resourcesPath, 'backend', 'os-input', 'native-hooks', 'build', 'Release', 'hooks.node'),
+        path.join(process.resourcesPath, 'backend', 'os-input', 'native-hooks', 'build', 'Debug', 'hooks.node'),
       ];
 
   for (const p of candidates) {

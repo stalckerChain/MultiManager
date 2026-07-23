@@ -30,13 +30,27 @@ const SYNC_EVENT_SCRIPT = `
   document.addEventListener('mouseup', function(e) { emit('mouseUp', { x: e.pageX, y: e.pageY, button: e.button, scrollX: window.scrollX, scrollY: window.scrollY }); }, true);
   document.addEventListener('wheel', function(e) { emit('scroll', { x: e.pageX, y: e.pageY, deltaX: e.deltaX, deltaY: e.deltaY, scrollX: window.scrollX, scrollY: window.scrollY }); }, true);
   document.addEventListener('keydown', function(e) {
-    emit('keyDown', { key: e.key, code: e.code, windowsVirtualKeyCode: e.keyCode });
+    emit('keyDown', {
+      key: e.key,
+      code: e.code,
+      windowsVirtualKeyCode: e.keyCode,
+      ctrlKey: e.ctrlKey,
+      shiftKey: e.shiftKey,
+      altKey: e.altKey,
+      metaKey: e.metaKey
+    });
     if (e.key.length === 1 && !e.ctrlKey && !e.metaKey && !e.altKey) {
       emit('charInput', { text: e.key });
     }
-    // Блокируем только Ctrl+N (новое окно) — не поддерживается
-    // Ctrl+T и Ctrl+W НЕ блокируем: пусть браузер обрабатывает нативно,
-    // discoverActiveTab / onTabDestroyed подхватят
+    // Ctrl+W / Ctrl+T — блокируем нативную обработку и шлём browserAction
+    // для синхронного закрытия/открытия табов через CDP
+    if (e.ctrlKey && !e.shiftKey && !e.altKey && !e.metaKey) {
+      if (e.code === 'KeyW' || e.code === 'KeyT') {
+        e.preventDefault();
+        emit('browserAction', { action: e.code === 'KeyW' ? 'closeTab' : 'newTab' });
+      }
+    }
+    // Блокируем Ctrl+N (новое окно) — не поддерживается
     if (e.ctrlKey && e.code === 'KeyN') {
       e.preventDefault();
     }
@@ -214,6 +228,7 @@ class CdpManager {
               }
 
               if (this.onTabDestroyed) {
+                logger.info({ profileId, targetId }, 'CDP: Target.targetDestroyed, calling onTabDestroyed');
                 this.onTabDestroyed(profileId, targetId);
               }
             }
@@ -249,6 +264,7 @@ class CdpManager {
               try {
                 const event = JSON.parse(bp);
                 if (event.__mm_event) {
+                  logger.info({ profileId: eventProfileId, eventType: event.type, key: event.key, ctrlKey: event.ctrlKey, action: event.action }, 'CDP-SYNC: received event');
                   this.onEvent(eventProfileId, event, msg.sessionId);
                 }
               } catch (err) {

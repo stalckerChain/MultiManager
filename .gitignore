@@ -19,6 +19,7 @@ gui/src/proxy/
 gui/src/typing/
 tmp/
 build/
+!src/os-input/native-hooks/build/
 .opencode/
 .mimocode/
 _dream_inspect.js

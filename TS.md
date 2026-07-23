@@ -21,7 +21,7 @@
 **Технологический стек Core:**
 - Node.js ≥ 20.x, Express 4.x, better-sqlite3 (WAL + ACID), pino (логирование), ws (WebSocket), socks (SOCKS5-proxy), adm-zip, ghost-cursor, tree-kill, koffi (FFI для нативных Windows-хуков)
 
-**Тестирование:** Vitest (unit + integration), 738 тестов (47 файлов). ✅ `tests/`, `vitest.config.js`
+**Тестирование:** Vitest (unit + integration), 747 тестов (48 файлов). ✅ `tests/`, `vitest.config.js`
 
 -------------------------------
 ## 2. Безопасность и авторизация локального API ✅ РЕАЛИЗОВАНО

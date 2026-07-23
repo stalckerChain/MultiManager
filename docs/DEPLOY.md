@@ -62,7 +62,7 @@ npm install
 
 ## 2. Native-модули
 
-Проект содержит скомпилированные native-модули, которые уже включены в репозиторий:
+Проект содержит нативные C++ модули, которые необходимо собрать перед использованием:
 
 | Модуль | Расположение | Назначение |
 |--------|-------------|------------|
@@ -70,7 +70,23 @@ npm install
 | `better_sqlite3.node` | `node_modules/better-sqlite3/build/Release/` | SQLite (через npm) |
 | `koffi.node` | `node_modules/@koromix/koffi-win32-x64/` | FFI для WinAPI (через npm) |
 
-В production-сборке `*.node` файлы автоматически выносятся из `app.asar` через `asarUnpack` в конфиге electron-builder. `hooks.node` также копируется в `resources/backend/src/os-input/native-hooks/build/Release/` через `extraResources`.
+### Сборка hooks.node
+
+`hooks.node` **не входит в git** (папка `build/` в `.gitignore`). Его необходимо собирать перед каждой сборкой приложения:
+
+```bash
+npm run build:native
+# Или вручную:
+cd src/os-input/native-hooks && npx node-gyp rebuild
+```
+
+Требования: Python 3.x, Visual Studio Build Tools (C++ Desktop Workload).
+
+### Копирование в packaged app
+
+При сборке electron-builder хук `afterPack` (`gui/scripts/copy-backend.js`) копирует `src/` в `resources/backend/`. `hooks.node` попадает в `resources/backend/os-input/native-hooks/build/Release/hooks.node`.
+
+> **Важно:** `keyboard-hooks.js` ищет addon по пути `resources/backend/os-input/...` (без лишнего `src`). При изменении структуры каталогов проверять согласованность путей.
 
 > **Примечание:** Если при запуске в production возникают ошибки вида `Error: The module was compiled against a different Node.js version`, выполните пересборку native-модулей под Electron: `cd gui && npx electron-rebuild -f`
 

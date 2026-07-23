@@ -136,8 +136,8 @@ MultiManager/
 │           ├── components/   # Layout, StatusBar, LogPanel, Terminal, BrowserDownload, AccountsTab, WalletsTab
 │           ├── composables/  # useTheme, useWebSocket
 │           └── api/          # HTTP-клиент к Core
-└── tests/                    # Vitest (737 тестов, 47 файлов)
-    ├── unit/                 # 35 файла: auth, proxy, fingerprint, typing, crypto, pty, extensions, automation, matrix-selection, websocket-reconnect, etc.
+└── tests/                    # Vitest (747 тестов, 48 файлов)
+    ├── unit/                 # 36 файла: auth, proxy, fingerprint, typing, crypto, pty, extensions, automation, matrix-selection, websocket-reconnect, hooks-node-path, etc.
     └── integration/          # 8 файлов: SQLite WAL, API, lifecycle, proxy, websocket, automation-full-cycle
 ```
 
@@ -149,6 +149,9 @@ MultiManager/
 # Установка зависимостей
 npm install
 cd gui && npm install && cd ..
+
+# Сборка нативного addon (hooks.node для OS keyboard hooks)
+npm run build:native
 
 # Запуск (Electron GUI + Core бэкенд автоматически)
 npm run dev
@@ -167,6 +170,10 @@ API_TOKEN=YOUR_SECRET_TOKEN node src/index.js
 ### Сборка Windows Installer / Portable
 
 ```bash
+# Предварительно собрать нативный addon
+npm run build:native
+
+# Собрать GUI
 cd gui && npm install && npm run build
 # Результат: gui/release/
 #   MultiManager Setup 1.x.x.exe  — NSIS installer
@@ -192,7 +199,7 @@ GUI автоматически проверяет наличие CloakBrowser п
 | `npm test` | Все Vitest-тесты |
 | `npm run test:api` | Интеграционный API-тест |
 | `npm run test:all` | Vitest + API-тест |
-| `npm run lint` | ESLint `src/` |
+| `npm run build:native` | Сборка hooks.node (node-gyp rebuild) |
 | `npm run typecheck` | TypeScript-проверка |
 
 ---

@@ -224,6 +224,31 @@ router.post('/start', async (req, res) => {
   try {
     cdpManager.onEvent = (profileId, event, sessionId) => {
       if (profileId === masterId && controller.active) {
+        logger.info({
+          eventType: event.type,
+          key: event.key,
+          ctrlKey: event.ctrlKey,
+          action: event.action,
+          sessionId,
+          activeMasterTab: controller.activeMasterTab,
+        }, 'MC-EVENT: received from master');
+
+        if (event.type === 'browserAction') {
+          const activeTab = controller.activeMasterTab;
+          logger.info({ action: event.action, activeTab, tabMappingSize: controller.tabMapping.size }, 'MC-EVENT: browserAction received');
+          if (event.action === 'closeTab' && activeTab) {
+            const bySlave = controller.tabMapping.get(activeTab);
+            if (bySlave) {
+              for (const [slaveId, slaveTargetId] of bySlave) {
+                cdpManager.closeTarget(slaveId, slaveTargetId);
+                logger.info({ slaveId, slaveTargetId, masterTargetId: activeTab }, 'MC-EVENT: closed slave tab via browserAction');
+              }
+            }
+            controller.unmapTab(activeTab);
+            return;
+          }
+        }
+
         if (event.type === 'tabActivated') {
           const targetId = cdpManager.targetBySid.get(sessionId);
           if (targetId) {
@@ -313,18 +338,27 @@ router.post('/start', async (req, res) => {
     };
 
     cdpManager.onTabDestroyed = (profileId, targetId) => {
-      if (!controller.active) return;
+      if (!controller.active) {
+        logger.warn({ profileId, targetId }, 'MC-DESTROYED: controller not active, skipping');
+        return;
+      }
       if (profileId === masterId) {
         const bySlave = controller.tabMapping.get(targetId);
+        logger.info({
+          masterTargetId: targetId,
+          hasMapping: !!bySlave,
+          slaveCount: bySlave ? bySlave.size : 0,
+          activeMasterTab: controller.activeMasterTab,
+        }, 'MC-DESTROYED: master tab destroyed');
         if (bySlave) {
           for (const [slaveId, slaveTargetId] of bySlave) {
             cdpManager.closeTarget(slaveId, slaveTargetId);
-            logger.info({ slaveId, slaveTargetId, masterTargetId: targetId }, 'MULTI-CONTROL: closed slave tab on master tab destroy');
+            logger.info({ slaveId, slaveTargetId, masterTargetId: targetId }, 'MC-DESTROYED: closed slave tab');
           }
         }
         controller.unmapTab(targetId);
         controller._maybeSwitchToPrevTab(targetId);
-        logger.info({ targetId, newActiveTab: controller.activeMasterTab }, 'MULTI-CONTROL: focus returned to previous tab after destroy');
+        logger.info({ targetId, newActiveTab: controller.activeMasterTab }, 'MC-DESTROYED: done');
       } else {
         controller._unmapBySlaveTargetId(targetId);
       }
@@ -490,6 +524,10 @@ router.post('/os-keyboard', async (req, res) => {
         }
         controller.unmapTab(activeTab);
       }
+      logger.info({
+        activeMasterTab: controller.activeMasterTab,
+        tabMappingHadEntry: !!controller.tabMapping.get(activeTab || ''),
+      }, 'OS-KEYBOARD: Ctrl+W handling complete');
       // Browser сам закроет master-таб (preventDefault для KeyW удалён из sync script)
       return res.json({ ok: true, action: 'closeTab' });
     }

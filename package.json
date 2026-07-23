@@ -12,7 +12,8 @@
     "test:watch": "vitest",
     "lint": "eslint src/",
     "typecheck": "tsc --noEmit",
-    "bump": "node scripts/bump-version.mjs"
+    "bump": "node scripts/bump-version.mjs",
+    "build:native": "cd src/os-input/native-hooks && npx node-gyp rebuild"
   },
   "dependencies": {
     "adm-zip": "^0.6.0",

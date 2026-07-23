@@ -84,7 +84,10 @@ class MultiController {
 
   unmapTab(masterTargetId, slaveId) {
     const bySlave = this.tabMapping.get(masterTargetId);
-    if (!bySlave) return;
+    if (!bySlave) {
+      logger.debug({ masterTargetId, slaveId }, 'MC-UNMAP: no mapping found');
+      return;
+    }
     if (slaveId) {
       bySlave.delete(slaveId);
       if (bySlave.size === 0) {
@@ -286,7 +289,10 @@ class MultiController {
 
   async onKeyDown(params) {
     if (!this.active || !this.cdp) return;
-    if (params.ctrlKey && ['t', 'n', 'w'].includes((params.key || '').toLowerCase())) return;
+    if (params.ctrlKey && ['t', 'n', 'w'].includes((params.key || '').toLowerCase())) {
+      logger.debug({ key: params.key, ctrlKey: params.ctrlKey }, 'MC-KEY: Ctrl+W/T/N blocked from CDP forwarding (handled by browserAction or OS hook)');
+      return;
+    }
     for (const [id] of this.slaves) {
       try {
         const session = this._getSlaveSession(id);
