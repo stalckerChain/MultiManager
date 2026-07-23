@@ -1,7 +1,7 @@
 const fs = require('fs');
 const path = require('path');
 const os = require('os');
-const { logger } = require('./logger');
+const { logger } = require('../logger');
 
 const CLOAKBROWSER_CACHE_DIR = path.join(os.homedir(), '.cloakbrowser');
 const DEFAULT_VERSION = '146.0.7680.177';
