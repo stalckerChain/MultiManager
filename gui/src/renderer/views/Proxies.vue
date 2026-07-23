@@ -9,8 +9,17 @@
       </div>
     </div>
 
+    <div v-if="selectedRowKeys.length" class="mb-3 flex items-center gap-2">
+      <a-space>
+        <a-button size="small" :loading="bulkCheckLoading" @click="bulkCheckSelected">Check Selected</a-button>
+      </a-space>
+      <span class="text-xs text-slate-400">Selected: {{ selectedRowKeys.length }}</span>
+    </div>
+
     <a-table :columns="columns" :data-source="proxiesStore.proxies" :loading="proxiesStore.loading"
-      row-key="id" size="small" :scroll="{ y: 'calc(100vh - 200px)' }">
+      row-key="id" size="small" :scroll="{ y: 'calc(100vh - 200px)' }"
+      :pagination="{ pageSize: 20, showSizeChanger: true }"
+      :row-selection="rowSelection">
       <template #bodyCell="{ column, record }">
         <template v-if="column.key === 'status'">
           <a-badge :status="record.is_active ? 'success' : 'error'"
@@ -111,6 +120,13 @@ const newProxy = reactive({
 const proxyModalOpen = ref(false);
 const editingProxy = ref(null);
 const checkLoading = ref(null);
+const bulkCheckLoading = ref(false);
+
+const selectedRowKeys = ref([]);
+const rowSelection = {
+  selectedRowKeys,
+  onChange: (keys) => { selectedRowKeys.value = keys; },
+};
 
 const profileModalOpen = ref(false);
 const editingProfile = ref(null);
@@ -205,6 +221,18 @@ async function handleCheckProxy(id) {
     message.error(err.message || 'Ошибка проверки прокси');
   } finally {
     checkLoading.value = null;
+  }
+}
+
+async function bulkCheckSelected() {
+  bulkCheckLoading.value = true;
+  try {
+    for (const id of selectedRowKeys.value) {
+      await handleCheckProxy(id);
+    }
+  } finally {
+    bulkCheckLoading.value = false;
+    selectedRowKeys.value = [];
   }
 }
 
