@@ -2,6 +2,11 @@
 
 ## v1.4.2
 
+### Исправления
+
+- **[SEC] User-Agent обновлён с Chrome 131 на Chrome 146.**
+  BrowserScan детектировал несоответствие: UA говорил Chrome 131, а реальный браузер CloakBrowser — Chrome 146. Это была мгновенная детекция. ✅ `src/fingerprint/index.js`
+
 ### Улучшения
 
 - **[SEC] Антидетект: timezone через `--fingerprint-timezone`.**

@@ -3,7 +3,7 @@ const { v4: uuidv4 } = require('uuid');
 const FINGERPRINT_DB = {
   macos: {
     userAgents: [
-      'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36',
+      'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/146.0.7680.177 Safari/537.36',
       'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/18.2 Safari/605.1.15',
     ],
     resolutions: ['2560x1600', '1920x1080', '1440x900', '2560x1440'],
@@ -16,7 +16,7 @@ const FINGERPRINT_DB = {
   },
   windows: {
     userAgents: [
-      'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36',
+      'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/146.0.7680.177 Safari/537.36',
       'Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:134.0) Gecko/20100101 Firefox/134.0',
     ],
     resolutions: ['1920x1080', '2560x1440', '1366x768', '1536x864', '3840x2160', '3440x1440'],
@@ -29,7 +29,7 @@ const FINGERPRINT_DB = {
   },
   linux: {
     userAgents: [
-      'Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36',
+      'Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/146.0.7680.177 Safari/537.36',
       'Mozilla/5.0 (X11; Linux x86_64; rv:134.0) Gecko/20100101 Firefox/134.0',
     ],
     resolutions: ['1920x1080', '2560x1440', '1366x768'],
