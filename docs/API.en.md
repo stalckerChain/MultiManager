@@ -374,7 +374,7 @@ Delete all profile cookies.
 
 ### POST /api/browser/:id/start
 
-Start browser. Automatically checks proxy if assigned. Browser launches with anti-detect args: `--fingerprint-timezone` (timezone from profile), `--lang=en-US`, `--no-first-run`, `--no-default-browser-check`. On `ERR_ADDRESS_IN_USE` error, automatically retries up to 3 times.
+Start browser. Automatically checks proxy if assigned. Browser launches with anti-detect args: `--fingerprint-timezone` (timezone from GeoIP proxy, fallback — profile), `--lang=en-US`, `--no-first-run`, `--no-default-browser-check`. On `ERR_ADDRESS_IN_USE` error, automatically retries up to 3 times.
 
 **Response (200):**
 ```json
@@ -1178,6 +1178,41 @@ Update automation settings. If paths are not provided, default values are used (
 {
   "status": "success",
   "syncResult": { "added": 2, "removed": 0, "total": 5 }
+}
+```
+
+---
+
+### GET /api/settings/cloakbrowser-version
+
+Get current CloakBrowser version. Priority: (1) manual setting, (2) auto-detected from cache, (3) default.
+
+**Response (200):**
+```json
+{
+  "manual": "",
+  "detected": "146.0.7680.177",
+  "current": "146.0.7680.177",
+  "default": "146.0.7680.177"
+}
+```
+
+### PUT /api/settings/cloakbrowser-version
+
+Set CloakBrowser version manually. Send `{"version": ""}` to reset to auto-detection.
+
+**Request body:**
+```json
+{
+  "version": "146.0.7680.177"
+}
+```
+
+**Response (200):**
+```json
+{
+  "status": "success",
+  "version": "146.0.7680.177"
 }
 ```
 

@@ -374,7 +374,7 @@ Authorization: Bearer <token>
 
 ### POST /api/browser/:id/start
 
-Запустить браузер. Автоматически проверяет прокси (если привязан). Браузер запускается с антидетект-аргументами: `--fingerprint-timezone` (timezone из профиля), `--lang=en-US`, `--no-first-run`, `--no-default-browser-check`. При ошибке `ERR_ADDRESS_IN_USE` автоматически повторяет запуск до 3 раз.
+Запустить браузер. Автоматически проверяет прокси (если привязан). Браузер запускается с антидетект-аргументами: `--fingerprint-timezone` (timezone из GeoIP прокси, фоллбэк — профиль), `--lang=en-US`, `--no-first-run`, `--no-default-browser-check`. При ошибке `ERR_ADDRESS_IN_USE` автоматически повторяет запуск до 3 раз.
 
 **Ответ (200):**
 ```json
@@ -1226,6 +1226,41 @@ ws://127.0.0.1:{PORT}/ws?token={API_TOKEN}
 {
   "status": "success",
   "syncResult": { "added": 2, "removed": 0, "total": 5 }
+}
+```
+
+---
+
+### GET /api/settings/cloakbrowser-version
+
+Получить текущую версию CloakBrowser. Приоритет: (1) ручная настройка, (2) авто-определение из кэша, (3) дефолт.
+
+**Ответ (200):**
+```json
+{
+  "manual": "",
+  "detected": "146.0.7680.177",
+  "current": "146.0.7680.177",
+  "default": "146.0.7680.177"
+}
+```
+
+### PUT /api/settings/cloakbrowser-version
+
+Установить версию CloakBrowser вручную. Передайте `{"version": ""}` чтобы сбросить на авто-определение.
+
+**Тело запроса:**
+```json
+{
+  "version": "146.0.7680.177"
+}
+```
+
+**Ответ (200):**
+```json
+{
+  "status": "success",
+  "version": "146.0.7680.177"
 }
 ```
 

@@ -183,7 +183,9 @@ GUI передаёт порт бэкенду через **env-переменну
 - PID сохраняется в БД при старте. Health-check каждые 5 сек (`process.kill(pid, 0)`). ✅ `src/api/browser.js:71-78,98-115`
 - Graceful shutdown: SIGTERM → ожидание 8 сек → SIGKILL (tree-kill). ✅ `src/api/browser.js:497-531`
 - `POST /api/browser/shutdown` — массовая остановка. ✅ `src/api/browser.js:533-564`
-- **Антидетект-аргументы:** `--fingerprint-timezone` (timezone из профиля, дефолт `Asia/Bishkek`), `--lang=en-US`, `--no-first-run`, `--no-default-browser-check`. Timezone передаётся через бинарный флаг движка CloakBrowser, а НЕ через CDP `Emulation.setTimezoneOverride` (обнаруживается детекторами). ✅ `src/api/browser.js:301-313`
+- **Антидетект-аргументы:** `--fingerprint-timezone` (timezone из GeoIP прокси, фоллбэк — профиль), `--lang=en-US`, `--no-first-run`, `--no-default-browser-check`. Timezone передаётся через бинарный флаг движка CloakBrowser, а НЕ через CDP `Emulation.setTimezoneOverride` (обнаруживается детекторами). ✅ `src/api/browser.js:301-313`
+- **GeoIP timezone:** при запуске браузера с прокси — timezone определяется автоматически по `last_ip` через `ip-api.com`. Фоллбэк — timezone из профиля. ✅ `src/api/browser.js`
+- **Динамический User-Agent:** UA генерируется на основе реальной версии CloakBrowser. Приоритет: (1) ручная настройка в Settings, (2) авто-определение из `~/.cloakbrowser/`, (3) дефолт. ✅ `src/core/cloakbrowser-version.js`, `src/fingerprint/index.js`
 - **Retry-логика:** при `ERR_ADDRESS_IN_USE` — 3 попытки с задержкой 2 сек. ✅ `src/api/browser.js:356-388`
 
 ### 4.10. Hot Backup + Rolling Window ✅ РЕАЛИЗОВАНО (Roadmap Ф3)

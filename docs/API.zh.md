@@ -374,7 +374,7 @@ Authorization: Bearer <token>
 
 ### POST /api/browser/:id/start
 
-启动浏览器。如有绑定代理会自动检查。浏览器使用反检测参数启动：`--fingerprint-timezone`（来自配置文件的时区）、`--lang=en-US`、`--no-first-run`、`--no-default-browser-check`。遇到 `ERR_ADDRESS_IN_USE` 错误时，自动重试最多3次。
+启动浏览器。如有绑定代理会自动检查。浏览器使用反检测参数启动：`--fingerprint-timezone`（来自代理IP的GeoIP时区，回退为配置文件时区）、`--lang=en-US`、`--no-first-run`、`--no-default-browser-check`。遇到 `ERR_ADDRESS_IN_USE` 错误时，自动重试最多3次。
 
 **响应 (200)：**
 ```json
@@ -1156,6 +1156,41 @@ Authorization: Bearer <token>
 {
   "status": "success",
   "syncResult": { "added": 2, "removed": 0, "total": 5 }
+}
+```
+
+---
+
+### GET /api/settings/cloakbrowser-version
+
+获取当前CloakBrowser版本。优先级：(1) 手动设置，(2) 从缓存自动检测，(3) 默认值。
+
+**响应 (200):**
+```json
+{
+  "manual": "",
+  "detected": "146.0.7680.177",
+  "current": "146.0.7680.177",
+  "default": "146.0.7680.177"
+}
+```
+
+### PUT /api/settings/cloakbrowser-version
+
+手动设置CloakBrowser版本。发送 `{"version": ""}` 重置为自动检测。
+
+**请求体:**
+```json
+{
+  "version": "146.0.7680.177"
+}
+```
+
+**响应 (200):**
+```json
+{
+  "status": "success",
+  "version": "146.0.7680.177"
 }
 ```
 
