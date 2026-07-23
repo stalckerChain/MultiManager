@@ -1,7 +1,7 @@
 -------------------------------
 ## SOFTWARE REQUIREMENTS SPECIFICATION (SRS) / ТЕХНИЧЕСКОЕ ЗАДАНИЕ
 ## AI-Driven Web Automation Platform на базе антидетект-браузера (MVP аналог AdsPower + ферма автоматизации)
-**Версия системы:** 1.4.0 | **Multi-Control:** 0.15.0 | **Дата ревизии:** 2026-07-20 | **Ф7 Automation Matrix:** ✅
+**Версия системы:** 1.4.2 | **Multi-Control:** 0.15.0 | **Дата ревизии:** 2026-07-23 | **Ф7 Automation Matrix:** ✅
 
 > **Принцип маркировки:** ✅ РЕАЛИЗОВАНО в коде | ⚠️ ЧАСТИЧНО | ❌ НЕ РЕАЛИЗОВАНО (в ТЗ, но в коде нет). Каждое утверждение о статусе подкреплено ссылкой на реальный файл аудита.
 > **Спутник-документ:** [TS_INTEGRATION.md](./TS_INTEGRATION.md) — миграция Python-фреймворка stAuto0 на интеграцию с MultiManager.
@@ -149,6 +149,7 @@ GUI передаёт порт бэкенду через **env-переменну
 - Proxy Checker: тестовый запрос к `api.ipify.org`; при недоступности — 412 Precondition Failed. ✅ `src/api/browser.js:263-276`
 - Автоопределение типа (HTTP→SOCKS5 fallback). ✅ `src/proxy/index.js:163-175`
 - Флаг браузера `--proxy-server={type}://{user}:{pass}@{host}:{port}`. ✅ `src/api/browser.js:307`
+- **GUI (v1.4.2):** единый `ProxyModal.vue` для создания/редактирования прокси. Столбец Connection (host:port в две строки). Столбец Accounts (имена привязанных профилей, кликабельны → редактирование). Кнопка Check доступна в 3 местах (главная, страница прокси, модал).
 
 ### 4.3. Управление куки (Cookie Import/Export) ✅ РЕАЛИЗОВАНО (частично — GUI)
 - `GET|POST|DELETE /api/cookies/:profileId`, экспорт в JSON/Netscape. ✅ `src/api/cookies.js`, `src/cookie/inject.js`
@@ -267,7 +268,7 @@ Zerion ID: `klghhnkeealcohjjanjjdaeeggmfmlpl`. Flow:
 
 -------------------------------
 ## 6. Стратегия тестирования ✅ РЕАЛИЗОВАНО
-Фреймворк **Vitest v3.x**, 738 тестов (47 файлов). Запуск: `npm test`, `npm run test:watch`.
+Фреймворк **Vitest v3.x**, 747 тестов (48 файлов). Запуск: `npm test`, `npm run test:watch`.
 
 **Unit (24 файла):** парсеры прокси/куки, fingerprint, auth middleware, расширения, CDP Manager, Multi-Control, Window Arranger, Human-like Typing, backup, crypto.
 
@@ -341,7 +342,7 @@ Python: `connect_over_cdp("http://127.0.0.1:9331")`.
 ### 9.1. Экран «Менеджер профилей» ⚠️ РАСШИРЯЕТСЯ
 **Реализовано ✅** (`gui/src/renderer/views/Profiles.vue`, `ProfileModal.vue`):
 - Toolbar: Создать, «В 1 клик», активация синхронизатора, массовые операции, поиск, фильтр по тегам.
-- Таблица профилей: №, имя+теги, прокси, отпечаток, статус, СТАРТ/СТОП, контекстное меню. WebSocket-обновление статусов.
+- Таблица профилей: №, имя+теги, прокси (host:port в две строки, клик → редактирование прокси), Proxy Status (badge + кнопка Check), отпечаток, статус, СТАРТ/СТОП, контекстное меню. WebSocket-обновление статусов.
 - Модалка редактирования с вкладками «Основные»/«Прокси»/«Дополнительно».
 
 **Реализовано ✅ (Roadmap Ф5):**
@@ -352,6 +353,8 @@ Python: `connect_over_cdp("http://127.0.0.1:9331")`.
 
 ### 9.2. Window Arranger ⚠️ ЧАСТИЧНО (см. §4.7)
 ### 9.3. Экран «Менеджер прокси» ✅ РЕАЛИЗОВАНО (`gui/src/renderer/views/Proxies.vue`)
+- Таблица: Status (badge Active/Inactive), Type (tag), Connection (host:port в две строки), Rotation URL, Ping (last_ip), Accounts (имена привязанных профилей, кликабельны → ProfileModal), Actions (Check, Edit, Delete).
+- Единый `ProxyModal.vue` для создания/редактирования: badge статуса, кнопка Check, все поля формы.
 ### 9.4. Cookie Manager ⚠️ ЧАСТИЧНО (`gui/src/renderer/views/CookieImportModal.vue`)
 - Drag-and-drop + пре-валидатор — ❌ (ToDo.md §2).
 ### 9.5. Extensions Manager ✅ РЕАЛИЗОВАНО (`gui/src/renderer/views/Extensions.vue`)

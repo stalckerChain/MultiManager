@@ -74,6 +74,16 @@
           <span v-else class="text-slate-500">—</span>
         </template>
 
+        <template v-if="column.key === 'proxy_status'">
+          <div v-if="record.proxy_id && getProxyById(record.proxy_id)" class="flex items-center gap-1">
+            <a-badge :status="getProxyById(record.proxy_id).is_active ? 'success' : 'error'" />
+            <a-button size="small" :loading="checkLoading === record.proxy_id" @click.stop="handleCheckProxy(record.proxy_id)">
+              Check
+            </a-button>
+          </div>
+          <span v-else class="text-slate-500">—</span>
+        </template>
+
         <template v-if="column.key === 'fingerprint'">
           <div class="text-xs">
             <div>{{ record.platform }} · {{ record.hardware_cores }}C / {{ record.hardware_memory }}GB</div>
@@ -115,43 +125,13 @@
     <ProfileModal v-model:open="modalOpen" :profile="editingProfile" @save="handleSave" />
     <CookieImportModal v-model:open="cookieImportOpen" :profile-id="cookieImportProfileId"
       @imported="profilesStore.fetchAll()" />
-
-    <a-modal v-model:open="editProxyModal" :title="t('proxies.edit')" @ok="handleEditProxy"
-      :confirm-loading="editProxyLoading" @cancel="editProxyModal = false">
-      <a-form layout="vertical">
-        <a-form-item label="Type">
-          <a-select v-model:value="editProxy.type">
-            <a-select-option value="socks5">SOCKS5</a-select-option>
-            <a-select-option value="http">HTTP</a-select-option>
-            <a-select-option value="https">HTTPS</a-select-option>
-          </a-select>
-        </a-form-item>
-        <div class="grid grid-cols-2 gap-3">
-          <a-form-item label="Host">
-            <a-input v-model:value="editProxy.host" />
-          </a-form-item>
-          <a-form-item label="Port">
-            <a-input-number v-model:value="editProxy.port" :min="1" :max="65535" style="width: 100%" />
-          </a-form-item>
-        </div>
-        <div class="grid grid-cols-2 gap-3">
-          <a-form-item label="Username">
-            <a-input v-model:value="editProxy.username" />
-          </a-form-item>
-          <a-form-item label="Password">
-            <a-input-password v-model:value="editProxy.password" />
-          </a-form-item>
-        </div>
-        <a-form-item :label="t('proxies.columns.rotation')">
-          <a-input v-model:value="editProxy.proxy_rotation_url" placeholder="https://example.com/rotate" />
-        </a-form-item>
-      </a-form>
-    </a-modal>
+    <ProxyModal v-model:open="proxyModalOpen" :proxy="editingProxy" @save="profilesStore.fetchAll()" />
   </div>
 </template>
 
 <script setup>
-import { ref, reactive, computed, watch, onUnmounted } from 'vue';
+import { ref, computed, watch, onUnmounted } from 'vue';
+import { message } from 'ant-design-vue';
 import { useTranslation } from 'i18next-vue';
 import { useProfilesStore } from '../stores/profiles.js';
 import { useBrowserStore } from '../stores/browser.js';
@@ -162,6 +142,7 @@ import { useWebSocket } from '../composables/useWebSocket.js';
 import { SwapOutlined } from '@ant-design/icons-vue';
 import client from '../api/client.js';
 import ProfileModal from './ProfileModal.vue';
+import ProxyModal from './ProxyModal.vue';
 import CookieImportModal from './CookieImportModal.vue';
 
 const { t } = useTranslation();
@@ -179,16 +160,15 @@ const editingProfile = ref(null);
 const cookieImportOpen = ref(false);
 const cookieImportProfileId = ref(null);
 
-const editProxyModal = ref(false);
-const editProxyLoading = ref(false);
-const editProxy = reactive({
-  id: null, type: 'socks5', host: '', port: 1080, username: '', password: '', proxy_rotation_url: '',
-});
+const proxyModalOpen = ref(false);
+const editingProxy = ref(null);
+const checkLoading = ref(null);
 
 const columns = [
   { title: '#', dataIndex: 'number', key: 'number', width: 60 },
   { title: t('profiles.columns.name'), key: 'name', width: 200 },
   { title: t('profiles.columns.proxy'), key: 'proxy', width: 150 },
+  { title: 'Proxy Status', key: 'proxy_status', width: 130 },
   { title: t('profiles.columns.fingerprint'), key: 'fingerprint', width: 200 },
   { title: t('profiles.columns.status'), key: 'status', width: 150 },
   { title: t('profiles.columns.actions'), key: 'actions', width: 200, fixed: 'right' },
@@ -223,30 +203,24 @@ function getProxyById(id) {
 function showEditProxyModal(proxyId) {
   const proxy = getProxyById(proxyId);
   if (!proxy) return;
-  editProxy.id = proxy.id;
-  editProxy.type = proxy.type;
-  editProxy.host = proxy.host;
-  editProxy.port = proxy.port;
-  editProxy.username = proxy.username || '';
-  editProxy.password = proxy.password || '';
-  editProxy.proxy_rotation_url = proxy.proxy_rotation_url || '';
-  editProxyModal.value = true;
+  editingProxy.value = proxy;
+  proxyModalOpen.value = true;
 }
 
-async function handleEditProxy() {
-  editProxyLoading.value = true;
+async function handleCheckProxy(proxyId) {
+  checkLoading.value = proxyId;
   try {
-    await proxiesStore.update(editProxy.id, {
-      type: editProxy.type,
-      host: editProxy.host,
-      port: editProxy.port,
-      username: editProxy.username,
-      password: editProxy.password,
-      proxy_rotation_url: editProxy.proxy_rotation_url,
-    });
-    editProxyModal.value = false;
+    const result = await proxiesStore.check(proxyId);
+    if (result.ok) {
+      message.success(`Прокси работает. IP: ${result.ip}`);
+    } else {
+      message.warning(`Прокси недоступен: ${result.error}`);
+    }
+    await proxiesStore.fetchAll();
+  } catch (err) {
+    message.error(err.message || 'Ошибка проверки прокси');
   } finally {
-    editProxyLoading.value = false;
+    checkLoading.value = null;
   }
 }
 

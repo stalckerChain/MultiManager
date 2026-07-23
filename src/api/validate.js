@@ -98,7 +98,7 @@ const proxyCreateSchema = z.object({
   port: z.number().int().min(1, 'port обязателен').max(65535),
   username: z.string().max(200).nullable().optional(),
   password: z.string().max(200).nullable().optional(),
-  proxy_rotation_url: z.string().url().max(2000).nullable().optional(),
+  proxy_rotation_url: z.string().max(2000).nullable().optional().refine(v => !v || z.string().url().safeParse(v).success, 'невалидный URL'),
 });
 
 const proxyUpdateSchema = proxyCreateSchema.partial();

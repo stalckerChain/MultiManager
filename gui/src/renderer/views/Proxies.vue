@@ -20,11 +20,25 @@
           <a-tag :color="typeColor(record.type)">{{ record.type.toUpperCase() }}</a-tag>
         </template>
         <template v-if="column.key === 'connection'">
-          <span class="font-mono text-xs">{{ record.host }}:{{ record.port }}</span>
+          <div class="text-xs">
+            <div class="font-mono">{{ record.host }}</div>
+            <div class="font-mono text-slate-500">{{ record.port }}</div>
+          </div>
+        </template>
+        <template v-if="column.key === 'accounts'">
+          <div class="text-xs">
+            <template v-if="getProfilesByProxyId(record.id).length">
+              <div v-for="profile in getProfilesByProxyId(record.id)" :key="profile.id"
+                class="cursor-pointer text-blue-400 hover:text-blue-300" @click.stop="showProfileModal(profile)">
+                {{ profile.name }}
+              </div>
+            </template>
+            <span v-else class="text-slate-500">—</span>
+          </div>
         </template>
         <template v-if="column.key === 'actions'">
           <a-space>
-            <a-button size="small" :loading="checkLoading === record.id" @click="checkProxy(record.id)">Check</a-button>
+            <a-button size="small" :loading="checkLoading === record.id" @click="handleCheckProxy(record.id)">Check</a-button>
             <a-button size="small" @click="showEditModal(record)">Edit</a-button>
             <a-button size="small" danger @click="proxiesStore.remove(record.id)">Delete</a-button>
           </a-space>
@@ -65,49 +79,24 @@
         placeholder="socks5://user:pass@host1:1080&#10;http://host2:8080&#10;IP:Port:User:Pass" />
     </a-modal>
 
-    <a-modal v-model:open="editModal" :title="t('proxies.edit')" @ok="handleEditProxy" :confirm-loading="editLoading"
-      @cancel="editModal = false">
-      <a-form layout="vertical">
-        <a-form-item label="Type">
-          <a-select v-model:value="editProxy.type">
-            <a-select-option value="socks5">SOCKS5</a-select-option>
-            <a-select-option value="http">HTTP</a-select-option>
-            <a-select-option value="https">HTTPS</a-select-option>
-          </a-select>
-        </a-form-item>
-        <div class="grid grid-cols-2 gap-3">
-          <a-form-item label="Host">
-            <a-input v-model:value="editProxy.host" />
-          </a-form-item>
-          <a-form-item label="Port">
-            <a-input-number v-model:value="editProxy.port" :min="1" :max="65535" style="width: 100%" />
-          </a-form-item>
-        </div>
-        <div class="grid grid-cols-2 gap-3">
-          <a-form-item label="Username">
-            <a-input v-model:value="editProxy.username" />
-          </a-form-item>
-          <a-form-item label="Password">
-            <a-input-password v-model:value="editProxy.password" />
-          </a-form-item>
-        </div>
-        <a-form-item :label="t('proxies.columns.rotation')">
-          <a-input v-model:value="editProxy.proxy_rotation_url" placeholder="https://example.com/rotate" />
-        </a-form-item>
-      </a-form>
-    </a-modal>
+    <ProxyModal v-model:open="proxyModalOpen" :proxy="editingProxy" @save="onProxySaved" />
+    <ProfileModal v-model:open="profileModalOpen" :profile="editingProfile" @save="handleSaveProfile" />
   </div>
 </template>
 
 <script setup>
-import { ref, reactive, watch } from 'vue';
+import { ref, reactive, computed, watch } from 'vue';
 import { message } from 'ant-design-vue';
 import { useTranslation } from 'i18next-vue';
 import { useProxiesStore } from '../stores/proxies.js';
+import { useProfilesStore } from '../stores/profiles.js';
 import { useAppStore } from '../stores/app.js';
+import ProxyModal from './ProxyModal.vue';
+import ProfileModal from './ProfileModal.vue';
 
 const { t } = useTranslation();
 const proxiesStore = useProxiesStore();
+const profilesStore = useProfilesStore();
 const appStore = useAppStore();
 
 const addModal = ref(false);
@@ -115,16 +104,32 @@ const importModal = ref(false);
 const importText = ref('');
 const addLoading = ref(false);
 const importLoading = ref(false);
-const checkLoading = ref(null);
 const newProxy = reactive({
   type: 'socks5', host: '', port: 1080, username: '', password: '',
 });
 
-const editModal = ref(false);
-const editLoading = ref(false);
-const editProxy = reactive({
-  id: null, type: 'socks5', host: '', port: 1080, username: '', password: '', proxy_rotation_url: '',
-});
+const proxyModalOpen = ref(false);
+const editingProxy = ref(null);
+const checkLoading = ref(null);
+
+const profileModalOpen = ref(false);
+const editingProfile = ref(null);
+
+function getProfilesByProxyId(proxyId) {
+  return profilesStore.profiles.filter(p => p.proxy_id === proxyId);
+}
+
+function showProfileModal(profile) {
+  editingProfile.value = profile;
+  profileModalOpen.value = true;
+}
+
+async function handleSaveProfile(values) {
+  if (editingProfile.value) {
+    await profilesStore.update(editingProfile.value.id, values);
+  }
+  profileModalOpen.value = false;
+}
 
 const columns = [
   { title: t('proxies.columns.status'), key: 'status', width: 100 },
@@ -132,6 +137,7 @@ const columns = [
   { title: t('proxies.columns.connection'), key: 'connection', width: 200 },
   { title: t('proxies.columns.rotation'), dataIndex: 'proxy_rotation_url', width: 150 },
   { title: t('proxies.columns.ping'), dataIndex: 'last_ip', width: 120 },
+  { title: 'Accounts', key: 'accounts', width: 200 },
   { title: 'Actions', key: 'actions', width: 220 },
 ];
 
@@ -163,34 +169,12 @@ async function handleAddProxy() {
 }
 
 function showEditModal(record) {
-  editProxy.id = record.id;
-  editProxy.type = record.type;
-  editProxy.host = record.host;
-  editProxy.port = record.port;
-  editProxy.username = record.username || '';
-  editProxy.password = record.password || '';
-  editProxy.proxy_rotation_url = record.proxy_rotation_url || '';
-  editModal.value = true;
+  editingProxy.value = record;
+  proxyModalOpen.value = true;
 }
 
-async function handleEditProxy() {
-  editLoading.value = true;
-  try {
-    await proxiesStore.update(editProxy.id, {
-      type: editProxy.type,
-      host: editProxy.host,
-      port: editProxy.port,
-      username: editProxy.username,
-      password: editProxy.password,
-      proxy_rotation_url: editProxy.proxy_rotation_url,
-    });
-    editModal.value = false;
-    message.success('Прокси обновлен');
-  } catch (err) {
-    message.error(err.message || 'Ошибка обновления прокси');
-  } finally {
-    editLoading.value = false;
-  }
+function onProxySaved() {
+  proxiesStore.fetchAll();
 }
 
 async function handleImport() {
@@ -206,7 +190,7 @@ async function handleImport() {
   }
 }
 
-async function checkProxy(id) {
+async function handleCheckProxy(id) {
   checkLoading.value = id;
   try {
     const result = await proxiesStore.check(id);
@@ -228,6 +212,9 @@ function deleteUnused() {
 }
 
 watch(() => appStore.initialized, (ready) => {
-  if (ready) proxiesStore.fetchAll();
+  if (ready) {
+    proxiesStore.fetchAll();
+    profilesStore.fetchAll();
+  }
 }, { immediate: true });
 </script>
