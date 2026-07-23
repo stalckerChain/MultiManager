@@ -1,7 +1,7 @@
 -------------------------------
 ## SOFTWARE REQUIREMENTS SPECIFICATION (SRS) / ТЕХНИЧЕСКОЕ ЗАДАНИЕ
 ## AI-Driven Web Automation Platform на базе антидетект-браузера (MVP аналог AdsPower + ферма автоматизации)
-**Версия системы:** 1.4.2 | **Multi-Control:** 0.15.0 | **Дата ревизии:** 2026-07-23 | **Ф7 Automation Matrix:** ✅
+**Версия системы:** 1.4.2 | **Multi-Control:** 0.15.0 | **Дата ревизии:** 2026-07-24 | **Ф7 Automation Matrix:** ✅
 
 > **Принцип маркировки:** ✅ РЕАЛИЗОВАНО в коде | ⚠️ ЧАСТИЧНО | ❌ НЕ РЕАЛИЗОВАНО (в ТЗ, но в коде нет). Каждое утверждение о статусе подкреплено ссылкой на реальный файл аудита.
 > **Спутник-документ:** [TS_INTEGRATION.md](./TS_INTEGRATION.md) — миграция Python-фреймворка stAuto0 на интеграцию с MultiManager.
@@ -21,7 +21,7 @@
 **Технологический стек Core:**
 - Node.js ≥ 20.x, Express 4.x, better-sqlite3 (WAL + ACID), pino (логирование), ws (WebSocket), socks (SOCKS5-proxy), adm-zip, ghost-cursor, tree-kill, koffi (FFI для нативных Windows-хуков)
 
-**Тестирование:** Vitest (unit + integration), 747 тестов (48 файлов). ✅ `tests/`, `vitest.config.js`
+**Тестирование:** Vitest (unit + integration), 763 тестов (49 файлов). ✅ `tests/`, `vitest.config.js`
 
 -------------------------------
 ## 2. Безопасность и авторизация локального API ✅ РЕАЛИЗОВАНО

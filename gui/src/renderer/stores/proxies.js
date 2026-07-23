@@ -11,6 +11,8 @@ export const useProxiesStore = defineStore('proxies', () => {
     try {
       const { data } = await client.get('/api/proxies');
       proxies.value = data;
+    } catch {
+      proxies.value = [];
     } finally {
       loading.value = false;
     }
