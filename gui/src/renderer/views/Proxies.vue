@@ -12,6 +12,7 @@
     <div v-if="selectedRowKeys.length" class="mb-3 flex items-center gap-2">
       <a-space>
         <a-button size="small" :loading="bulkCheckLoading" @click="bulkCheckSelected">Check Selected</a-button>
+        <a-button size="small" danger @click="bulkDeleteSelected">Delete Selected</a-button>
       </a-space>
       <span class="text-xs text-slate-400">Selected: {{ selectedRowKeys.length }}</span>
     </div>
@@ -234,6 +235,13 @@ async function bulkCheckSelected() {
     bulkCheckLoading.value = false;
     selectedRowKeys.value = [];
   }
+}
+
+function bulkDeleteSelected() {
+  for (const id of selectedRowKeys.value) {
+    proxiesStore.remove(id);
+  }
+  selectedRowKeys.value = [];
 }
 
 function deleteUnused() {
