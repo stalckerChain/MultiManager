@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { generateFingerprint, FINGERPRINT_DB } from '../../src/fingerprint/index.js';
+import { generateFingerprint, FINGERPRINT_DB, UA_TEMPLATES } from '../../src/fingerprint/index.js';
 
 const ASPECT_RATIOS = {
   '16:9': 16 / 9,
@@ -40,13 +40,16 @@ describe('Fingerprint Generator', () => {
 
     it('каждая платформа имеет обязательные поля', () => {
       for (const [name, cfg] of Object.entries(FINGERPRINT_DB)) {
-        expect(cfg.userAgents?.length).toBeGreaterThanOrEqual(1);
         expect(cfg.resolutions?.length).toBeGreaterThanOrEqual(1);
         expect(cfg.cores?.length).toBeGreaterThanOrEqual(1);
         expect(cfg.memory?.length).toBeGreaterThanOrEqual(1);
         expect(cfg.colorDepth).toEqual([24, 32]);
         expect(cfg.platform).toBeTruthy();
         expect(cfg.userAgentPattern).toBeInstanceOf(RegExp);
+      }
+      // UA templates are now separate
+      for (const [name, templates] of Object.entries(UA_TEMPLATES)) {
+        expect(templates.length).toBeGreaterThanOrEqual(1);
       }
     });
   });

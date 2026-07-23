@@ -4,7 +4,7 @@ const kill = require('tree-kill');
 const fs = require('fs');
 const path = require('path');
 const { getDatabase, createProfileQueries, createProxyQueries, createLogQueries } = require('../db');
-const { checkProxy, rotateProxy } = require('../proxy');
+const { checkProxy, rotateProxy, getTimezoneByIp } = require('../proxy');
 const { injectCookies, getProfileDir } = require('../cookie/inject');
 const { logger, createProfileLogger } = require('../logger');
 const { broadcastStatus } = require('../core/websocket');
@@ -292,13 +292,29 @@ router.post('/:id/start', asyncHandler(async (req, res) => {
     }
   }
 
+  // GeoIP timezone: detect timezone from proxy IP, fallback to profile timezone
+  let timezone = profile.timezone || 'Asia/Bishkek';
+  if (profile.proxy_id) {
+    const proxyForGeoip = proxyQueries.getById(profile.proxy_id);
+    if (proxyForGeoip && proxyForGeoip.last_ip) {
+      try {
+        const geoResult = await getTimezoneByIp(proxyForGeoip.last_ip);
+        if (geoResult.ok && geoResult.timezone) {
+          timezone = geoResult.timezone;
+          profileLogger.info({ profileId: req.params.id, timezone, ip: proxyForGeoip.last_ip }, 'Timezone определён по GeoIP');
+          logQueries.add(req.params.id, 'info', `GeoIP timezone: ${timezone}`);
+        }
+      } catch (err) {
+        profileLogger.warn({ profileId: req.params.id, error: err.message }, 'GeoIP timezone detection failed, using profile timezone');
+      }
+    }
+  }
+
   const profileDir = getProfileDir(req.params.id);
   const user_data_dir = path.join(profileDir, 'BrowserData');
 
   injectCookies(req.params.id);
   profileLogger.info({ profileId: req.params.id, profileDir: user_data_dir }, 'Куки инжектированы');
-
-  const timezone = profile.timezone || 'Asia/Bishkek';
 
   const args = [
     '--remote-debugging-port=0',

@@ -1,8 +1,14 @@
 const express = require('express');
-const { getDatabase, createProfileQueries } = require('../db');
+const { getDatabase, createProfileQueries, createSystemConfigQueries } = require('../db');
 const { generateFingerprint } = require('../fingerprint');
+const { getCloakBrowserVersion } = require('../core/cloakbrowser-version');
 const { validate, profileCreateSchema, profileUpdateSchema, profileBatchSchema } = require('./validate');
 const { notFound, conflict } = require('./errors');
+
+function getChromeVersion(db) {
+  const configQueries = createSystemConfigQueries(db);
+  return getCloakBrowserVersion((key) => configQueries.get(key));
+}
 
 const router = express.Router();
 
@@ -26,12 +32,13 @@ router.get('/:id', (req, res) => {
 router.post('/batch', validate(profileBatchSchema), (req, res) => {
   const db = getDatabase();
   const queries = createProfileQueries(db);
+  const chromeVersion = getChromeVersion(db);
 
   const { accounts } = req.body;
 
   const insertBatch = db.transaction((items) => {
     return items.map((acct) => {
-      const fingerprint = generateFingerprint(acct.platform);
+      const fingerprint = generateFingerprint(acct.platform, chromeVersion);
       return queries.create({
         name: acct.name,
         platform: acct.platform,
@@ -74,10 +81,11 @@ router.post('/batch', validate(profileBatchSchema), (req, res) => {
 router.post('/', validate(profileCreateSchema), (req, res) => {
   const db = getDatabase();
   const queries = createProfileQueries(db);
+  const chromeVersion = getChromeVersion(db);
 
   const { name, proxy_id, platform, extensions, tags, notes, timezone, email, email_password, twitter_username, twitter_password, twitter_auth_token, twitter_email, discord_username, discord_password, discord_token, discord_email, wallet_evm_address, wallet_sol_address, wallet_password } = req.body;
 
-  const fingerprint = generateFingerprint(platform);
+  const fingerprint = generateFingerprint(platform, chromeVersion);
   
   const profile = queries.create({
     name,
@@ -124,8 +132,9 @@ router.put('/:id', validate(profileUpdateSchema), (req, res) => {
 
   const { name, proxy_id, platform, extensions, tags, notes, timezone, email, email_password, twitter_username, twitter_password, twitter_auth_token, twitter_email, discord_username, discord_password, discord_token, discord_email, wallet_evm_address, wallet_sol_address, wallet_password } = body;
 
+  const chromeVersion = getChromeVersion(db);
   const fingerprint = platform && platform !== profile.platform
-    ? generateFingerprint(platform)
+    ? generateFingerprint(platform, chromeVersion)
     : null;
 
   const updated = queries.update(req.params.id, {
@@ -185,7 +194,8 @@ router.post('/:id/regenerate', (req, res) => {
     throw notFound('Профиль');
   }
 
-  const fingerprint = generateFingerprint(profile.platform);
+  const chromeVersion = getChromeVersion(db);
+  const fingerprint = generateFingerprint(profile.platform, chromeVersion);
   
   db.prepare(`
     UPDATE profiles 

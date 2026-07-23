@@ -2,12 +2,21 @@
 
 ## v1.4.2
 
+### Улучшения
+
+- **[SEC] Динамический User-Agent по версии CloakBrowser.**
+  UA теперь генерируется на основе реальной версии CloakBrowser (Авто-определение из `~/.cloakbrowser/` → ручная настройка в Settings → дефолт). При обновлении CloakBrowser UA автоматически обновляется. ✅ `src/core/cloakbrowser-version.js`, `src/fingerprint/index.js`
+
+- **[SEC] GeoIP timezone при запуске браузера.**
+  Timezone теперь определяется автоматически по IP прокси через `ip-api.com`, а не берётся из профиля. Это guaranteет что timezone соответствует геолокации прокси. ✅ `src/api/browser.js`
+
+- **[API] Настройка версии CloakBrowser.**
+  Новые эндпоинты `GET/PUT /api/settings/cloakbrowser-version` для ручного задания версии. ✅ `src/api/settings.js`
+
 ### Исправления
 
 - **[SEC] User-Agent обновлён с Chrome 131 на Chrome 146.**
   BrowserScan детектировал несоответствие: UA говорил Chrome 131, а реальный браузер CloakBrowser — Chrome 146. Это была мгновенная детекция. ✅ `src/fingerprint/index.js`
-
-### Улучшения
 
 - **[SEC] Антидетект: timezone через `--fingerprint-timezone`.**
   Timezone теперь передаётся на уровне движка CloakBrowser через бинарный флаг `--fingerprint-timezone`, а НЕ через обнаруживаемую CDP-эмуляцию `Emulation.setTimezoneOverride`. Это исключает детектирование мультиаккаунтинга по timezone. ✅ `src/api/browser.js:301-313`

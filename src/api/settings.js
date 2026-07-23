@@ -203,4 +203,46 @@ router.put('/automation', (req, res) => {
   res.json({ status: 'success', syncResult });
 });
 
+// --- CloakBrowser Version ---
+
+const { detectVersionFromCache, getCloakBrowserVersion, DEFAULT_VERSION } = require('../core/cloakbrowser-version');
+
+router.get('/cloakbrowser-version', (req, res) => {
+  const db = getDatabase();
+  const configQueries = createSystemConfigQueries(db);
+
+  const manual = configQueries.get('cloakbrowser_version') || '';
+  const detected = detectVersionFromCache();
+  const current = getCloakBrowserVersion((key) => configQueries.get(key));
+
+  res.json({
+    manual,
+    detected,
+    current,
+    default: DEFAULT_VERSION,
+  });
+});
+
+router.put('/cloakbrowser-version', (req, res) => {
+  const db = getDatabase();
+  const configQueries = createSystemConfigQueries(db);
+
+  const { version } = req.body;
+
+  if (version && !/^\d+\.\d+\.\d+/.test(version)) {
+    return res.status(400).json({ error: 'Невалидный формат версии. Ожидается: major.minor.patch (например 146.0.7680)' });
+  }
+
+  if (version) {
+    configQueries.set('cloakbrowser_version', version);
+  } else {
+    configQueries.del('cloakbrowser_version');
+  }
+
+  const current = getCloakBrowserVersion((key) => configQueries.get(key));
+  logger.info({ version: current }, 'CloakBrowser version updated');
+
+  res.json({ status: 'success', version: current });
+});
+
 module.exports = router;
