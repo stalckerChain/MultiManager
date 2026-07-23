@@ -374,7 +374,7 @@ Authorization: Bearer <token>
 
 ### POST /api/browser/:id/start
 
-启动浏览器。如有绑定代理会自动检查。
+启动浏览器。如有绑定代理会自动检查。浏览器使用反检测参数启动：`--fingerprint-timezone`（来自配置文件的时区）、`--lang=en-US`、`--no-first-run`、`--no-default-browser-check`。遇到 `ERR_ADDRESS_IN_USE` 错误时，自动重试最多3次。
 
 **响应 (200)：**
 ```json

@@ -32,6 +32,44 @@ describe('Browser — getBrowserPath must be awaited in start handler', () => {
   });
 });
 
+// --- Anti-detect browser args tests ---
+
+describe('Browser — anti-detect args and retry logic', () => {
+  const content = readFileSync(BROWSER_JS, 'utf-8');
+
+  it('--fingerprint-timezone is passed as browser arg', () => {
+    expect(content).toContain('--fingerprint-timezone=');
+  });
+
+  it('--lang=en-US is passed as browser arg', () => {
+    expect(content).toContain("'--lang=en-US'");
+  });
+
+  it('--no-first-run is passed as browser arg', () => {
+    expect(content).toContain("'--no-first-run'");
+  });
+
+  it('--no-default-browser-check is passed as browser arg', () => {
+    expect(content).toContain("'--no-default-browser-check'");
+  });
+
+  it('timezone falls back to Asia/Bishkek when profile has no timezone', () => {
+    expect(content).toMatch(/timezone\s*=\s*profile\.timezone\s*\|\|\s*'Asia\/Bishkek'/);
+  });
+
+  it('SPAWN_RETRIES is 3', () => {
+    expect(content).toMatch(/SPAWN_RETRIES\s*=\s*3/);
+  });
+
+  it('SPAWN_RETRY_DELAY_MS is 2000', () => {
+    expect(content).toMatch(/SPAWN_RETRY_DELAY_MS\s*=\s*2000/);
+  });
+
+  it('retry loop checks for ERR_ADDRESS_IN_USE', () => {
+    expect(content).toContain('ERR_ADDRESS_IN_USE');
+  });
+});
+
 // --- Functional unit tests for getBrowserPath ---
 
 function createMockFs({ readdirEntries = [], missingDirs = [] } = {}) {

@@ -1,9 +1,15 @@
-# MultiManager v1.4.1 ✅
+# MultiManager v1.4.2 ✅
 
 AI-Driven Web Automation Platform — кроссплатформенный антидетект-браузер с интеграцией Python-фреймворка автоматизации, графическим интерфейсом и локальным REST API / WebSocket для автономных ИИ-агентов (аналог AdsPower) на базе C++ ядра CloakBrowser.
 
 > **Полная спецификация:** [TS.md](./TS.md) (MultiManager v2.0.0) + [TS_INTEGRATION.md](./TS_INTEGRATION.md) (stAuto0 интеграция).
 > **Фазы Roadmap:** Ф1–Ф4 ✅, Ф5 ✅, Ф6 ✅, **Ф7 ✅ (Automation Matrix)** — подробный план [TASK.md](./TASK.md).
+
+## Что нового в v1.4.2
+
+- **[SEC] Антидетект: timezone через `--fingerprint-timezone`.** Timezone теперь передаётся на уровне движка CloakBrowser через бинарный флаг `--fingerprint-timezone`, а НЕ через обнаруживаемую CDP-эмуляцию `Emulation.setTimezoneOverride`. Это исключает детектирование мультиаккаунтинга по timezone.
+- **[SEC] Антидетект: дополнительные флаги.** Добавлены `--lang=en-US`, `--no-first-run`, `--no-default-browser-check` — отключают первичные диалоги и стандартные проверки браузера.
+- **[FIX] Retry-логика при запуске браузера.** При ошибке `ERR_ADDRESS_IN_USE` автоматически повторяет запуск до 3 раз с задержкой 2 секунды.
 
 ## Что нового в v1.4.1
 

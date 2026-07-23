@@ -374,7 +374,7 @@ Delete all profile cookies.
 
 ### POST /api/browser/:id/start
 
-Start browser. Automatically checks proxy if assigned.
+Start browser. Automatically checks proxy if assigned. Browser launches with anti-detect args: `--fingerprint-timezone` (timezone from profile), `--lang=en-US`, `--no-first-run`, `--no-default-browser-check`. On `ERR_ADDRESS_IN_USE` error, automatically retries up to 3 times.
 
 **Response (200):**
 ```json

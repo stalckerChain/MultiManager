@@ -1,5 +1,23 @@
 # Changelog
 
+## v1.4.2
+
+### Улучшения
+
+- **[SEC] Антидетект: timezone через `--fingerprint-timezone`.**
+  Timezone теперь передаётся на уровне движка CloakBrowser через бинарный флаг `--fingerprint-timezone`, а НЕ через обнаруживаемую CDP-эмуляцию `Emulation.setTimezoneOverride`. Это исключает детектирование мультиаккаунтинга по timezone. ✅ `src/api/browser.js:301-313`
+
+- **[SEC] Антидетект: дополнительные флаги.**
+  Добавлены `--lang=en-US`, `--no-first-run`, `--no-default-browser-check` — отключают первичные диалоги и стандартные проверки браузера. ✅ `src/api/browser.js:309-311`
+
+- **[FIX] Retry-логика при запуске браузера.**
+  При ошибке `ERR_ADDRESS_IN_USE` автоматически повторяет запуск до 3 раз с задержкой 2 секунды. ✅ `src/api/browser.js:356-388`
+
+### Тесты
+
+- Добавлен `tests/unit/browser-start-await.test.js` (8 новых тестов): проверка `--fingerprint-timezone`, `--lang`, `--no-first-run`, `--no-default-browser-check`, `SPAWN_RETRIES`, `SPAWN_RETRY_DELAY_MS`, `ERR_ADDRESS_IN_USE`
+- Всего: **771 тестов** (49 файлов), все проходят
+
 ## v1.4.1
 
 ### Улучшения

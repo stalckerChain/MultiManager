@@ -298,6 +298,8 @@ router.post('/:id/start', asyncHandler(async (req, res) => {
   injectCookies(req.params.id);
   profileLogger.info({ profileId: req.params.id, profileDir: user_data_dir }, 'Куки инжектированы');
 
+  const timezone = profile.timezone || 'Asia/Bishkek';
+
   const args = [
     '--remote-debugging-port=0',
     '--fingerprint-seed=' + profile.fingerprint_seed,
@@ -306,6 +308,10 @@ router.post('/:id/start', asyncHandler(async (req, res) => {
     '--cores=' + profile.hardware_cores,
     '--memory=' + profile.hardware_memory,
     `--user-data-dir=${user_data_dir}`,
+    '--lang=en-US',
+    '--no-first-run',
+    '--no-default-browser-check',
+    `--fingerprint-timezone=${timezone}`,
   ];
 
   if (profile.proxy_id) {
@@ -350,10 +356,38 @@ router.post('/:id/start', asyncHandler(async (req, res) => {
     return res.status(500).json({ error: 'CloakBrowser не установлен. Запустите приложение для загрузки.', code: 'BROWSER_NOT_INSTALLED' });
   }
 
-  const child = spawn(browserPath, args, {
-    detached: true,
-    stdio: ['ignore', 'pipe', 'pipe'],
-  });
+  const SPAWN_RETRIES = 3;
+  const SPAWN_RETRY_DELAY_MS = 2000;
+  let child = null;
+  let lastSpawnError = null;
+
+  for (let attempt = 1; attempt <= SPAWN_RETRIES; attempt++) {
+    try {
+      child = spawn(browserPath, args, {
+        detached: true,
+        stdio: ['ignore', 'pipe', 'pipe'],
+      });
+      break;
+    } catch (err) {
+      lastSpawnError = err;
+      const isAddressInUse = err.message && err.message.includes('ERR_ADDRESS_IN_USE');
+      if (isAddressInUse && attempt < SPAWN_RETRIES) {
+        profileLogger.warn({ profileId: req.params.id, attempt, error: err.message }, 'ERR_ADDRESS_IN_USE, retrying...');
+        logQueries.add(req.params.id, 'warn', `ERR_ADDRESS_IN_USE, попытка ${attempt}/${SPAWN_RETRIES}`);
+        await new Promise(r => setTimeout(r, SPAWN_RETRY_DELAY_MS));
+        continue;
+      }
+      throw err;
+    }
+  }
+
+  if (!child) {
+    profileQueries.updateStatus(req.params.id, 'stopped');
+    broadcastStatus(req.params.id, 'stopped');
+    logQueries.add(req.params.id, 'error', `Ошибка запуска после ${SPAWN_RETRIES} попыток: ${lastSpawnError?.message}`);
+    profileLogger.error({ profileId: req.params.id, error: lastSpawnError?.message }, `Ошибка запуска после ${SPAWN_RETRIES} попыток`);
+    return res.status(500).json({ error: 'Ошибка запуска браузера', code: 'SPAWN_FAILED' });
+  }
 
   let stderrOutput = '';
   child.stderr.on('data', (data) => {
