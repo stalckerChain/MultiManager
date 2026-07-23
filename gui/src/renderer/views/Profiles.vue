@@ -67,7 +67,10 @@
         </template>
 
         <template v-if="column.key === 'proxy'">
-          <span v-if="record.proxy_id" class="text-slate-300">Proxy #{{ record.proxy_id }}</span>
+          <div v-if="record.proxy_id && getProxyById(record.proxy_id)" class="cursor-pointer" @click.stop="showEditProxyModal(record.proxy_id)">
+            <div class="text-xs">{{ getProxyById(record.proxy_id).host }}</div>
+            <div class="text-xs text-slate-500">{{ getProxyById(record.proxy_id).port }}</div>
+          </div>
           <span v-else class="text-slate-500">—</span>
         </template>
 
@@ -112,16 +115,49 @@
     <ProfileModal v-model:open="modalOpen" :profile="editingProfile" @save="handleSave" />
     <CookieImportModal v-model:open="cookieImportOpen" :profile-id="cookieImportProfileId"
       @imported="profilesStore.fetchAll()" />
+
+    <a-modal v-model:open="editProxyModal" :title="t('proxies.edit')" @ok="handleEditProxy"
+      :confirm-loading="editProxyLoading" @cancel="editProxyModal = false">
+      <a-form layout="vertical">
+        <a-form-item label="Type">
+          <a-select v-model:value="editProxy.type">
+            <a-select-option value="socks5">SOCKS5</a-select-option>
+            <a-select-option value="http">HTTP</a-select-option>
+            <a-select-option value="https">HTTPS</a-select-option>
+          </a-select>
+        </a-form-item>
+        <div class="grid grid-cols-2 gap-3">
+          <a-form-item label="Host">
+            <a-input v-model:value="editProxy.host" />
+          </a-form-item>
+          <a-form-item label="Port">
+            <a-input-number v-model:value="editProxy.port" :min="1" :max="65535" style="width: 100%" />
+          </a-form-item>
+        </div>
+        <div class="grid grid-cols-2 gap-3">
+          <a-form-item label="Username">
+            <a-input v-model:value="editProxy.username" />
+          </a-form-item>
+          <a-form-item label="Password">
+            <a-input-password v-model:value="editProxy.password" />
+          </a-form-item>
+        </div>
+        <a-form-item :label="t('proxies.columns.rotation')">
+          <a-input v-model:value="editProxy.proxy_rotation_url" placeholder="https://example.com/rotate" />
+        </a-form-item>
+      </a-form>
+    </a-modal>
   </div>
 </template>
 
 <script setup>
-import { ref, computed, watch, onUnmounted } from 'vue';
+import { ref, reactive, computed, watch, onUnmounted } from 'vue';
 import { useTranslation } from 'i18next-vue';
 import { useProfilesStore } from '../stores/profiles.js';
 import { useBrowserStore } from '../stores/browser.js';
 import { useAppStore } from '../stores/app.js';
 import { useSyncStore } from '../stores/sync.js';
+import { useProxiesStore } from '../stores/proxies.js';
 import { useWebSocket } from '../composables/useWebSocket.js';
 import { SwapOutlined } from '@ant-design/icons-vue';
 import client from '../api/client.js';
@@ -133,6 +169,7 @@ const profilesStore = useProfilesStore();
 const appStore = useAppStore();
 const browserStore = useBrowserStore();
 const syncStore = useSyncStore();
+const proxiesStore = useProxiesStore();
 const { connected } = useWebSocket();
 
 const search = ref('');
@@ -141,6 +178,12 @@ const modalOpen = ref(false);
 const editingProfile = ref(null);
 const cookieImportOpen = ref(false);
 const cookieImportProfileId = ref(null);
+
+const editProxyModal = ref(false);
+const editProxyLoading = ref(false);
+const editProxy = reactive({
+  id: null, type: 'socks5', host: '', port: 1080, username: '', password: '', proxy_rotation_url: '',
+});
 
 const columns = [
   { title: '#', dataIndex: 'number', key: 'number', width: 60 },
@@ -171,6 +214,40 @@ const rowSelection = {
 function parseTags(tags) {
   if (!tags) return [];
   try { return JSON.parse(tags); } catch { return []; }
+}
+
+function getProxyById(id) {
+  return proxiesStore.proxies.find(p => p.id === id) || null;
+}
+
+function showEditProxyModal(proxyId) {
+  const proxy = getProxyById(proxyId);
+  if (!proxy) return;
+  editProxy.id = proxy.id;
+  editProxy.type = proxy.type;
+  editProxy.host = proxy.host;
+  editProxy.port = proxy.port;
+  editProxy.username = proxy.username || '';
+  editProxy.password = proxy.password || '';
+  editProxy.proxy_rotation_url = proxy.proxy_rotation_url || '';
+  editProxyModal.value = true;
+}
+
+async function handleEditProxy() {
+  editProxyLoading.value = true;
+  try {
+    await proxiesStore.update(editProxy.id, {
+      type: editProxy.type,
+      host: editProxy.host,
+      port: editProxy.port,
+      username: editProxy.username,
+      password: editProxy.password,
+      proxy_rotation_url: editProxy.proxy_rotation_url,
+    });
+    editProxyModal.value = false;
+  } finally {
+    editProxyLoading.value = false;
+  }
 }
 
 function statusBadge(status) {
@@ -293,6 +370,7 @@ async function bulkClean() {
 watch(() => appStore.initialized, (ready) => {
   if (ready) {
     profilesStore.fetchAll().catch(() => {});
+    proxiesStore.fetchAll().catch(() => {});
     syncStore.fetchStatus().catch(() => {});
   }
 }, { immediate: true });
