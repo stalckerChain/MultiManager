@@ -71,11 +71,14 @@ function send(ws, method, params = {}, opts = {}) {
  * @param {object} opts - опции: { timeout }
  * @returns {Promise<WebSocket>}
  */
-function connect(port, opts = {}) {
+function connect(portOrUrl, opts = {}) {
   const { timeout = WS_CONNECT_TIMEOUT } = opts;
+  const url = typeof portOrUrl === 'string'
+    ? portOrUrl
+    : `ws://127.0.0.1:${portOrUrl}/devtools/browser`;
 
   return new Promise((resolve, reject) => {
-    const ws = new WebSocket(`ws://127.0.0.1:${port}/devtools/browser`);
+    const ws = new WebSocket(url);
     let settled = false;
 
     ws.on('open', () => {

@@ -234,11 +234,16 @@ GUI передаёт порт бэкенду через **env-переменну
 ### 4.13. Авто-логин Zerion по CDP ✅ РЕАЛИЗОВАНО (Roadmap Ф2 + Ф4)
 > Логика перенесена из Python (`stAuto0/Core/browser.py:348 login_zerion`) в Node.js. Python получает уже залогиненный `ws_endpoint`.
 
-Zerion ID: `klghhnkeealcohjjanjjdaeeggmfmlpl`. Flow:
-1. Открыть `chrome-extension://{ZERION_ID}/popup.8e8f209b.html?windowType=dialog#/login` через CDP.
-2. `wait_for_selector("input[type='password']", 15000)`.
-3. `fill(wallet_password)`, `press("Enter")`.
-4. `wait_for_selector("input[type='password']", state="hidden", 10000)`.
+Zerion ID определяется из `Secure Preferences` профиля (`extensions.settings`) — Chrome генерирует ID из публичного ключа CRX, а не из имени папки расширения. Поиск Zerion через `getManifest()` + `resolveMSG()` по имени расширения.
+
+Flow:
+1. Подключение к CDP через `discoverWsUrl()` (полный URL с UUID).
+2. Поиск существующего Zerion таба (только `#/login` в URL), или создание нового.
+3. Удаление overlay `dialog._3ANLXG_dialog` (до 3 раз, рекурсивно).
+4. Клик по input `input[type='password']` (фокус), установка значения через `Runtime.evaluate`.
+5. Клик по кнопке Unlock (`button[form]`).
+6. Ожидание скрытия `input[type='password']` (overlay удаляется на каждой итерации).
+
 Реализован как `POST /api/browser/:id/zerion-login` ✅ `src/api/browser.js`.
 
 ### 4.14. Migration Wizard (AdsPower/Dolphin{anty}) ❌ ЗАМОРОЖЕНО

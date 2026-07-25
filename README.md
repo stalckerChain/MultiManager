@@ -7,6 +7,8 @@ AI-Driven Web Automation Platform — кроссплатформенный ан�
 
 ## Что нового в v1.4.2
 
+- **[FIX] Zerion auto-login в MM-mode полностью переработан.** Исправлены: CDP connect 404 (discoverWsUrl с UUID), Zerion extension ID из Secure Preferences, поиск по имени расширения, Runtime.callFunctionOn → Runtime.evaluate, overlay removal (рекурсивный), tab matching (только #/login), unlock button (клик вместо Enter).
+
 - **[FIX] Zerion extension ID исправлен.** ID захардкожен неправильно (`klghhnkeealcohjjanjjdaeeggmfmlpl`). Теперь читается из `profile.extensions` — правильный ID `kdlpoccbjdfjbmpiengmbhjdbkfkkkoj`.
 - **[FIX] Error message в run tasks.** Добавлена колонка `error_message` в `run_tasks`. Python передаёт текст ошибки при `report_task_status()`. Отображается тултипом на красных ячейках в интерфейсе.
 - **[FIX] Executor close-handler.** Перед пометкой задач как `failed` перечитывает статус из БД — не перезаписывает `success` если Python уже отчитался.

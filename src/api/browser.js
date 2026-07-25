@@ -8,7 +8,7 @@ const { checkProxy, rotateProxy, getTimezoneByIp } = require('../proxy');
 const { injectCookies, getProfileDir } = require('../cookie/inject');
 const { logger, createProfileLogger } = require('../logger');
 const { broadcastStatus } = require('../core/websocket');
-const { getExtensionsDir } = require('./extensions');
+const { getExtensionsDir, getManifest, resolveMSG } = require('./extensions');
 const { humanType } = require('../typing');
 const { hasMasterKey, getMasterKey } = require('../crypto');
 const { validate, browserTypeSchema } = require('./validate');
@@ -196,7 +196,8 @@ async function loadExtensionsViaCDP(profileId, extPaths, logQueries, profileLogg
   let ws;
   try {
     const port = await waitForCdpPort(profileId);
-    ws = await cdp.connect(port);
+    const wsUrl = await cdp.discoverWsUrl(port);
+    ws = await cdp.connect(wsUrl);
 
     const { targetId } = await cdp.call(ws, 'Target.createTarget', { url: 'about:blank' });
     const { sessionId } = await cdp.call(ws, 'Target.attachToTarget', { targetId, flatten: true });
@@ -607,7 +608,8 @@ async function gracefulCloseBrowser(child, profileId, profileLogger, logQueries)
 }
 
 async function createCdpSession(port) {
-  const ws = await cdp.connect(port);
+  const wsUrl = await cdp.discoverWsUrl(port);
+  const ws = await cdp.connect(wsUrl);
 
   const { targetInfos } = await cdp.call(ws, 'Target.getTargets');
   let targetId = null;
@@ -630,13 +632,21 @@ async function createCdpSession(port) {
   };
 }
 
+async function removeOverlay(ws, sessionId, attempts = 3) {
+  for (let i = 0; i < attempts; i++) {
+    const result = await cdp.call(ws, 'Runtime.evaluate', {
+      expression: `(function(){var el=document.querySelector('dialog._3ANLXG_dialog');if(el){el.remove();return true;}return false;})()`,
+    }, { sessionId });
+    if (!result?.result?.value) break;
+    await new Promise(r => setTimeout(r, 500));
+  }
+}
+
 async function waitForSelector(ws, sessionId, selector, timeout = 15000) {
   const start = Date.now();
   while (Date.now() - start < timeout) {
-    const result = await cdp.call(ws, 'Runtime.callFunctionOn', {
-      functionDeclaration: `function(sel) { return document.querySelector(sel) !== null; }`,
-      arguments: [{ type: 'string', value: selector }],
-      returnByValue: true,
+    const result = await cdp.call(ws, 'Runtime.evaluate', {
+      expression: `document.querySelector(${JSON.stringify(selector)}) !== null`,
     }, { sessionId });
     if (result && result.result && result.result.value) return;
     await new Promise(r => setTimeout(r, 200));
@@ -647,10 +657,11 @@ async function waitForSelector(ws, sessionId, selector, timeout = 15000) {
 async function waitForSelectorHidden(ws, sessionId, selector, timeout = 10000) {
   const start = Date.now();
   while (Date.now() - start < timeout) {
-    const result = await cdp.call(ws, 'Runtime.callFunctionOn', {
-      functionDeclaration: `function(sel) { const el = document.querySelector(sel); return el === null || el.offsetParent === null || el.style.display === 'none'; }`,
-      arguments: [{ type: 'string', value: selector }],
-      returnByValue: true,
+    await cdp.call(ws, 'Runtime.evaluate', {
+      expression: `(function(){var o=document.querySelector('dialog._3ANLXG_dialog');if(o)o.remove();})()`,
+    }, { sessionId });
+    const result = await cdp.call(ws, 'Runtime.evaluate', {
+      expression: `(function(){var el=document.querySelector(${JSON.stringify(selector)});return el===null||el.offsetParent===null||el.style.display==='none';})()`,
     }, { sessionId });
     if (result && result.result && result.result.value) return;
     await new Promise(r => setTimeout(r, 200));
@@ -661,13 +672,14 @@ async function waitForSelectorHidden(ws, sessionId, selector, timeout = 10000) {
 async function zerionLogin(port, password, extensionId) {
   const LOGIN_URL = `chrome-extension://${extensionId}/popup.8e8f209b.html?windowType=dialog#/login`;
 
-  logger.info({ port, loginUrl: LOGIN_URL }, 'zerionLogin: connecting to CDP');
-  const ws = await cdp.connect(port);
+  const wsUrl = await cdp.discoverWsUrl(port);
+  logger.info({ port, wsUrl, loginUrl: LOGIN_URL }, 'zerionLogin: connecting to CDP');
+  const ws = await cdp.connect(wsUrl);
   try {
     const { targetInfos } = await cdp.call(ws, 'Target.getTargets');
     let targetId = null;
     if (targetInfos) {
-      const existing = targetInfos.find(t => t.url && t.url.includes(extensionId));
+      const existing = targetInfos.find(t => t.url && t.url.includes(extensionId) && t.url.includes('#/login'));
       if (existing) targetId = existing.targetId;
     }
 
@@ -682,22 +694,26 @@ async function zerionLogin(port, password, extensionId) {
     const { sessionId } = await cdp.call(ws, 'Target.attachToTarget', { targetId, flatten: true });
     logger.info({ port, targetId, sessionId }, 'zerionLogin: attached to target');
 
+    await new Promise(r => setTimeout(r, 1000));
+
+    await removeOverlay(ws, sessionId);
+    logger.info({ port }, 'zerionLogin: overlay removed');
+
     await waitForSelector(ws, sessionId, "input[type='password']", 15000);
     logger.info({ port }, 'zerionLogin: password input found');
 
-    await cdp.call(ws, 'Runtime.callFunctionOn', {
-      functionDeclaration: `function(pw) { document.querySelector("input[type='password']").value = pw; }`,
-      arguments: [{ type: 'string', value: password }],
-      returnByValue: true,
+    await cdp.call(ws, 'Runtime.evaluate', {
+      expression: `document.querySelector("input[type='password']").click()`,
     }, { sessionId });
 
-    await cdp.call(ws, 'Input.dispatchKeyEvent', {
-      type: 'keyDown', key: 'Enter', code: 'Enter', windowsVirtualKeyCode: 13,
+    await cdp.call(ws, 'Runtime.evaluate', {
+      expression: `document.querySelector("input[type='password']").value = ${JSON.stringify(password)}`,
     }, { sessionId });
-    await cdp.call(ws, 'Input.dispatchKeyEvent', {
-      type: 'keyUp', key: 'Enter', code: 'Enter', windowsVirtualKeyCode: 13,
+
+    await cdp.call(ws, 'Runtime.evaluate', {
+      expression: `(function(){var btn=document.querySelector('button[form]');if(btn)btn.click();})()`,
     }, { sessionId });
-    logger.info({ port }, 'zerionLogin: password entered, waiting for login');
+    logger.info({ port }, 'zerionLogin: unlock button clicked');
 
     await waitForSelectorHidden(ws, sessionId, "input[type='password']", 10000);
     logger.info({ port }, 'zerionLogin: login complete');
@@ -762,9 +778,30 @@ router.post('/:id/zerion-login', asyncHandler(async (req, res) => {
   const walletPassword = profile.wallet_password;
   if (!walletPassword) throw badRequest('Не задан wallet_password в профиле');
 
-  const extIds = tryParseJson(profile.extensions);
-  const zerionExtId = extIds.length > 0 ? extIds[0] : null;
-  if (!zerionExtId) throw badRequest('Не найден Zerion extension ID в профиле');
+  const extDir = getExtensionsDir();
+  let zerionExtId = null;
+
+  const profileDir = getProfileDir(req.params.id);
+  const securePrefsPath = path.join(profileDir, 'BrowserData', 'Default', 'Secure Preferences');
+  try {
+    const data = JSON.parse(await fs.promises.readFile(securePrefsPath, 'utf-8'));
+    const settings = data?.extensions?.settings || {};
+    for (const [extId, extSettings] of Object.entries(settings)) {
+      const extPath = extSettings.path;
+      if (!extPath) continue;
+      const manifest = await getManifest(extPath);
+      if (!manifest) continue;
+      const name = await resolveMSG(manifest.name, extPath) || '';
+      if (name.toLowerCase().includes('zerion')) {
+        zerionExtId = extId;
+        break;
+      }
+    }
+  } catch (err) {
+    logger.warn({ profileId: req.params.id, error: err.message }, 'zerion-login: failed to read Secure Preferences');
+  }
+
+  if (!zerionExtId) throw badRequest('Не найдено расширение Zerion в профиле');
 
   logger.info({ profileId: req.params.id, cdpPort, hasPassword: !!walletPassword, zerionExtId }, 'zerion-login: starting');
 
