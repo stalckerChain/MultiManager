@@ -99,7 +99,20 @@
                         v-if="getTaskStatus(run.id, proj, profileKey)"
                         class="w-full h-full min-h-[24px] flex items-center justify-center"
                       >
+                        <a-tooltip v-if="getTaskError(run.id, proj, profileKey)">
+                          <template #title>
+                            <span class="text-red-400">{{ getTaskError(run.id, proj, profileKey) }}</span>
+                          </template>
+                          <div
+                            class="w-4 h-4 rounded cursor-pointer relative"
+                            :class="cellColorClass(getTaskStatus(run.id, proj, profileKey))"
+                            @click="openLog(getTaskLog(run.id, proj, profileKey))"
+                          >
+                            <span class="absolute -top-1 -right-1 text-[8px] text-red-400 font-bold">!</span>
+                          </div>
+                        </a-tooltip>
                         <div
+                          v-else
                           class="w-4 h-4 rounded cursor-pointer"
                           :class="cellColorClass(getTaskStatus(run.id, proj, profileKey))"
                           :title="getTaskStatus(run.id, proj, profileKey)"
@@ -218,6 +231,14 @@ function getTaskLog(runId, projectName, profileKey) {
   if (!group) return null;
   const task = group.tasks.find(t => t.project_name === projectName);
   return task ? task.log_file_path : null;
+}
+
+function getTaskError(runId, projectName, profileKey) {
+  const tasks = runTasks.value[runId] || [];
+  const group = groupedTasks(runId)[profileKey];
+  if (!group) return null;
+  const task = group.tasks.find(t => t.project_name === projectName);
+  return task ? task.error_message : null;
 }
 
 function cellColorClass(status) {

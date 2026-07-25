@@ -119,4 +119,32 @@ describe('RunExecutor', () => {
     expect(killMock).toHaveBeenCalled();
     expect(exec.options.updateRun).toHaveBeenCalledWith('run-001', 'cancelled');
   });
+
+  it('close handler re-reads tasks from DB before marking failed', async () => {
+    let callCount = 0;
+    const getRunTasks = vi.fn(() => {
+      callCount++;
+      if (callCount === 1) {
+        return Promise.resolve([
+          { id: 1, project_name: 'concrete', profile_id: 'p1', status: 'pending' },
+        ]);
+      }
+      // Second call (from close handler) — task already updated by Python
+      return Promise.resolve([
+        { id: 1, project_name: 'concrete', profile_id: 'p1', status: 'success' },
+      ]);
+    });
+
+    const exec = new RunExecutor(
+      { id: 'run-close', status: 'running', parallel_limit: 1 },
+      {
+        ...executor.options,
+        getRunTasks,
+      }
+    );
+
+    await exec.start();
+    // Should NOT mark task as failed because DB shows success
+    expect(executor.options.updateRunTaskStatus).not.toHaveBeenCalledWith(1, 'failed');
+  });
 });

@@ -129,6 +129,7 @@
 | `exit_code` | INTEGER | Код выхода Python |
 | `log_file_path` | TEXT | Путь к логу |
 | `attempts` | INTEGER | Сколько попыток заняло |
+| `error_message` | TEXT | Текст ошибки от Python (zerion login, etc.) |
 | `started_at`, `completed_at` | DATETIME | |
 
 ### 3.4. Порт и токен Core (env-переменные)
@@ -262,7 +263,7 @@ Zerion ID: `klghhnkeealcohjjanjjdaeeggmfmlpl`. Flow:
 | `/api/runs/:id` | GET | Run + run_tasks (цветная матрица) |
 | `/api/runs/:id/start` | POST | Запустить выполнение |
 | `/api/runs/:id/cancel` | POST | Отменить выполнение |
-| `/api/internal/runs/:id/task-status` | POST | Callback от stAuto0 — обновить статус клетки |
+| `/api/internal/runs/:id/task-status` | POST | Callback от stAuto0 — обновить статус клетки + error_message |
 
 -------------------------------
 ## 5. Стратегия логирования ✅ РЕАЛИЗОВАНО

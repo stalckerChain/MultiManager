@@ -58,6 +58,14 @@ class RunExecutor {
     // Finalize run status if still running (Python scripts may not have reported back)
     if (!this._cancelled && this.options.updateRun) {
       const tasks = await this.options.getRunTasks();
+      const statusCounts = { success: 0, failed: 0, running: 0, pending: 0 };
+      for (const t of tasks) {
+        statusCounts[t.status] = (statusCounts[t.status] || 0) + 1;
+      }
+      if (this.options.logger) {
+        this.options.logger.info({ runId: this.run.id, ...statusCounts }, 'Run finalization: task status summary');
+      }
+
       const allDone = tasks.every(t => t.status === 'success' || t.status === 'failed');
       if (allDone) {
         const hasFailures = tasks.some(t => t.status === 'failed');
@@ -97,7 +105,21 @@ class RunExecutor {
       `--port=${this.options.mmPort}`,
     ];
 
-    const logDir = path.join('logs', 'runs', this.run.id);
+    // Pass Zerion extension ID from profile's extensions field
+    let zerionId = '';
+    if (profile && profile.extensions) {
+      try {
+        const extensions = JSON.parse(profile.extensions);
+        if (Array.isArray(extensions) && extensions.length > 0) {
+          zerionId = extensions[0];
+        }
+      } catch (e) {
+        // ignore parse errors
+      }
+    }
+
+    const projectRoot = path.resolve(__dirname, '..', '..');
+    const logDir = path.join(projectRoot, 'logs', 'runs', this.run.id);
     fs.mkdirSync(logDir, { recursive: true });
     const logPath = path.join(logDir, `${profileName}.log`);
     const logStream = fs.createWriteStream(logPath, { flags: 'a' });
@@ -118,7 +140,7 @@ class RunExecutor {
       child = this.options.spawn(this.options.pythonPath, args, {
         cwd: this.options.stAuto0Path,
         stdio: ['ignore', 'pipe', 'pipe'],
-        env: { ...process.env, MM_TOKEN: this.options.apiToken },
+        env: { ...process.env, MM_TOKEN: this.options.apiToken, ...(zerionId ? { ZERION_ID: zerionId } : {}) },
       });
     } catch (err) {
       logStream.end();
@@ -150,17 +172,24 @@ class RunExecutor {
         reject(err);
       });
 
-      child.on('close', (code) => {
+      child.on('close', async (code) => {
         logStream.end();
         this.processes.delete(profileId);
         if (this.options.logger) {
           this.options.logger.info({ code, profileId, profileName }, 'Child process exited');
         }
-        // Mark tasks that weren't reported back as failed
-        for (const task of tasks) {
+
+        // Re-read tasks from DB — Python callback may have updated status
+        const updatedTasks = await this.options.getRunTasks();
+        let failedCount = 0;
+        for (const task of updatedTasks) {
           if (task.status === 'running') {
             this.options.updateRunTaskStatus(task.id, 'failed');
+            failedCount++;
           }
+        }
+        if (this.options.logger && failedCount > 0) {
+          this.options.logger.warn({ code, profileId, failedCount }, 'Tasks still running after process exit — marked as failed');
         }
         resolve();
       });

@@ -129,4 +129,26 @@ describe('POST /api/internal/runs/:id/task-status', () => {
       .send({ project_name: 'nonexistent', profile_name: 'auto_001', status: 'success' });
     expect(res.status).toBe(404);
   });
+
+  it('stores error_message when provided', async () => {
+    const { run } = seedRun(db, runQueries, runTaskQueries, profileQueries);
+    const res = await request(app)
+      .post(`/api/internal/runs/${run.id}/task-status`)
+      .send({ project_name: 'concrete', profile_name: 'auto_001', status: 'failed', error_message: 'Zerion login failed: 404' });
+    expect(res.status).toBe(200);
+    const tasks = runTaskQueries.getByRunId(run.id);
+    expect(tasks[0].error_message).toBe('Zerion login failed: 404');
+  });
+
+  it('does not overwrite error_message with null', async () => {
+    const { run } = seedRun(db, runQueries, runTaskQueries, profileQueries);
+    await request(app)
+      .post(`/api/internal/runs/${run.id}/task-status`)
+      .send({ project_name: 'concrete', profile_name: 'auto_001', status: 'failed', error_message: 'First error' });
+    await request(app)
+      .post(`/api/internal/runs/${run.id}/task-status`)
+      .send({ project_name: 'concrete', profile_name: 'auto_001', status: 'failed' });
+    const tasks = runTaskQueries.getByRunId(run.id);
+    expect(tasks[0].error_message).toBe('First error');
+  });
 });

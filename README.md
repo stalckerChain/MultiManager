@@ -7,6 +7,11 @@ AI-Driven Web Automation Platform — кроссплатформенный ан�
 
 ## Что нового в v1.4.2
 
+- **[FIX] Zerion extension ID исправлен.** ID захардкожен неправильно (`klghhnkeealcohjjanjjdaeeggmfmlpl`). Теперь читается из `profile.extensions` — правильный ID `kdlpoccbjdfjbmpiengmbhjdbkfkkkoj`.
+- **[FIX] Error message в run tasks.** Добавлена колонка `error_message` в `run_tasks`. Python передаёт текст ошибки при `report_task_status()`. Отображается тултипом на красных ячейках в интерфейсе.
+- **[FIX] Executor close-handler.** Перед пометкой задач как `failed` перечитывает статус из БД — не перезаписывает `success` если Python уже отчитался.
+- **[LOG] Плотное логирование.** Zerion-login, report_task_status, CDP-подключение — все ключевые шаги залогированы в Python и Node.js.
+
 - **[SEC] Динамический User-Agent по версии CloakBrowser.** UA теперь генерируется на основе реальной версии CloakBrowser (авто-определение из `~/.cloakbrowser/` → ручная настройка в Settings → дефолт). При обновлении CloakBrowser UA автоматически обновляется.
 - **[SEC] GeoIP timezone при запуске браузера.** Timezone определяется автоматически по IP прокси через `ip-api.com`, guaranteет соответствие timezone геолокации прокси.
 - **[API] Настройка версии CloakBrowser.** Новые эндпоинты `GET/PUT /api/settings/cloakbrowser-version` для ручного задания версии.

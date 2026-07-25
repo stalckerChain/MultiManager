@@ -2,6 +2,17 @@
 
 ## v1.4.2
 
+### Исправления
+
+- **[FIX] Zerion extension ID исправлен.**
+  ID был захардкожен неправильно (`klghhnkeealcohjjanjjdaeeggmfmlpl`). Теперь читается из `profile.extensions` — правильный ID `kdlpoccbjdfjbmpiengmbhjdbkfkkkoj`. ✅ `src/api/browser.js`
+
+- **[FIX] Error message в run tasks.**
+  Добавлена колонка `error_message` в таблицу `run_tasks` (миграция). Python передаёт текст ошибки при `report_task_status()`. В интерфейсе отображается тултипом на красных ячейках. ✅ `src/db/schema.js`, `src/db/queries.js`, `src/api/internal-runs.js`
+
+- **[FIX] Executor close-handler не перезаписывает success.**
+  Перед пометкой задач как `failed` executor перечитывает статус из БД — если Python уже отчитался (`success`), задача не помечается как `failed`. ✅ `src/executor/index.js`
+
 ### Улучшения
 
 - **[SEC] Динамический User-Agent по версии CloakBrowser.**

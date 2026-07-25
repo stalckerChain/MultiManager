@@ -60,6 +60,7 @@ const AUTOMATION_TABLES_SQL = `
       exit_code INTEGER,
       log_file_path TEXT,
       attempts INTEGER,
+      error_message TEXT,
       started_at DATETIME,
       completed_at DATETIME,
       FOREIGN KEY (run_id) REFERENCES runs(id) ON DELETE CASCADE,
@@ -227,6 +228,15 @@ function migrateTables(db) {
     const proxyColumns = db.pragma('table_info(proxies)').map(r => r.name);
     if (!proxyColumns.includes('location')) {
       db.exec('ALTER TABLE proxies ADD COLUMN location TEXT');
+    }
+  }
+
+  // Миграция run_tasks: добавляем колонку error_message если её нет
+  const runTasksExists = db.prepare("SELECT name FROM sqlite_master WHERE type='table' AND name='run_tasks'").all();
+  if (runTasksExists.length > 0) {
+    const runTaskColumns = db.pragma('table_info(run_tasks)').map(r => r.name);
+    if (!runTaskColumns.includes('error_message')) {
+      db.exec('ALTER TABLE run_tasks ADD COLUMN error_message TEXT');
     }
   }
 }

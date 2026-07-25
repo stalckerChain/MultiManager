@@ -658,28 +658,32 @@ async function waitForSelectorHidden(ws, sessionId, selector, timeout = 10000) {
   throw new Error(`Timeout waiting for selector to hide: ${selector}`);
 }
 
-const ZERION_EXTENSION_ID = 'klghhnkeealcohjjanjjdaeeggmfmlpl';
+async function zerionLogin(port, password, extensionId) {
+  const LOGIN_URL = `chrome-extension://${extensionId}/popup.8e8f209b.html?windowType=dialog#/login`;
 
-async function zerionLogin(port, password) {
-  const LOGIN_URL = `chrome-extension://${ZERION_EXTENSION_ID}/popup.8e8f209b.html?windowType=dialog#/login`;
-
+  logger.info({ port, loginUrl: LOGIN_URL }, 'zerionLogin: connecting to CDP');
   const ws = await cdp.connect(port);
   try {
     const { targetInfos } = await cdp.call(ws, 'Target.getTargets');
     let targetId = null;
     if (targetInfos) {
-      const existing = targetInfos.find(t => t.url && t.url.includes(ZERION_EXTENSION_ID));
+      const existing = targetInfos.find(t => t.url && t.url.includes(extensionId));
       if (existing) targetId = existing.targetId;
     }
 
     if (!targetId) {
+      logger.info({ port }, 'zerionLogin: creating new Zerion tab');
       const result = await cdp.call(ws, 'Target.createTarget', { url: LOGIN_URL });
       targetId = result.targetId;
+    } else {
+      logger.info({ port, targetId }, 'zerionLogin: found existing Zerion tab');
     }
 
     const { sessionId } = await cdp.call(ws, 'Target.attachToTarget', { targetId, flatten: true });
+    logger.info({ port, targetId, sessionId }, 'zerionLogin: attached to target');
 
     await waitForSelector(ws, sessionId, "input[type='password']", 15000);
+    logger.info({ port }, 'zerionLogin: password input found');
 
     await cdp.call(ws, 'Runtime.callFunctionOn', {
       functionDeclaration: `function(pw) { document.querySelector("input[type='password']").value = pw; }`,
@@ -693,8 +697,10 @@ async function zerionLogin(port, password) {
     await cdp.call(ws, 'Input.dispatchKeyEvent', {
       type: 'keyUp', key: 'Enter', code: 'Enter', windowsVirtualKeyCode: 13,
     }, { sessionId });
+    logger.info({ port }, 'zerionLogin: password entered, waiting for login');
 
     await waitForSelectorHidden(ws, sessionId, "input[type='password']", 10000);
+    logger.info({ port }, 'zerionLogin: login complete');
   } finally {
     ws.close();
   }
@@ -756,11 +762,19 @@ router.post('/:id/zerion-login', asyncHandler(async (req, res) => {
   const walletPassword = profile.wallet_password;
   if (!walletPassword) throw badRequest('Не задан wallet_password в профиле');
 
+  const extIds = tryParseJson(profile.extensions);
+  const zerionExtId = extIds.length > 0 ? extIds[0] : null;
+  if (!zerionExtId) throw badRequest('Не найден Zerion extension ID в профиле');
+
+  logger.info({ profileId: req.params.id, cdpPort, hasPassword: !!walletPassword, zerionExtId }, 'zerion-login: starting');
+
   try {
-    await zerionLogin(cdpPort, walletPassword);
+    await zerionLogin(cdpPort, walletPassword, zerionExtId);
+    logger.info({ profileId: req.params.id }, 'zerion-login: success');
     logQueries.add(req.params.id, 'info', 'Zerion auto-login успешен');
     res.json({ status: 'success' });
   } catch (err) {
+    logger.error({ profileId: req.params.id, error: err.message }, 'zerion-login: failed');
     logQueries.add(req.params.id, 'error', `Zerion login failed: ${err.message}`);
     throw serverError('Zerion login failed', err.message);
   }

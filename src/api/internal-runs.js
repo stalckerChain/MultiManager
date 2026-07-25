@@ -28,7 +28,7 @@ function createInternalRunsRouter(opts = {}) {
   }
 
   router.post('/:id/task-status', (req, res) => {
-    const { project_name, profile_name, status, attempts } = req.body;
+    const { project_name, profile_name, status, attempts, error_message } = req.body;
     if (!project_name || !profile_name || !status) {
       return res.status(400).json({ error: 'project_name, profile_name and status are required' });
     }
@@ -56,7 +56,7 @@ function createInternalRunsRouter(opts = {}) {
     }
 
     const exitCode = status === 'success' ? 0 : 1;
-    getRunTasks().updateStatus(task.id, status, exitCode, null, attempts);
+    getRunTasks().updateStatus(task.id, status, exitCode, null, attempts, error_message || null);
 
     getRuns().incrementCompleted(req.params.id, status === 'success');
 

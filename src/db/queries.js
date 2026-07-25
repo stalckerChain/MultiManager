@@ -593,7 +593,7 @@ function createRunTaskQueries(db) {
   const getByRunIdStmt = db.prepare('SELECT * FROM run_tasks WHERE run_id = ?');
   const getByProfileStmt = db.prepare('SELECT * FROM run_tasks WHERE run_id = ? AND profile_id = ?');
   const updateStatusStmt = db.prepare(`
-    UPDATE run_tasks SET status = ?, exit_code = ?, log_file_path = COALESCE(?, log_file_path), attempts = COALESCE(?, attempts), completed_at = CASE WHEN ? IS NOT NULL THEN CURRENT_TIMESTAMP ELSE completed_at END
+    UPDATE run_tasks SET status = ?, exit_code = ?, log_file_path = COALESCE(?, log_file_path), attempts = COALESCE(?, attempts), error_message = COALESCE(?, error_message), completed_at = CASE WHEN ? IS NOT NULL THEN CURRENT_TIMESTAMP ELSE completed_at END
     WHERE id = ?
   `);
   const getByIdStmt = db.prepare('SELECT * FROM run_tasks WHERE id = ?');
@@ -623,8 +623,8 @@ function createRunTaskQueries(db) {
       return getByRunIdStmt.all(runId);
     },
 
-    updateStatus(id, status, exitCode = null, logPath = null, attempts = null) {
-      updateStatusStmt.run(status, exitCode, logPath, attempts, status === 'success' || status === 'failed' ? 1 : null, id);
+    updateStatus(id, status, exitCode = null, logPath = null, attempts = null, errorMessage = null) {
+      updateStatusStmt.run(status, exitCode, logPath, attempts, errorMessage, status === 'success' || status === 'failed' ? 1 : null, id);
       return getByIdStmt.get(id);
     },
 

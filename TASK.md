@@ -1,31 +1,38 @@
-# Задача: Доработка запуска браузера (антидетект + timezone)
+# Задача: Исправление Zerion extension ID + финализация
 
-**Дата:** 2026-07-24
+**Дата:** 2025-07-25
 **Статус:** Готово
-**Проблема:** MultiManager запускает CloakBrowser без timezone, locale — сайты палится мультиаккаунт.
+**Проекты:** MultiManager + stAuto0
+
+---
 
 ## Что сделано
 
-### 1. Добавлены аргументы браузера
+### Исправление Zerion ID
+- `browser.js` — читает ID из `profile.extensions` вместо хардкода
+- `browser.py` — default ID исправлен
+- `init_wallet4browser.py` — hardcoded ID исправлен
+- `copy_zerion_extention.py` — hardcoded ID исправлен
 
-**Файл:** `src/api/browser.js:301-313`
+### Исправление error_message в run tasks
+- Добавлена колонка `error_message` в `run_tasks` (миграция)
+- `internal-runs.js` — принимает `error_message` из request body
+- `queries.js` — `updateStatus` обновляет `error_message`
+- `multimanager.py` — `report_task_status` принимает `error_message`
 
-- `--lang=en-US` — язык интерфейса браузера
-- `--no-first-run` — отключение первичных диалогов
-- `--no-default-browser-check` — отключение проверки браузера по умолчанию
-- `--fingerprint-timezone={timezone}` — timezone на уровне движка (НЕ через CDP!)
+### Исправление executor close-handler
+- `executor/index.js` — перечитывает статус из БД перед пометкой failed
 
-### 2. Retry-логика при ERR_ADDRESS_IN_USE
+### Логирование
+- `main.py` — логирование mm_client, report_task_status
+- `multimanager.py` — логирование zerion_login, report_task_status
+- `browser.js` — логирование zerion-login endpoint и CDP
 
-**Файл:** `src/api/browser.js:356-388`
+---
 
-- 3 попытки с задержкой 2 секунды
-- Логирование каждой попытки
+## Финализация
 
-### 3. Почему НЕ CDP Emulation.setTimezoneOverride
-
-CloakBrowser намеренно устанавливает timezone через бинарные флаги (`--fingerprint-timezone`), а НЕ через CDP, потому что CDP-эмуляция обнаруживается детекторами ботов.
-
-## Результат
-
-- **763 тестов** — все проходят
+1. Тесты MM — обновить
+2. Тесты stAuto0 — обновить
+3. Документация MM — README, CHANGELOG, TS.md
+4. Коммиты — оба проекта
