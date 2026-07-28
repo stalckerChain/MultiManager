@@ -1,5 +1,6 @@
 import { defineStore } from 'pinia';
 import { ref } from 'vue';
+import { message } from 'ant-design-vue';
 import client from '../api/client.js';
 
 export const useProfilesStore = defineStore('profiles', () => {
@@ -33,8 +34,14 @@ export const useProfilesStore = defineStore('profiles', () => {
   }
 
   async function remove(id) {
-    await client.delete(`/api/profiles/${id}`);
-    profiles.value = profiles.value.filter(p => p.id !== id);
+    try {
+      await client.delete(`/api/profiles/${id}`);
+      profiles.value = profiles.value.filter(p => p.id !== id);
+    } catch (err) {
+      const msg = err.response?.data?.error || 'Ошибка удаления профиля';
+      message.error(msg);
+      throw err;
+    }
   }
 
   async function regenerate(id) {

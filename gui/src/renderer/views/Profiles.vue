@@ -292,7 +292,7 @@ function handleContext({ key }, record) {
       break;
     case 'exportCookies': exportCookies(record); break;
     case 'delete':
-      profilesStore.remove(record.id);
+      profilesStore.remove(record.id).catch(() => {});
       break;
   }
 }
@@ -327,9 +327,11 @@ async function bulkStop() {
   selectedRowKeys.value = [];
 }
 
-function bulkDelete() {
+async function bulkDelete() {
   for (const id of selectedRowKeys.value) {
-    profilesStore.remove(id);
+    try {
+      await profilesStore.remove(id);
+    } catch {}
   }
   selectedRowKeys.value = [];
 }

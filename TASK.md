@@ -1,48 +1,54 @@
-# Задача: Исправление Zerion login в MM-mode + финализация
+# Задача: Исправление удаления профилей (FOREIGN KEY constraint failed)
 
-**Дата:** 2025-07-26
-**Статус:** Готово
-**Проекты:** MultiManager + stAuto0
-
----
-
-## Что сделано
-
-### Zerion auto-login в MM-mode — полностью переработан
-
-**Проблема:** при запуске автоматизации через MM, zeriон-login падал с ошибками (404, ERR_BLOCKED_BY_CLIENT, неверный extension ID).
-
-**Исправления:**
-
-1. **CDP connect 404** — `cdp/client.js:connect()` теперь принимает URL-строку (не только порт). `loadExtensionsViaCDP`, `zerionLogin`, `createCdpSession` используют `discoverWsUrl()` для получения полного WebSocket URL с UUID.
-
-2. **Zerion extension ID** — вместо `extIds[0]` из `profile.extensions`, теперь читаем из `Secure Preferences` профиля (`extensions.settings`). Chrome генерирует ID из публичного ключа CRX, а не из имени папки.
-
-3. **Поиск Zerion по имени** — через `getManifest()` + `resolveMSG()` (уже существующие функции в `extensions.js`).
-
-4. **Runtime.callFunctionOn → Runtime.evaluate** — все CDP-вызовы заменены на `Runtime.evaluate` (не требует `executionContextId`). Затронуты: `waitForSelector`, `waitForSelectorHidden`, overlay removal, password input.
-
-5. **Overlay removal** — новая функция `removeOverlay()` удаляет `dialog._3ANLXG_dialog` до 3 раз с паузой 500мс. Также вызывается на каждой итерации `waitForSelectorHidden`.
-
-6. **Tab matching** — при поиске существующего Zerion таба добавлена проверка `t.url.includes('#/login')`, чтобы не захватить onboarding/welcome таб.
-
-7. **Unlock button** — вместо `Input.dispatchKeyEvent(Enter)`, кликаем `document.querySelector('button[form]').click()`.
-
-### Error message в run tasks (ранее)
-- Добавлена колонка `error_message` в `run_tasks` (миграция)
-- `internal-runs.js`, `queries.js`, `multimanager.py` — передача и хранение ошибок
-
-### Executor close-handler (ранее)
-- `executor/index.js` — перечитывает статус из БД перед пометкой failed
-
-### Логирование (ранее)
-- `main.py`, `multimanager.py`, `browser.js` — логирование ключевых шагов
+**Дата:** 2026-07-27
+**Статус:** Выполнено
 
 ---
 
-## Что сделано зря (не делать)
+## Проблема
 
-### Изменение hardcoded ID в stAuto0 — НЕ НУЖНО
-- В MM-mode stAuto0 не использует `ZERION_ID` — делегирует в MM API
-- Legacy режим работает с hardcoded `klghhnkeealcohjjanjjdaeeggmfmlpl`
-- stAuto0 уже откатил эти изменения
+Удаление профилей работает с ошибками: сразу после создания удаляется нормально, но после участия в авто-ране перестаёт работать. В `core.log` ошибка:
+```
+SqliteError: FOREIGN KEY constraint failed
+  at Object.delete (queries.js:132)
+  at profiles.js:184
+```
+
+## Корневая причина
+
+`src/db/schema.js:68` — у `run_tasks.profile_id` отсутствует `ON DELETE CASCADE`:
+```sql
+FOREIGN KEY (profile_id) REFERENCES profiles(id)  -- без CASCADE
+```
+После участия профиля в авто-ране в `run_tasks` появляются строки с его ID. При попытке DELETE SQLite блокирует операцию из-за FK-constraint.
+
+## План реализации
+
+### 1. `src/db/schema.js` — миграция run_tasks + исправление исходного SQL
+
+**Исходный SQL (строка 68):**
+- Добавить `ON DELETE CASCADE` к `FOREIGN KEY (profile_id) REFERENCES profiles(id)`
+
+**Миграция (migrateTables):**
+- Проверить, существует ли CASCADE (по `sqlite_master.sql`)
+- Если нет — recreate таблицу в транзакции:
+  1. `PRAGMA foreign_keys = OFF`
+  2. `CREATE TABLE run_tasks_new (... WITH CASCADE)`
+  3. `INSERT INTO run_tasks_new SELECT * FROM run_tasks`
+  4. `DROP TABLE run_tasks`
+  5. `ALTER TABLE run_tasks_new RENAME TO run_tasks`
+  6. Создать индексы
+  7. `PRAGMA foreign_keys = ON`
+
+### 2. `src/api/profiles.js:171-186` — обработка ошибок DELETE
+
+- Обернуть `queries.delete()` в try/catch
+- Ловить `SqliteError`, возвращать понятное сообщение
+- Логировать ошибку с profileId
+
+### 3. `gui/src/renderer/stores/profiles.js:35-38` — обработка ошибок в `remove()`
+
+- Добавить try/catch
+- Показывать уведомление через `message.error()`
+
+### 4. `gui/src/renderer/views/Profiles.vue:284-298` — error handling в handleContext/bulkDelete

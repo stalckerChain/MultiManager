@@ -64,8 +64,8 @@ const AUTOMATION_TABLES_SQL = `
       started_at DATETIME,
       completed_at DATETIME,
       FOREIGN KEY (run_id) REFERENCES runs(id) ON DELETE CASCADE,
-      FOREIGN KEY (project_name) REFERENCES projects(name),
-      FOREIGN KEY (profile_id) REFERENCES profiles(id)
+      FOREIGN KEY (project_name) REFERENCES projects(name) ON DELETE CASCADE,
+      FOREIGN KEY (profile_id) REFERENCES profiles(id) ON DELETE CASCADE
     );
 
     CREATE INDEX IF NOT EXISTS idx_project_profile_config_project ON project_profile_config(project_name);
@@ -237,6 +237,41 @@ function migrateTables(db) {
     const runTaskColumns = db.pragma('table_info(run_tasks)').map(r => r.name);
     if (!runTaskColumns.includes('error_message')) {
       db.exec('ALTER TABLE run_tasks ADD COLUMN error_message TEXT');
+    }
+  }
+
+  // Миграция run_tasks: добавляем ON DELETE CASCADE для profile_id и project_name
+  if (runTasksExists.length > 0) {
+    const createSql = db.prepare("SELECT sql FROM sqlite_master WHERE type='table' AND name='run_tasks'").pluck().get();
+    if (createSql && (!createSql.includes('ON DELETE CASCADE') || !createSql.includes('REFERENCES projects(name) ON DELETE CASCADE'))) {
+      const mig = db.transaction(() => {
+        db.pragma('foreign_keys = OFF');
+        db.exec(`
+          CREATE TABLE run_tasks_new (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            run_id TEXT NOT NULL,
+            project_name TEXT NOT NULL,
+            profile_id TEXT NOT NULL,
+            status TEXT DEFAULT 'pending' CHECK(status IN ('pending','running','success','failed')),
+            exit_code INTEGER,
+            log_file_path TEXT,
+            attempts INTEGER,
+            error_message TEXT,
+            started_at DATETIME,
+            completed_at DATETIME,
+            FOREIGN KEY (run_id) REFERENCES runs(id) ON DELETE CASCADE,
+            FOREIGN KEY (project_name) REFERENCES projects(name) ON DELETE CASCADE,
+            FOREIGN KEY (profile_id) REFERENCES profiles(id) ON DELETE CASCADE
+          );
+        `);
+        db.exec('INSERT INTO run_tasks_new SELECT * FROM run_tasks');
+        db.exec('DROP TABLE run_tasks');
+        db.exec('ALTER TABLE run_tasks_new RENAME TO run_tasks');
+        db.exec('CREATE INDEX IF NOT EXISTS idx_run_tasks_run_id ON run_tasks(run_id)');
+        db.exec('CREATE INDEX IF NOT EXISTS idx_run_tasks_profile_id ON run_tasks(profile_id)');
+        db.pragma('foreign_keys = ON');
+      });
+      mig();
     }
   }
 }

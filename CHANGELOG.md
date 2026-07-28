@@ -1,5 +1,20 @@
 # Changelog
 
+## v1.4.3
+
+### Исправления
+
+- **[FIX] FOREIGN KEY constraint failed при удалении профилей, участвовавших в авто-ране.**
+  В `run_tasks.profile_id` отсутствовал `ON DELETE CASCADE`. При DELETE профиля, имеющего строки в `run_tasks`, SQLite блокировал операцию. Добавлена миграция с recreate таблицы в транзакции.
+  ✅ `src/db/schema.js`, `src/api/profiles.js`, `gui/src/renderer/stores/profiles.js`, `gui/src/renderer/views/Profiles.vue`
+
+### Тесты
+
+- Добавлен `tests/unit/fk-cascade-profile-delete.test.js` (5 тестов): проверка CASCADE, идемпотентности миграции, error handling в API.
+- Всего: **779 тестов** (50 файлов), все проходят
+
+---
+
 ## v1.4.2
 
 ### Исправления

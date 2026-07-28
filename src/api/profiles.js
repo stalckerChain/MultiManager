@@ -3,7 +3,8 @@ const { getDatabase, createProfileQueries, createSystemConfigQueries } = require
 const { generateFingerprint } = require('../fingerprint');
 const { getCloakBrowserVersion } = require('../core/cloakbrowser-version');
 const { validate, profileCreateSchema, profileUpdateSchema, profileBatchSchema } = require('./validate');
-const { notFound, conflict } = require('./errors');
+const { notFound, conflict, serverError } = require('./errors');
+const { logger } = require('../logger');
 
 function getChromeVersion(db) {
   const configQueries = createSystemConfigQueries(db);
@@ -181,7 +182,13 @@ router.delete('/:id', (req, res) => {
     throw conflict('Невозможно удалить запущенный профиль');
   }
 
-  queries.delete(req.params.id);
+  try {
+    queries.delete(req.params.id);
+  } catch (err) {
+    logger.error({ profileId: req.params.id, err: err.message }, 'Ошибка удаления профиля');
+    throw conflict('Не удалось удалить профиль. Убедитесь, что он не используется в задачах');
+  }
+
   res.status(204).send();
 });
 

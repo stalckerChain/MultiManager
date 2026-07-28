@@ -5,6 +5,10 @@ AI-Driven Web Automation Platform — кроссплатформенный ан�
 > **Полная спецификация:** [TS.md](./TS.md) (MultiManager v2.0.0) + [TS_INTEGRATION.md](./TS_INTEGRATION.md) (stAuto0 интеграция).
 > **Фазы Roadmap:** Ф1–Ф4 ✅, Ф5 ✅, Ф6 ✅, **Ф7 ✅ (Automation Matrix)** — подробный план [TASK.md](./TASK.md).
 
+## Что нового в v1.4.3
+
+- **[FIX] FOREIGN KEY constraint failed при удалении профилей.** `run_tasks.profile_id` теперь с `ON DELETE CASCADE`. Профили удаляются даже после участия в авто-ране. ✅ `src/db/schema.js`, `src/api/profiles.js`, GUI store/view
+
 ## Что нового в v1.4.2
 
 - **[FIX] Zerion auto-login в MM-mode полностью переработан.** Исправлены: CDP connect 404 (discoverWsUrl с UUID), Zerion extension ID из Secure Preferences, поиск по имени расширения, Runtime.callFunctionOn → Runtime.evaluate, overlay removal (рекурсивный), tab matching (только #/login), unlock button (клик вместо Enter).
