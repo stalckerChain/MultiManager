@@ -145,62 +145,8 @@ router.put('/automation', (req, res) => {
   configQueries.set('python_path', pythonPath);
   if (parallelLimit !== undefined) configQueries.set('parallel_limit', String(parallelLimit));
 
-  // Auto-sync projects when stAuto0 path is saved
-  let syncResult = { added: 0, removed: 0, total: 0 };
-  if (stAuto0Path) {
-    try {
-      const projectsDir = path.join(stAuto0Path, 'projects');
-      if (fs.existsSync(projectsDir)) {
-        const files = fs.readdirSync(projectsDir)
-          .filter(f => f.endsWith('.py') && !['__init__.py', 'base.py', 'loader.py'].includes(f))
-          .map(f => ({
-            name: f.replace(/\.py$/, ''),
-            display_name: f.replace(/\.py$/, ''),
-            module_path: `projects.${f.replace(/\.py$/, '')}`,
-            class_name: '',
-          }));
-
-        const projectQueries = createProjectQueries(db);
-        const existing = projectQueries.getAll();
-        const existingNames = existing.map(p => p.name);
-        const incomingNames = files.map(f => f.name);
-
-        syncResult.added = files.filter(f => !existingNames.includes(f.name)).length;
-        syncResult.removed = existing.filter(p => !incomingNames.includes(p.name) && p.is_active).length;
-
-        projectQueries.sync(files);
-
-        // Auto-populate matrix entries for all profiles
-        const profiles = createProfileQueries(db).getAll();
-        const matrix = createMatrixQueries(db);
-        if (profiles.length > 0) {
-          const entries = [];
-          for (const proj of files) {
-            for (const prof of profiles) {
-              entries.push({
-                project_name: proj.name,
-                profile_id: prof.id,
-                is_enabled: 0,
-              });
-            }
-          }
-          if (entries.length > 1000) {
-            logger.warn({ count: entries.length, projects: files.length, profiles: profiles.length }, 'Large matrix pre-population');
-          }
-          matrix.batchUpdate(entries);
-        }
-
-        syncResult.total = projectQueries.getAll().length;
-
-        logger.info(`Auto-sync: ${syncResult.added} added, ${syncResult.removed} removed`);
-      }
-    } catch (err) {
-      logger.warn({ err: err.message }, 'Auto-sync projects failed');
-    }
-  }
-
-  logger.info({ stAuto0Path, pythonPath, parallelLimit, syncResult }, 'Настройки автоматизации сохранены');
-  res.json({ status: 'success', syncResult });
+  logger.info({ stAuto0Path, pythonPath, parallelLimit }, 'Настройки автоматизации сохранены');
+  res.json({ status: 'success', syncResult: { added: 0, removed: 0, total: 0 } });
 });
 
 // --- CloakBrowser Version ---

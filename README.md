@@ -7,6 +7,7 @@ AI-Driven Web Automation Platform — кроссплатформенный ан�
 
 ## Что нового в v1.4.3
 
+- **[FIX] Save в настройках больше не пересинхронизирует проекты.** Ранее `PUT /api/settings/automation` автоматически синхронизировал проекты из ФС, что приводило к восстановлению удалённых проектов после нажатия Save. Теперь Save только сохраняет пути, синхронизация — только через кнопку Sync Projects. ✅ `src/api/settings.js`
 - **[FIX] FOREIGN KEY constraint failed при удалении профилей.** `run_tasks.profile_id` теперь с `ON DELETE CASCADE`. Профили удаляются даже после участия в авто-ране. ✅ `src/db/schema.js`, `src/api/profiles.js`, GUI store/view
 
 ## Что нового в v1.4.2

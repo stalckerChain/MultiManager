@@ -477,7 +477,12 @@ function createProjectQueries(db) {
     },
 
     delete(name) {
-      deleteByName.run(name);
+      const deleteTx = db.transaction((projectName) => {
+        db.prepare('DELETE FROM project_profile_config WHERE project_name = ?').run(projectName);
+        db.prepare('DELETE FROM run_tasks WHERE project_name = ?').run(projectName);
+        deleteByName.run(projectName);
+      });
+      deleteTx(name);
     },
   };
 }

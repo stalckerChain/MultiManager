@@ -92,6 +92,7 @@ export const useAutomationStore = defineStore('automation', () => {
 
   async function deleteProject(name) {
     await client.delete(`/api/projects/${encodeURIComponent(name)}`);
+    await fetchMatrix();
   }
 
   async function updateProject(name, data) {

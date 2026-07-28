@@ -2,6 +2,7 @@ const express = require('express');
 const fs = require('fs');
 const path = require('path');
 const os = require('os');
+const { logger } = require('../logger');
 const { getDatabase } = require('../db');
 const { createProjectQueries, createMatrixQueries, createProfileQueries, createSystemConfigQueries } = require('../db/queries');
 const { buildProjectsFromConfig, parseAccountRanges } = require('../config/stauto0-config');
@@ -124,12 +125,20 @@ function createProjectsRouter(opts = {}) {
   });
 
   router.delete('/:name', (req, res) => {
-    const existing = getProjects().getByName(req.params.name);
-    if (!existing) {
-      return res.status(404).json({ error: 'Project not found' });
+    try {
+      const existing = getProjects().getByName(req.params.name);
+      if (!existing) {
+        return res.status(404).json({ error: 'Project not found' });
+      }
+      getProjects().delete(req.params.name);
+      res.status(204).end();
+    } catch (err) {
+      if (err.message && err.message.includes('FOREIGN KEY')) {
+        return res.status(409).json({ error: 'Cannot delete project: it has related run tasks. Remove them first.' });
+      }
+      logger.error({ err: err.message, projectName: req.params.name }, 'Failed to delete project');
+      res.status(500).json({ error: 'Failed to delete project' });
     }
-    getProjects().delete(req.params.name);
-    res.status(204).end();
   });
 
   return router;

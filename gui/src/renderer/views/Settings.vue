@@ -332,7 +332,7 @@ async function confirmDeleteProject(proj) {
   try {
     const autoStore = useAutomationStore();
     await autoStore.deleteProject(proj.name);
-    projectList.value = projectList.value.filter(p => p.name !== proj.name);
+    await fetchProjectList();
     message.success(t('settings.projectDeleted'));
   } catch (err) {
     message.error(err.message || t('common.error'));

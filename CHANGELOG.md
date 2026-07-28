@@ -4,6 +4,10 @@
 
 ### Исправления
 
+- **[FIX] Save в настройках больше не пересинхронизирует проекты.**
+  `PUT /api/settings/automation` автоматически синхронизировал проекты из ФС после каждого сохранения, что приводило к восстановлению удалённых проектов с отмеченными чекбоксами. Save теперь только сохраняет пути, синхронизация — только через кнопку Sync Projects.
+  ✅ `src/api/settings.js`, `docs/API.md`
+
 - **[FIX] FOREIGN KEY constraint failed при удалении профилей, участвовавших в авто-ране.**
   В `run_tasks.profile_id` отсутствовал `ON DELETE CASCADE`. При DELETE профиля, имеющего строки в `run_tasks`, SQLite блокировал операцию. Добавлена миграция с recreate таблицы в транзакции.
   ✅ `src/db/schema.js`, `src/api/profiles.js`, `gui/src/renderer/stores/profiles.js`, `gui/src/renderer/views/Profiles.vue`
@@ -11,7 +15,8 @@
 ### Тесты
 
 - Добавлен `tests/unit/fk-cascade-profile-delete.test.js` (5 тестов): проверка CASCADE, идемпотентности миграции, error handling в API.
-- Всего: **779 тестов** (50 файлов), все проходят
+- Добавлен `tests/unit/settings-automation.test.js` (2 теста): `PUT /api/settings/automation` больше не синхронизирует проекты, удалённые проекты остаются удалёнными после save.
+- Всего: **781 тестов** (51 файл), все проходят
 
 ---
 

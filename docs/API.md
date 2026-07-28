@@ -1210,7 +1210,7 @@ ws://127.0.0.1:{PORT}/ws?token={API_TOKEN}
 
 ### PUT /api/settings/automation
 
-Обновить настройки автоматизации. Если пути не указаны, используются дефолтные значения (`~/AI/stAuto0` и `~/AI/stAuto0/venv/Scripts/python.exe`).
+Обновить настройки автоматизации (пути, parallelLimit). Проекты **не синхронизируются** — для синхронизации используйте `POST /api/projects/sync`. Если пути не указаны, используются дефолтные значения (`~/AI/stAuto0` и `~/AI/stAuto0/venv/Scripts/python.exe`).
 
 **Тело запроса:**
 ```json
@@ -1225,7 +1225,7 @@ ws://127.0.0.1:{PORT}/ws?token={API_TOKEN}
 ```json
 {
   "status": "success",
-  "syncResult": { "added": 2, "removed": 0, "total": 5 }
+  "syncResult": { "added": 0, "removed": 0, "total": 0 }
 }
 ```
 
