@@ -1,19 +1,11 @@
 const fs = require('fs');
 const path = require('path');
-const { getDatabase, createCookieQueries } = require('../db');
+const { getDatabase, createCookieQueries, createProfileQueries } = require('../db');
 const { logger } = require('../logger');
+const { getDefaultProfileDir, getBrowserDataDir } = require('../core/profile-path');
 
 function getProfileDir(profileId) {
-  const platform = process.platform;
-  const home = process.env.HOME || process.env.USERPROFILE;
-
-  if (platform === 'win32') {
-    return path.join(process.env.APPDATA, 'CloakManager', 'profiles', profileId);
-  } else if (platform === 'darwin') {
-    return path.join(home, 'Library', 'Application Support', 'CloakManager', 'profiles', profileId);
-  } else {
-    return path.join(home, '.config', 'CloakManager', 'profiles', profileId);
-  }
+  return getDefaultProfileDir(profileId);
 }
 
 function ensureDir(dir) {
@@ -42,6 +34,7 @@ function cookiesToNetscape(cookies) {
 function injectCookies(profileId) {
   const db = getDatabase();
   const cookieQueries = createCookieQueries(db);
+  const profileQueries = createProfileQueries(db);
   const cookies = cookieQueries.getByProfileId(profileId);
 
   if (cookies.length === 0) {
@@ -49,10 +42,10 @@ function injectCookies(profileId) {
     return;
   }
 
-  const profileDir = getProfileDir(profileId);
-  ensureDir(profileDir);
+  const profile = profileQueries.getById(profileId);
+  const userDataDir = getBrowserDataDir(profile || { id: profileId });
 
-  const cookiesDir = path.join(profileDir, 'Default');
+  const cookiesDir = path.join(userDataDir, 'Default');
   ensureDir(cookiesDir);
 
   const cookieFile = path.join(cookiesDir, 'Cookies');
@@ -63,8 +56,11 @@ function injectCookies(profileId) {
 }
 
 function exportCookies(profileId) {
-  const profileDir = getProfileDir(profileId);
-  const cookieFile = path.join(profileDir, 'Default', 'Cookies');
+  const db = getDatabase();
+  const profileQueries = createProfileQueries(db);
+  const profile = profileQueries.getById(profileId);
+  const userDataDir = getBrowserDataDir(profile || { id: profileId });
+  const cookieFile = path.join(userDataDir, 'Default', 'Cookies');
 
   if (!fs.existsSync(cookieFile)) {
     return [];

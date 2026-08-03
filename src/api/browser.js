@@ -5,7 +5,8 @@ const fs = require('fs');
 const path = require('path');
 const { getDatabase, createProfileQueries, createProxyQueries, createLogQueries } = require('../db');
 const { checkProxy, rotateProxy, getTimezoneByIp } = require('../proxy');
-const { injectCookies, getProfileDir } = require('../cookie/inject');
+const { injectCookies } = require('../cookie/inject');
+const { getBrowserDataDir, getExtensionsFromProfileDir } = require('../core/profile-path');
 const { logger, createProfileLogger } = require('../logger');
 const { broadcastStatus } = require('../core/websocket');
 const { getExtensionsDir, getManifest, resolveMSG } = require('./extensions');
@@ -311,11 +312,10 @@ router.post('/:id/start', asyncHandler(async (req, res) => {
     }
   }
 
-  const profileDir = getProfileDir(req.params.id);
-  const user_data_dir = path.join(profileDir, 'BrowserData');
+  const userDataDir = getBrowserDataDir(profile);
 
   injectCookies(req.params.id);
-  profileLogger.info({ profileId: req.params.id, profileDir: user_data_dir }, 'Куки инжектированы');
+  profileLogger.info({ profileId: req.params.id, profileDir: userDataDir }, 'Куки инжектированы');
 
   const args = [
     '--remote-debugging-port=0',
@@ -324,7 +324,7 @@ router.post('/:id/start', asyncHandler(async (req, res) => {
     '--resolution=' + profile.screen_resolution,
     '--cores=' + profile.hardware_cores,
     '--memory=' + profile.hardware_memory,
-    `--user-data-dir=${user_data_dir}`,
+    `--user-data-dir=${userDataDir}`,
     '--lang=en-US',
     '--no-first-run',
     '--no-default-browser-check',
@@ -344,6 +344,13 @@ router.post('/:id/start', asyncHandler(async (req, res) => {
 
   const extIds = tryParseJson(profile.extensions);
   let enabledExtPaths = [];
+  const profileExtPaths = [];
+
+  if (profile.profile_path) {
+    const externalExts = getExtensionsFromProfileDir(getBrowserDataDir(profile));
+    profileExtPaths.push(...externalExts);
+  }
+
   if (extIds.length > 0) {
     const extDir = getExtensionsDir();
     const checks = await Promise.all(extIds.map(async (id) => {
@@ -357,10 +364,13 @@ router.post('/:id/start', asyncHandler(async (req, res) => {
       }
     }));
     enabledExtPaths = checks.filter(Boolean);
-    if (enabledExtPaths.length > 0) {
-      args.push(`--load-extension=${enabledExtPaths.join(',')}`);
-      logQueries.add(req.params.id, 'info', `Загружено расширений: ${enabledExtPaths.length}`);
-    }
+  }
+
+  const allExtPaths = [...profileExtPaths, ...enabledExtPaths];
+
+  if (allExtPaths.length > 0) {
+    args.push(`--load-extension=${allExtPaths.join(',')}`);
+    logQueries.add(req.params.id, 'info', `Загружено расширений: ${allExtPaths.length}`);
   }
 
   const browserPath = await getBrowserPath();
@@ -550,8 +560,8 @@ router.post('/:id/clean', asyncHandler(async (req, res) => {
     throw conflict('Невозможно очистить кэш запущенного профиля');
   }
 
-  const profileDir = getProfileDir(req.params.id);
-  const cacheDirs = ['BrowserData/Cache', 'BrowserData/Code Cache', 'BrowserData/GPUCache'];
+  const profileDir = getBrowserDataDir(profile);
+  const cacheDirs = ['Cache', 'Code Cache', 'GPUCache'];
 
   for (const dir of cacheDirs) {
     const cachePath = path.join(profileDir, dir);
@@ -781,8 +791,8 @@ router.post('/:id/zerion-login', asyncHandler(async (req, res) => {
   const extDir = getExtensionsDir();
   let zerionExtId = null;
 
-  const profileDir = getProfileDir(req.params.id);
-  const securePrefsPath = path.join(profileDir, 'BrowserData', 'Default', 'Secure Preferences');
+  const profileDir = getBrowserDataDir(profile);
+  const securePrefsPath = path.join(profileDir, 'Default', 'Secure Preferences');
   try {
     const data = JSON.parse(await fs.promises.readFile(securePrefsPath, 'utf-8'));
     const settings = data?.extensions?.settings || {};

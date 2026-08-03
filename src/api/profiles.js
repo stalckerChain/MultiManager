@@ -61,6 +61,7 @@ router.post('/batch', validate(profileBatchSchema), (req, res) => {
         wallet_evm_address: acct.wallet_evm_address,
         wallet_sol_address: acct.wallet_sol_address,
         wallet_password: acct.wallet_password,
+        profile_path: acct.profile_path,
         fingerprint_seed: fingerprint.fingerprint_seed,
         user_agent: fingerprint.user_agent,
         screen_resolution: fingerprint.screen_resolution,
@@ -84,7 +85,7 @@ router.post('/', validate(profileCreateSchema), (req, res) => {
   const queries = createProfileQueries(db);
   const chromeVersion = getChromeVersion(db);
 
-  const { name, proxy_id, platform, extensions, tags, notes, timezone, email, email_password, twitter_username, twitter_password, twitter_auth_token, twitter_email, discord_username, discord_password, discord_token, discord_email, wallet_evm_address, wallet_sol_address, wallet_password } = req.body;
+  const { name, proxy_id, platform, extensions, tags, notes, timezone, email, email_password, twitter_username, twitter_password, twitter_auth_token, twitter_email, discord_username, discord_password, discord_token, discord_email, wallet_evm_address, wallet_sol_address, wallet_password, profile_path } = req.body;
 
   const fingerprint = generateFingerprint(platform, chromeVersion);
   
@@ -114,6 +115,7 @@ router.post('/', validate(profileCreateSchema), (req, res) => {
     wallet_evm_address,
     wallet_sol_address,
     wallet_password,
+    profile_path,
   });
 
   res.status(201).json(profile);
@@ -131,7 +133,7 @@ router.put('/:id', validate(profileUpdateSchema), (req, res) => {
   const body = req.body;
   const toNull = (v) => (v === '' || v === undefined) ? null : v;
 
-  const { name, proxy_id, platform, extensions, tags, notes, timezone, email, email_password, twitter_username, twitter_password, twitter_auth_token, twitter_email, discord_username, discord_password, discord_token, discord_email, wallet_evm_address, wallet_sol_address, wallet_password } = body;
+  const { name, proxy_id, platform, extensions, tags, notes, timezone, email, email_password, twitter_username, twitter_password, twitter_auth_token, twitter_email, discord_username, discord_password, discord_token, discord_email, wallet_evm_address, wallet_sol_address, wallet_password, profile_path } = body;
 
   const chromeVersion = getChromeVersion(db);
   const fingerprint = platform && platform !== profile.platform
@@ -164,6 +166,7 @@ router.put('/:id', validate(profileUpdateSchema), (req, res) => {
     wallet_evm_address: toNull(wallet_evm_address),
     wallet_sol_address: toNull(wallet_sol_address),
     wallet_password: toNull(wallet_password),
+    profile_path: profile_path !== undefined ? toNull(profile_path) : profile.profile_path,
   });
 
   res.json(updated);

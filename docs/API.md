@@ -55,7 +55,8 @@ Authorization: Bearer <token>
   "discord_email": "dc@example.com",
   "wallet_evm_address": "0x1234567890abcdef1234567890abcdef12345678",
   "wallet_sol_address": "AbCdEfGhIjKlMnOpQrStUvWxYz1234567890abcd",
-  "wallet_password": "my_wallet_pass"
+  "wallet_password": "my_wallet_pass",
+  "profile_path": "C:\\Users\\user\\stAuto0\\config\\chrome_accounts\\auto_001"
 }
 ```
 
@@ -134,7 +135,8 @@ Authorization: Bearer <token>
   "twitter_username": "new_twitter",
   "twitter_auth_token": "new_token",
   "discord_username": "new_discord",
-  "wallet_evm_address": "0xabcdef1234567890abcdef1234567890abcdef12"
+  "wallet_evm_address": "0xabcdef1234567890abcdef1234567890abcdef12",
+  "profile_path": "C:\\Users\\user\\stAuto0\\config\\chrome_accounts\\auto_001"
 }
 ```
 

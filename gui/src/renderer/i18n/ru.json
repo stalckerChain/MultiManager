@@ -61,7 +61,10 @@
       "discordEmail": "Discord Email",
       "walletEvmAddress": "EVM Адрес",
       "walletSolAddress": "Solana Адрес",
-      "walletPassword": "Пароль кошелька"
+      "walletPassword": "Пароль кошелька",
+      "profilePath": "Внешний путь профиля",
+      "profilePathPlaceholder": "Пусто = стандартный путь",
+      "profilePathHint": "Абсолютный путь к папке браузерного профиля (user-data-dir). Для импортированных из stAuto0 профилей."
     }
   },
   "proxies": {

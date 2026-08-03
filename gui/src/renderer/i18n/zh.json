@@ -61,7 +61,10 @@
       "discordEmail": "Discord 邮箱",
       "walletEvmAddress": "EVM 地址",
       "walletSolAddress": "Solana 地址",
-      "walletPassword": "钱包密码"
+      "walletPassword": "钱包密码",
+      "profilePath": "外部配置文件路径",
+      "profilePathPlaceholder": "空 = 默认路径",
+      "profilePathHint": "浏览器配置文件文件夹的绝对路径(user-data-dir)。适用于从stAuto0导入的配置文件。"
     }
   },
   "proxies": {

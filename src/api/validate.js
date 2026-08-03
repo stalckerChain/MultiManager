@@ -1,4 +1,5 @@
 const { z } = require('zod');
+const path = require('path');
 
 function validate(schema) {
   return (req, res, next) => {
@@ -40,6 +41,10 @@ const profileCreateSchema = z.object({
   wallet_evm_address: z.string().max(100).nullable().optional(),
   wallet_sol_address: z.string().max(100).nullable().optional(),
   wallet_password: z.string().max(500).nullable().optional(),
+  profile_path: z.string().max(1024).nullable().optional().refine(
+    v => !v || path.isAbsolute(v),
+    'profile_path must be an absolute path'
+  ),
 });
 
 const profileUpdateSchema = z.object({
@@ -63,6 +68,7 @@ const profileUpdateSchema = z.object({
   wallet_evm_address: z.any().optional(),
   wallet_sol_address: z.any().optional(),
   wallet_password: z.any().optional(),
+  profile_path: z.any().optional(),
 }).passthrough();
 
 const profileBatchSchema = z.object({
@@ -87,6 +93,7 @@ const profileBatchSchema = z.object({
     wallet_evm_address: z.string().max(100).nullable().optional(),
     wallet_sol_address: z.string().max(100).nullable().optional(),
     wallet_password: z.string().max(500).nullable().optional(),
+    profile_path: z.string().max(1024).nullable().optional(),
   })).min(1, 'accounts должен содержать хотя бы 1 элемент').max(500, 'максимум 500 профилей за раз'),
 });
 

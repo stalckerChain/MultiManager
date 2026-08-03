@@ -10,13 +10,19 @@
 
 - **[FIX] FOREIGN KEY constraint failed при удалении профилей, участвовавших в авто-ране.**
   В `run_tasks.profile_id` отсутствовал `ON DELETE CASCADE`. При DELETE профиля, имеющего строки в `run_tasks`, SQLite блокировал операцию. Добавлена миграция с recreate таблицы в транзакции.
-  ✅ `src/db/schema.js`, `src/api/profiles.js`, `gui/src/renderer/stores/profiles.js`, `gui/src/renderer/views/Profiles.vue`
+  ✅ `src/db/schema.js`, `src/api/profiles.js`, GUI store/view
+
+### Новые возможности
+
+- **[FEAT] Внешние пути к профилям браузера (`profile_path`).**
+  Добавлено поле `profile_path` в профили — абсолютный путь к user-data-dir внешнего браузерного профиля. Позволяет использовать профили из внешних проектов (например, stAuto0) без копирования файлов. MM запускает браузер с внешним `user-data-dir`, расширения подгружаются из профиля (как в stAuto0 standalone). Гибридный режим: если `profile_path` не задан — используется стандартный путь MM.
+  ✅ `src/db/schema.js`, `src/core/profile-path.js`, `src/api/browser.js`, `src/api/validate.js`, `src/api/profiles.js`, `src/db/queries.js`, `gui/src/renderer/views/ProfileModal.vue`, `docs/API.md`, `docs/DATABASE.md`
 
 ### Тесты
 
-- Добавлен `tests/unit/fk-cascade-profile-delete.test.js` (5 тестов): проверка CASCADE, идемпотентности миграции, error handling в API.
-- Добавлен `tests/unit/settings-automation.test.js` (2 теста): `PUT /api/settings/automation` больше не синхронизирует проекты, удалённые проекты остаются удалёнными после save.
-- Всего: **781 тестов** (51 файл), все проходят
+- Добавлен `tests/unit/profile-path.test.js` (21 тест): helper путей, валидация, сканирование расширений внешнего профиля.
+- Добавлен `tests/unit/inject.test.js` (новые тесты для cookie inject/export с внешними путями).
+- Всего: **797 тестов** (52 файла), все проходят ✅
 
 ---
 

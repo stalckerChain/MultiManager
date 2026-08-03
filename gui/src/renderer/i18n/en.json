@@ -61,7 +61,10 @@
       "discordEmail": "Discord Email",
       "walletEvmAddress": "EVM Address",
       "walletSolAddress": "Solana Address",
-      "walletPassword": "Wallet Password"
+      "walletPassword": "Wallet Password",
+      "profilePath": "External Profile Path",
+      "profilePathPlaceholder": "Empty = default path",
+      "profilePathHint": "Absolute path to browser profile folder (user-data-dir). For profiles imported from stAuto0."
     }
   },
   "proxies": {

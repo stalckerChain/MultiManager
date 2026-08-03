@@ -3,8 +3,8 @@ const { encrypt, decrypt, decryptRow, decryptRows, SECRET_FIELDS, hasMasterKey, 
 
 function createProfileQueries(db) {
   const insert = db.prepare(`
-    INSERT INTO profiles (id, number, name, proxy_id, fingerprint_seed, platform, user_agent, screen_resolution, hardware_cores, hardware_memory, extensions, tags, notes, timezone, email, email_password, twitter_username, twitter_password, twitter_auth_token, twitter_email, discord_username, discord_password, discord_token, discord_email, wallet_evm_address, wallet_sol_address, wallet_password)
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    INSERT INTO profiles (id, number, name, proxy_id, fingerprint_seed, platform, user_agent, screen_resolution, hardware_cores, hardware_memory, extensions, tags, notes, timezone, email, email_password, twitter_username, twitter_password, twitter_auth_token, twitter_email, discord_username, discord_password, discord_token, discord_email, wallet_evm_address, wallet_sol_address, wallet_password, profile_path)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
   `);
 
   const getById = db.prepare('SELECT * FROM profiles WHERE id = ?');
@@ -41,7 +41,8 @@ function createProfileQueries(db) {
       discord_email = ?,
       wallet_evm_address = ?,
       wallet_sol_address = ?,
-      wallet_password = ?
+      wallet_password = ?,
+      profile_path = ?
     WHERE id = ?
   `);
 
@@ -101,7 +102,8 @@ function createProfileQueries(db) {
         enc.discord_email || null,
         enc.wallet_evm_address || null,
         enc.wallet_sol_address || null,
-        enc.wallet_password || null
+        enc.wallet_password || null,
+        enc.profile_path || null
       );
       return decryptRowSafe(getById.get(id));
     },
@@ -160,6 +162,7 @@ function createProfileQueries(db) {
         enc.wallet_evm_address !== undefined ? enc.wallet_evm_address : null,
         enc.wallet_sol_address !== undefined ? enc.wallet_sol_address : null,
         enc.wallet_password !== undefined ? enc.wallet_password : null,
+        enc.profile_path !== undefined ? enc.profile_path : null,
         id
       );
       return decryptRowSafe(getById.get(id));

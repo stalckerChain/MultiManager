@@ -13,6 +13,7 @@ const NEW_PROFILE_COLUMNS = [
   'wallet_evm_address',
   'wallet_sol_address',
   'wallet_password',
+  'profile_path',
 ];
 
 const AUTOMATION_TABLES_SQL = `
@@ -114,6 +115,7 @@ function createTables(db) {
       wallet_evm_address TEXT,
       wallet_sol_address TEXT,
       wallet_password TEXT,
+      profile_path TEXT,
       created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
       updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
       FOREIGN KEY (proxy_id) REFERENCES proxies(id) ON DELETE SET NULL

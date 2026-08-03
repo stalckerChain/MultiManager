@@ -1,237 +1,118 @@
-# TASK — Внешние пути к профилям браузера (stAuto0 import)
+# TASK — Внешние пути профилей браузера из stAuto0
 
-## Описание
+## Текущая задача
 
-Сейчас MM детерминированно вычисляет путь к user-data-dir браузера через `getProfileDir(profileId)` (%APPDATA%\CloakManager\profiles\<id>). Не требуется возможность использовать произвольный (внешний) путь к профилю — например, при импорте аккаунтов из stAuto0. Цель: в БД хранится абсолютный `profile_path`; если задан — MM запускает браузер/cookies/cache по внешнему пути, иначе — по стандартному (гибридный режим). Заодно унифицируем расхождение cookie-путей (inject.js пишет в `<MMdir>/<id>/Default/Cookies`, а браузер стартует из `<MMdir>/<id>/BrowserData`).
+Импортировать аккаунты из внешнего проекта `C:\Users\stalcker\AI\stAuto0` в MultiManager без копирования браузерных профилей. Профили должны оставаться в `stAuto0\config\chrome_accounts\<profile_directory>`, а MM должен хранить абсолютный путь в БД и использовать его при запуске браузера.
 
-## Требования
+MM работает в гибридном режиме:
 
-- Гибридный режим: `profile_path IS NULL` → стандартное место MM; не NULL → абсолютный внешний путь.
-- `profile_path` валидируется как абсолютный (reject относительных и path traversal `..`).
-- Запуск браузера, cookie-инжект/export, чистка кэша, secure prefs — все используют единый helper для user-data-dir.
-- Унификация cookie-пути: cookies лежат в `<user_data_dir>/Default/Cookies` (для default-профилей MM это перенос с текущего места `<MMdir>/<id>/Default/Cookies` в `<MMdir>/<id>/BrowserData/Default/Cookies`).
-- API и GUI позволяют задавать/редактировать `profile_path`.
-- stAuto0 `migrate_to_sqlite.py` отдаёт `profile_path` (абсолютный), копирование профилей (`migrate_profile_dirs.py`) больше не требуется.
+- `profile_path` задан — используется внешний user-data-dir;
+- `profile_path` равен `NULL` — используется стандартный путь MM.
+
+MM не перемещает и не копирует файлы внешнего профиля автоматически. Очистка кэша, cookie-инжект и другие операции, изменяющие внешний профиль, выполняются только при явном вызове соответствующей операции.
 
 ## План реализации
 
-### Шаг 1. Схема БД и миграция
+### 1. Схема БД
 
-**Файлы:** `src/db/schema.js`
+**Файл:** `src/db/schema.js`
 
-1.1. В `createSchema` добавить колонку `profile_path TEXT` в таблицу `profiles` (nullable).
+- Добавить nullable-колонку `profiles.profile_path TEXT` в базовую схему.
+- Добавить её в существующий механизм `migrateTables` для старых БД.
+- Не выполнять операции с файлами профилей или cookies во время инициализации БД.
 
-1.2. В блок `runMigrations` (или существующий `existing columns`-блок) добавить миграцию `ALTER TABLE profiles ADD COLUMN profile_path TEXT` (if not exists).
+**Проверка:** unit-тест проверяет наличие колонки после создания новой и миграции старой БД.
 
-1.3. Добавить one-time data migration (через `system_config` ключ `cookies_path_unified_v1`):
-- Для каждого существующего профиля MM:
-  - src = `<getDefaultProfileDir(id)>/Default/Cookies`
-  - dst_dir = `<getDefaultProfileDir(id)>/BrowserData/Default`
-  - dst = `<dst_dir>/Cookies`
-  - Если src существует и dst не существует: создать dst_dir, переместить файл (atomic rename), при ошибке — лог warning и continue (не падать).
-- Пометить в `system_config` ключ `cookies_path_unified_v1 = '1'`.
+### 2. Единый helper путей
 
-1.4. Тест схемы: `tests/unit/schema.test.js` — проверить, что колонка `profile_path` существует после миграции; ключ `cookies_path_unified_v1` установлен; повторный запуск миграции не дублирует.
+**Новый файл:** `src/core/profile-path.js`
 
-**Проверка:** `npm test` (юнит-тесты схемы).
+Реализовать:
 
----
+- `getDefaultProfileDir(profileId)` — стандартный родительский каталог MM;
+- `getBrowserDataDir(profile)` — внешний `profile_path` либо стандартный `<profileDir>\BrowserData`;
+- `validateProfilePath(value)` — принимает `null`/пустую строку и абсолютные пути, отклоняет относительные и слишком длинные значения;
+- helper для cookie-файла в `<user_data_dir>\Default\Cookies`.
 
-### Шаг 2. Helper пользовательского пути
+Не требовать существования внешней папки при сохранении пути: stAuto0 может быть временно недоступен. Проверка доступности выполняется при запуске профиля с информативной ошибкой.
 
-**Файлы:** `src/core/profile-path.js` (новый), `tests/unit/profile-path.test.js` (новый)
+**Проверка:** unit-тесты для default, external, null, абсолютных и относительных путей. ✅ Шаг 2 выполнен.
 
-2.1. Создать `src/core/profile-path.js`:
-- `getDefaultProfileDir(profileId)` — детерминированный путь (логика из `cookie/inject.js:getProfileDir`, без `BrowserData`): `%APPDATA%\CloakManager\profiles\<id>`.
-- `getBrowserDataDir(profile)` — объект профиля из БД:
-  - Если `profile.profile_path` задан и не пустой: `path.resolve(profile.profile_path)` (нормализация).
-  - Иначе: `path.join(getDefaultProfileDir(profile.id), 'BrowserData')`.
-- `validateProfilePath(p)` — валидация:
-  - `path.isAbsolute(p)` → иначе throw `new Error('profile_path must be absolute')`.
-  - Не содержит `..` сегментов после `path.normalize` → иначе throw.
-  - Длина ≤ 1024.
-- `getDefaultCookiesFile(profile)` → `path.join(getBrowserDataDir(profile), 'Default', 'Cookies')`.
-- `getDefaultProfileDir` экспортируем для legacy-кодов (tests, migration).
+### 3. Пути браузера и файловые операции
 
-2.2. Тесты `tests/unit/profile-path.test.js`:
-- `getBrowserDataDir` default → `%APPDATA%\CloakManager\profiles\<id>\BrowserData`.
-- `getBrowserDataDir` external → равно `path.resolve(profile_path)`.
-- `validateProfilePath` принимает абсолютный, rejects относительный и `..`.
-- `getDefaultCookiesFile` → правильный путь для обоих режимов.
+**Файлы:** `src/api/browser.js`, `src/cookie/inject.js`
 
-**Проверка:** `npm test`.
+- Запускать браузер с `--user-data-dir`, возвращённым helper.
+- Чистить `Cache`, `Code Cache`, `GPUCache` относительно user-data-dir.
+- Читать `Secure Preferences` относительно user-data-dir.
+- Cookie import/export использовать тот же user-data-dir.
+- Не выполнять автоматическую миграцию или копирование файлов между MM и stAuto0.
+- При отсутствии внешнего пути или недоступной папке возвращать понятную ошибку, не создавая заменяющий стандартный профиль.
 
----
+Существующее поведение cookie-файла и формат его содержимого не расширять сверх необходимого для поддержки единого пути; отдельный возможный баг формата cookies не включать в эту задачу.
 
-### Шаг 3. Унификация cookie-инжекта
+**Проверка:** unit-тесты путей и ручная проверка запуска default/external профиля. ✅ Шаг 3 выполнен.
 
-**Файлы:** `src/cookie/inject.js`, `tests/unit/inject.test.js` (новый или расширить)
+### 4. API и database queries
 
-3.1. Переписать `injectCookies(profileId)`:
-- Получать профиль из БД (`createProfileQueries(getDatabase()).getById(profileId)`).
-- Использовать `getBrowserDataDir(profile)` из `src/core/profile-path.js` для каталога профиля.
-- Cookies пишем в `<user_data_dir>/Default/Cookies`.
-- `ensureDir` для `<user_data_dir>/Default`.
+**Файлы:** `src/api/validate.js`, `src/api/profiles.js`, `src/db/queries.js`
 
-3.2. Переписать `exportCookies(profileId)` — читать из того же пути из `getBrowserDataDir`.
+- Добавить `profile_path` в create, batch и update-схемы.
+- Добавить `profile_path` в SQL INSERT и параметры `create`.
+- Добавить `profile_path` в SQL UPDATE.
+- В update различать отсутствие поля и очистку:
+  - поле отсутствует — сохранить текущее значение;
+  - `null` или пустая строка — сбросить на стандартный путь;
+  - абсолютная строка — сохранить внешний путь.
+- GET endpoints возвращают `profile_path` через `SELECT *`.
+- Сохранить существующие master-key ограничения mutating endpoints.
 
-3.3. `getProfileDir` оставить как thin wrapper для legacy (используется в `browser.js` в чистках — заменится в шаге 4).
+**Проверка:** API/unit-тесты для create, batch, update, очистки и отклонения относительного пути. ✅ Шаг 4 выполнен.
 
-3.4. Тесты `tests/unit/inject.test.js`:
-- Mock БД с профилем без `profile_path` → cookies пишутся в `<MMdir>/<id>/BrowserData/Default/Cookies`.
-- Mock БД с профилем с `profile_path` → cookies пишутся по внешнему пути.
-- Export читает из того же пути.
+### 5. GUI
 
-**Проверка:** `npm test`.
+**Файлы:** `gui/src/renderer/views/ProfileModal.vue` и используемые i18n-файлы
 
----
+- Добавить поле абсолютного пути к внешнему user-data-dir.
+- Пустое значение означает стандартный путь MM.
+- При загрузке и сбросе формы корректно обрабатывать `profile_path`.
+- Добавить i18n-строки.
+- Показать индикатор внешнего профиля, если это соответствует существующему UI-паттерну.
 
-### Шаг 4. browser.js использует helper
+**Проверка:** GUI build и ручное создание/редактирование профиля. ✅ Шаг 5 выполнен.
 
-**Файлы:** `src/api/browser.js`
+### 6. Миграция из stAuto0
 
-4.1. Импортировать `getBrowserDataDir` из `src/core/profile-path.js` (вместо `getProfileDir`).
+**Внешний файл:** `C:\Users\stalcker\AI\stAuto0\scripts\migrate_to_sqlite.py`
 
-4.2. `POST /:id/start` (~строка 314):
-- `const profileDir = getProfileDir(req.params.id)` → `const userDataDir = getBrowserDataDir(profile)` (профиль уже получен выше ~234).
-- `user_data_dir = path.join(profileDir, 'BrowserData')` → `user_data_dir = userDataDir`.
-- Парс расширений через тот же `user_data_dir`.
+- В batch payload передавать абсолютный путь:
+  `C:\Users\stalcker\AI\stAuto0\config\chrome_accounts\<profile_directory>`.
+- Не копировать содержимое профилей.
+- `migrate_profile_dirs.py` не запускать для этого сценария.
+- Сохранить существующую миграцию метаданных, прокси и `mapping.json`.
+- Не выводить в лог секреты аккаунтов, пароли или proxy credentials.
 
-4.3. `POST /:id/clean` (~553):
-- `profileDir = getBrowserDataDir(profile)`.
-- `cacheDirs = ['Cache', 'Code Cache', 'GPUCache']` (без `BrowserData/` префикса, т.к. уже в user-data-dir).
+**Проверка:** dry-run/тест формирования payload и проверка созданных записей MM. ✅ Шаг 6 выполнен.
 
-4.4. `POST /:id/zerion-login` и secure prefs (~784):
-- `securePrefsPath = path.join(getBrowserDataDir(profile), 'Default', 'Secure Preferences')`.
+### 7. Итоговая проверка
 
-4.5. Если где-то ещё `getProfileDir` — заменить.
+**Проверка:** `npm test` ✅ (52 файла, 797 тестов). `cd gui && npx vite build` ✅.
 
-4.6. Расширения по CDP (`loadExtensionsViaCDP`) — не зависит от пути профиля, не трогаем.
+### 8. Сканирование расширений внешнего профиля
 
-**Проверка:** `npm test`;手动 — запуск профиля без `profile_path` и с `profile_path` через curl.
+**Файлы:** `src/core/profile-path.js`, `src/api/browser.js`, `tests/unit/profile-path.test.js`
 
----
+- Добавлена функция `getExtensionsFromProfileDir(profileDir)` — сканирует `<profileDir>/Default/Extensions/` на наличие расширений (папки с `manifest.json`).
+- При запуске профиля с `profile_path` — найденные пути подмешиваются к `--load-extension` вместе с MM extensions dir.
+- Расширения из внешнего профиля имеют приоритет — данные кошелька сохраняются.
+- Для стандартных профилей (без `profile_path`) — поведение не меняется.
 
-### Шаг 5. API: валидация и queries
+**Проверка:** 21 тест для profile-path (включая `getExtensionsFromProfileDir`). ✅ Шаг 8 выполнен.
 
-**Файлы:** `src/api/validate.js`, `src/db/queries.js`, `tests/unit/validate.test.js`
+### 9. Финализация после проверки пользователем
 
-5.1. `validate.js`:
-- `profileCreateSchema`: добавить `profile_path: z.string().max(1024).nullable().optional().refine(v => !v || path.isAbsolute(v), 'profile_path must be absolute')`.
-- `profileUpdateSchema`: то же.
-- `profileBatchSchema.accounts[]`: то же.
-- Импорт `path` в `validate.js`.
+## Согласования
 
-5.2. `src/db/queries.js`: `createProfileQueries`:
-- `insert` prepare — добавить `profile_path` в список колонок + `?` placeholder.
-- `create(data)` — передать `enc.profile_path || null`.
-- `update` prepare — добавить `profile_path = COALESCE(?, profile_path)` (NULL сохраняет старое значение; для обнуления используем отдельный путь через PUT с явным null + тест) — решение: вUPDATE используем `profile_path = ?` (прямое присваивание с nullable), не COALESCE.
-
-5.3. Batch create (`src/api/profiles.js:33`) — проксирует поля через схему, данные попадают в queries.
-
-5.4. Тесты `tests/unit/validate.test.js`:
-- create с относительным `profile_path` → ошибка валидации.
-- create с абсолютным → ok.
-- update с NULL → ok (сбрасывает).
-
-**Проверка:** `npm test`.
-
----
-
-### Шаг 6. GUI: форма профиля
-
-**Файлы:** `gui/src/renderer/views/ProfileModal.vue`, i18n-файлы (`gui/src/renderer/locales/*.js` или `*.json`)
-
-6.1. В `ProfileModal.vue`:
-- В `model` добавить `profile_path: ''`.
-- В `loadProfile(p)` добавить `profile_path: p.profile_path || ''`.
-- В `resetForm` добавить `profile_path: ''`.
-- В шаблон добавить `a-input` с label «Путь к профилю браузера (внешний)» и placeholder «пусто = стандартное место MultiManager».
-- Подсказка: «Абсолютный путь к user-data-dir. Для импортированных из stAuto0 профилей.».
-
-6.2. i18n: добавить ключи `profile.profilePath`, `profile.profilePathPlaceholder`, `profile.profilePathHint` в русскую и английскую локали.
-
-6.3. (Опц.) тэг «внешний» в таблице профилей при `profile_path`.
-
-**Проверка:** `cd gui && npm run lint` (если есть); ручная — форма сохраняет и отдаёт путь.
-
----
-
-### Шаг 7. stAuto0 migrate_to_sqlite.py
-
-**Файлы:** `stAuto0/scripts/migrate_to_sqlite.py`
-
-7.1. В payload (цикл `for account in filtered`) добавить:
-```python
-"profile_path": str(Path(BASE_DIR) / "config" / "chrome_accounts" / account["profile_directory"]),
-```
-(с `from pathlib import Path` и `BASE_DIR` уже есть).
-
-7.2. Добавить `--no-copy` флаг (по умолчанию True) — лог-сообщение: «Профили не копируются — MM использует внешние пути».
-
-7.3. Обновить помощь: «Теперь migrate_profile_dirs.py не требуется».
-
-7.4. Не менять `migrate_profile_dirs.py` (оставить как есть, но в логе предупредить о ненужности).
-
-**Проверка:** ручная — запуск миграции, проверить в БД MM `profile_path` заполнен.
-
----
-
-### Шаг 8. Тесты (итог)
-
-8.1. `npm test` — все unit тесты проходят.
-
-8.2. Покрытие:
-- Миграция схемы (шаг 1.4).
-- Helper путей (шаг 2.2).
-- Cookie inject/export (шаг 3.4).
-- Валидация API profile_path (шаг 5.4).
-- (интеграционные — по желанию, требуют запущенный бэкенд).
-
----
-
-### Шаг 8.1. Сборка
-
-8.3. `npm test` зелёный → `npm run lint` → `npm run bump` ТОЛЬКО по явному запросу пользователя.
-
-8.4. `cd gui && npm run build` — сборка GUI.
-
-8.5. `npm run build:native` (hooks.node) — если задели native hooks (не должны).
-
-8.6. Portable + installer — через существующий build-скрипт (см. `docs/DEPLOY.md`).
-
----
-
-### Шаг 9. Гейт №3 — проверка пользователем
-
-Пользователь проверяет:
-- Импорт аккаунтов stAuto0 → в MM видны профили с заполненным `profile_path`.
-- Запуск браузера по внешнему профилю — стартует на данных stAuto0 (куки/сессии сохранены).
-- Запуск стандартного MM-профиля (без `profile_path`) — работает как раньше.
-- Cookie inject/export — работает для обоих режимов.
-- Чистка кэша — работает для обоих.
-- Форма GUI — сохраняет `profile_path`.
-
----
-
-### Шаг 10. Финализация
-
-10.1. `docs/API.md` — добавить `profile_path` в поля профилей (create/update/batch).
-
-10.2. `docs/DATABASE.md` — колонка `profiles.profile_path`, миграция `cookies_path_unified_v1`.
-
-10.3. `README.md` — раздел «Что нового» (внешние пути профилей).
-
-10.4. `CHANGELOG.md` — запись.
-
-10.5. `TS.md` — если меняет архитектуру (внешний путь = новая возможность запуска).
-
-10.6. Коммит: `feat(api): support external browser profile paths for stAuto0 import`.
-
----
-
-## Гейты
-
-- **Гейт №1 (Шаг 4):** согласование решения — пройдено («дальше»).
-- **Гейт №2 (Шаг 6):** согласование плана — ТЕКУЩИЙ. Ждём «продолжай флоу».
-- **Гейт №3 (Шаг 9):** проверка сборки пользователем.
+- Гейт №1: пройден, решение согласовано.
+- Гейт №2: ожидает явного разрешения на реализацию.
+- Гейт №3: выполняется после тестов и сборки.

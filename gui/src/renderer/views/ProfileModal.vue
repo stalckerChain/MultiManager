@@ -48,6 +48,12 @@
               </a-button>
             </div>
           </a-form-item>
+          <a-form-item :label="t('profiles.modal.profilePath')">
+            <a-input v-model:value="form.profile_path" :placeholder="t('profiles.modal.profilePathPlaceholder')" />
+            <template #extra>
+              <span class="text-xs text-gray-400">{{ t('profiles.modal.profilePathHint') }}</span>
+            </template>
+          </a-form-item>
           <a-divider />
           <div class="grid grid-cols-2 gap-3">
             <a-form-item label="User-Agent">
@@ -178,6 +184,7 @@ const form = reactive({
   wallet_evm_address: '',
   wallet_sol_address: '',
   wallet_password: '',
+  profile_path: '',
 });
 
 async function fetchExtensions() {
@@ -242,6 +249,7 @@ watch(() => props.profile, (p) => {
       wallet_evm_address: p.wallet_evm_address || '',
       wallet_sol_address: p.wallet_sol_address || '',
       wallet_password: p.wallet_password || '',
+      profile_path: p.profile_path || '',
     });
   } else {
     Object.assign(form, {
@@ -252,6 +260,7 @@ watch(() => props.profile, (p) => {
       twitter_username: '', twitter_password: '', twitter_auth_token: '', twitter_email: '',
       discord_username: '', discord_password: '', discord_token: '', discord_email: '',
       wallet_evm_address: '', wallet_sol_address: '', wallet_password: '',
+      profile_path: '',
     });
   }
 }, { immediate: true });

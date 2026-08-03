@@ -3,7 +3,7 @@ import path from 'path';
 import fs from 'fs';
 import { initDatabase, createProfileQueries, createCookieQueries } from '../../src/db';
 import { generateFingerprint } from '../../src/fingerprint';
-import { getProfileDir } from '../../src/cookie/inject';
+import { getBrowserDataDir } from '../../src/core/profile-path';
 import { createProfileLogger, getAppDir } from '../../src/logger';
 
 function cookiesToNetscape(cookies) {
@@ -85,10 +85,10 @@ describe('Profile Launch Flow', () => {
     const cookies = cookieQueries.getByProfileId(profile.id);
     expect(cookies.length).toBe(3);
 
-    const profileDir = getProfileDir(profile.id);
-    ensureDir(path.join(profileDir, 'Default'));
+    const userDataDir = getBrowserDataDir(profile);
+    ensureDir(path.join(userDataDir, 'Default'));
 
-    const cookieFile = path.join(profileDir, 'Default', 'Cookies');
+    const cookieFile = path.join(userDataDir, 'Default', 'Cookies');
     fs.writeFileSync(cookieFile, cookiesToNetscape(cookies), 'utf-8');
 
     expect(fs.existsSync(cookieFile)).toBe(true);
