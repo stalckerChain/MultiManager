@@ -92,6 +92,7 @@ Authorization: Bearer <token>
   "wallet_evm_address": "0x1234567890abcdef1234567890abcdef12345678",
   "wallet_sol_address": "AbCdEfGhIjKlMnOpQrStUvWxYz1234567890abcd",
   "wallet_password": "my_wallet_pass",
+  "profile_path": "C:\\Users\\user\\stAuto0\\config\\chrome_accounts\\auto_001",
   "status": "stopped",
   "created_at": "2024-01-01T00:00:00.000Z",
   "updated_at": "2024-01-01T00:00:00.000Z"
