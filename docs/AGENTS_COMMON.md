@@ -2,6 +2,8 @@
 
 Любой агент обязан сначала прочитать этот файл, затем документ своей роли.
 
+Если инструкции документа своей роли противоречат `AGENTS_COMMON.md`, приоритет имеет `AGENTS_COMMON.md`.
+
 Проект: MultiManager — AI-Driven Web Automation Platform.
 
 Стек: Node.js (Express, better-sqlite3) + Electron (Vue 3, Ant Design Vue).
