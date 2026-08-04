@@ -273,5 +273,17 @@ describe('createRunQueries + createRunTaskQueries', () => {
     expect(prof1Tasks.length).toBe(2);
     prof1Tasks.forEach(t => expect(t.profile_id).toBe('prof-1'));
   });
+
+  it('getByRunId — возвращает profile_name через LEFT JOIN', () => {
+    const run = runs.create({ name: 'Test' });
+    runTasks.batchInsert(run.id, [
+      { project_name: 'concrete', profile_id: 'prof-1' },
+      { project_name: 'allscale', profile_id: 'prof-2' },
+    ]);
+    const tasks = runTasks.getByRunId(run.id);
+    expect(tasks.length).toBe(2);
+    expect(tasks[0].profile_name).toBe('auto_001');
+    expect(tasks[1].profile_name).toBe('auto_002');
+  });
 });
 

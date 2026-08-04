@@ -119,7 +119,7 @@ describe('GET /api/runs/:id', () => {
     }));
   });
 
-  it('returns run with tasks', async () => {
+  it('returns run with tasks including profile_name', async () => {
     const run = runQueries.create({ name: 'Test' });
     runTaskQueries.batchInsert(run.id, [
       { project_name: 'concrete', profile_id: 'p1' },
@@ -128,6 +128,7 @@ describe('GET /api/runs/:id', () => {
     expect(res.status).toBe(200);
     expect(res.body.name).toBe('Test');
     expect(res.body.tasks.length).toBe(1);
+    expect(res.body.tasks[0].profile_name).toBe('auto_001');
   });
 
   it('returns 404 for non-existent run', async () => {

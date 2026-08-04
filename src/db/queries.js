@@ -598,7 +598,12 @@ function createRunTaskQueries(db) {
     INSERT INTO run_tasks (run_id, project_name, profile_id, status, exit_code, log_file_path, attempts, started_at, completed_at)
     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
   `);
-  const getByRunIdStmt = db.prepare('SELECT * FROM run_tasks WHERE run_id = ?');
+  const getByRunIdStmt = db.prepare(`
+    SELECT run_tasks.*, profiles.name AS profile_name
+    FROM run_tasks
+    LEFT JOIN profiles ON run_tasks.profile_id = profiles.id
+    WHERE run_tasks.run_id = ?
+  `);
   const getByProfileStmt = db.prepare('SELECT * FROM run_tasks WHERE run_id = ? AND profile_id = ?');
   const updateStatusStmt = db.prepare(`
     UPDATE run_tasks SET status = ?, exit_code = ?, log_file_path = COALESCE(?, log_file_path), attempts = COALESCE(?, attempts), error_message = COALESCE(?, error_message), completed_at = CASE WHEN ? IS NOT NULL THEN CURRENT_TIMESTAMP ELSE completed_at END
