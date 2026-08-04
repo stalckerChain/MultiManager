@@ -314,6 +314,14 @@ router.post('/:id/start', asyncHandler(async (req, res) => {
 
   const userDataDir = getBrowserDataDir(profile);
 
+  if (profile.profile_path && !fs.existsSync(userDataDir)) {
+    profileQueries.updateStatus(req.params.id, 'stopped');
+    broadcastStatus(req.params.id, 'stopped');
+    logQueries.add(req.params.id, 'error', `Внешний профиль не найден: ${userDataDir}`);
+    profileLogger.error({ profileId: req.params.id, path: userDataDir }, 'External profile directory not found');
+    return res.status(400).json({ error: `External profile directory not found: ${userDataDir}`, code: 'PROFILE_DIR_NOT_FOUND' });
+  }
+
   injectCookies(req.params.id);
   profileLogger.info({ profileId: req.params.id, profileDir: userDataDir }, 'Куки инжектированы');
 

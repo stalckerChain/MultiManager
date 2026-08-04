@@ -44,7 +44,7 @@
           </div>
           <div class="flex items-center gap-2 ml-2">
             <a-button
-              v-if="run.status === 'pending' || run.status === 'partial'"
+              v-if="run.status === 'pending'"
               size="small"
               type="primary"
               @click.stop="handleStart(run)"

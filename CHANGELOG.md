@@ -21,8 +21,38 @@
 ### Тесты
 
 - Добавлен `tests/unit/profile-path.test.js` (21 тест): helper путей, валидация, сканирование расширений внешнего профиля.
-- Добавлен `tests/unit/inject.test.js` (новые тесты для cookie inject/export с внешними путями).
-- Всего: **797 тестов** (52 файла), все проходят ✅
+- Всего: **804 теста** (52 файла), все проходят ✅
+
+## v1.4.3 (продолжение — автоматизация)
+
+### Исправления
+
+- **[FIX] GUI: кнопка запуска automation run только для `pending`.**
+  Убрана поддержка `partial` — backend не поддерживает перезапуск частично-завершённых ранов. Кнопка «Start» показывается только для статуса `pending`.
+  ✅ `gui/src/renderer/views/AutomationRuns.vue`
+
+- **[FIX] executor: исправлен диапазон `--range` в stAuto0.**
+  Диапазон строился из `profile.number` (DB-порядок), что приводило к несовпадению: профиль `auto_002` → `--range=001-001`. Исправлено на парсинг числового суффикса из `profile.name` (`auto_002` → `002-002`).
+  ✅ `src/executor/index.js`
+
+- **[FIX] executor: токен передаётся явным CLI-аргументом.**
+  Добавлен `--token=${apiToken}` в аргументы Python-процесса (ранее только через `MM_TOKEN` в env). Поддержка `MM_TOKEN` сохранена для обратной совместимости.
+  ✅ `src/executor/index.js`
+
+- **[FIX] API: ужесточена валидация `profile_path`.**
+  `profileUpdateSchema` (был `z.any()`) и `profileBatchSchema` (не проверял абсолютность) приведены к единому стандарту: nullable-строка с проверкой `path.isAbsolute()`. Относительные пути отклоняются на уровне API.
+  ✅ `src/api/validate.js`
+
+- **[FIX] browser: pre-flight проверка внешнего профиля.**
+  При `profile_path != null` перед spawn браузера проверяется `fs.existsSync(userDataDir)`. При отсутствии каталога возвращается 400 `PROFILE_DIR_NOT_FOUND` вместо создания подменного стандартного профиля.
+  ✅ `src/api/browser.js`
+
+### Тесты
+
+- `tests/unit/runs-api.test.js` — новый тест: `'rejects starting without Authorization header'` (401 без токена).
+- `tests/unit/executor.test.js` — обновлён: проверка `--token=tok_xxx` вместо `not.toContain('--token=')`.
+- Удалена ссылка на несуществующий `tests/unit/inject.test.js` из CHANGELOG.
+- Всего: **804 теста** (52 файла), все проходят ✅
 
 ---
 

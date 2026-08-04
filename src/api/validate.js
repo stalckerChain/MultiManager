@@ -68,7 +68,10 @@ const profileUpdateSchema = z.object({
   wallet_evm_address: z.any().optional(),
   wallet_sol_address: z.any().optional(),
   wallet_password: z.any().optional(),
-  profile_path: z.any().optional(),
+  profile_path: z.string().max(1024).nullable().optional().refine(
+    v => !v || path.isAbsolute(v),
+    'profile_path must be an absolute path'
+  ),
 }).passthrough();
 
 const profileBatchSchema = z.object({
@@ -93,7 +96,10 @@ const profileBatchSchema = z.object({
     wallet_evm_address: z.string().max(100).nullable().optional(),
     wallet_sol_address: z.string().max(100).nullable().optional(),
     wallet_password: z.string().max(500).nullable().optional(),
-    profile_path: z.string().max(1024).nullable().optional(),
+    profile_path: z.string().max(1024).nullable().optional().refine(
+      v => !v || path.isAbsolute(v),
+      'profile_path must be an absolute path'
+    ),
   })).min(1, 'accounts должен содержать хотя бы 1 элемент').max(500, 'максимум 500 профилей за раз'),
 });
 

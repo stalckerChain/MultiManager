@@ -91,13 +91,15 @@ class RunExecutor {
     const profile = this.options.getProfileById
       ? await this.options.getProfileById(profileId)
       : null;
-    const profileNumber = profile ? profile.number : 1;
     const profileName = profile ? profile.name : profileId;
 
     const projectNames = tasks.map(t => t.project_name).join(',');
-    const range = `${String(profileNumber).padStart(3, '0')}-${String(profileNumber).padStart(3, '0')}`;
+    const nameMatch = profileName.match(/\d+$/);
+    const accountNumber = nameMatch ? parseInt(nameMatch[0], 10) : 1;
+    const range = `${String(accountNumber).padStart(3, '0')}-${String(accountNumber).padStart(3, '0')}`;
     const args = [
       'main.py',
+      `--token=${this.options.apiToken}`,
       `--project=${projectNames}`,
       `--range=${range}`,
       `--log-name=${this.run.id}`,

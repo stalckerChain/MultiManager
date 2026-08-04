@@ -172,6 +172,13 @@ describe('POST /api/runs/:id/start', () => {
     expect(['running', 'partial', 'completed']).toContain(runStatus);
   });
 
+  it('rejects starting without Authorization header', async () => {
+    const run = runQueries.create({ name: 'Test', status: 'pending' });
+    const res = await request(app).post(`/api/runs/${run.id}/start`);
+    expect(res.status).toBe(401);
+    expect(res.body.error).toBe('API token is required to start runs');
+  });
+
   it('rejects starting a non-pending run', async () => {
     const run = runQueries.create({ name: 'Test', status: 'running' });
     const res = await request(app).post(`/api/runs/${run.id}/start`);

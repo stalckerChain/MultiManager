@@ -1,4 +1,4 @@
-# MultiManager v1.4.2 ✅
+# MultiManager v1.4.3 ✅
 
 AI-Driven Web Automation Platform — кроссплатформенный антидетект-браузер с интеграцией Python-фреймворка автоматизации, графическим интерфейсом и локальным REST API / WebSocket для автономных ИИ-агентов (аналог AdsPower) на базе C++ ядра CloakBrowser.
 
@@ -10,6 +10,10 @@ AI-Driven Web Automation Platform — кроссплатформенный ан�
 - **[FIX] Save в настройках больше не пересинхронизирует проекты.** Ранее `PUT /api/settings/automation` автоматически синхронизировал проекты из ФС, что приводило к восстановлению удалённых проектов после нажатия Save. Теперь Save только сохраняет пути, синхронизация — только через кнопку Sync Projects. ✅ `src/api/settings.js`
 - **[FIX] FOREIGN KEY constraint failed при удалении профилей.** `run_tasks.profile_id` теперь с `ON DELETE CASCADE`. Профили удаляются даже после участия в авто-ране. ✅ `src/db/schema.js`, `src/api/profiles.js`, GUI store/view
 - **[FEAT] Внешние пути к профилям браузера.** Добавлено поле `profile_path` для профилей — позволяет использовать браузерные профили из внешних проектов (например, stAuto0) без копирования файлов. MM запускает браузер с внешним `user-data-dir`, расширения подгружаются из профиля. ✅ `src/db/schema.js`, `src/core/profile-path.js`, `src/api/browser.js`, `src/api/validate.js`, `src/api/profiles.js`, `src/db/queries.js`, GUI
+- **[FIX] Автоматизация: исправлен запуск из GUI.** Кнопка запуска теперь только для `pending`-ранов (не для `partial`). Старт требует `Authorization: Bearer <token>` — 401 без токена. ✅ `gui/src/renderer/views/AutomationRuns.vue`, `src/api/runs.js`, `tests/unit/runs-api.test.js`
+- **[FIX] Автоматизация: исправлена передача токена и диапазона в stAuto0.** Токен теперь передаётся явным CLI-аргументом `--token=` (совместимо с `MM_TOKEN` в env). Диапазон `--range` строится из числового суффикса имени профиля (`auto_002` → `002-002`), а не из DB-порядка `number`. ✅ `src/executor/index.js`, `tests/unit/executor.test.js`
+- **[FIX] Валидация `profile_path` ужесточена.** Все схемы (create, batch, update) единообразно проверяют nullable/пустой/абсолютный путь, отклоняя относительные. ✅ `src/api/validate.js`
+- **[FIX] Pre-flight проверка внешнего профиля.** До запуска браузера проверяется существование user-data-dir для профилей с `profile_path`. При отсутствии — понятная ошибка `PROFILE_DIR_NOT_FOUND`. ✅ `src/api/browser.js`
 
 ## Что нового в v1.4.2
 
