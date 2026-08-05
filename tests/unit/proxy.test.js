@@ -3,7 +3,115 @@ import { SocksClient } from 'socks';
 import http from 'http';
 import https from 'https';
 import { EventEmitter } from 'events';
-import { parseProxy, parseProxyList, checkProxy, rotateProxy, getTimezoneByIp } from '../../src/proxy/index.js';
+import { parseProxy, parseProxyList, checkProxy, rotateProxy, getTimezoneByIp, isPrivateAddress, isValidHostOrIp } from '../../src/proxy/index.js';
+
+describe('isValidHostOrIp', () => {
+  it('accepts valid IP addresses', () => {
+    expect(isValidHostOrIp('1.2.3.4')).toBe(true);
+    expect(isValidHostOrIp('192.168.1.1')).toBe(true);
+    expect(isValidHostOrIp('10.0.0.1')).toBe(true);
+  });
+
+  it('accepts valid hostnames', () => {
+    expect(isValidHostOrIp('proxy.example.com')).toBe(true);
+    expect(isValidHostOrIp('my-proxy.local')).toBe(true);
+    expect(isValidHostOrIp('localhost')).toBe(true);
+  });
+
+  it('rejects hostnames with null bytes', () => {
+    expect(isValidHostOrIp('evil\0.com')).toBe(false);
+  });
+
+  it('rejects hostnames with spaces', () => {
+    expect(isValidHostOrIp('evil .com')).toBe(false);
+  });
+
+  it('rejects empty and non-string', () => {
+    expect(isValidHostOrIp('')).toBe(false);
+    expect(isValidHostOrIp(null)).toBe(false);
+    expect(isValidHostOrIp(undefined)).toBe(false);
+  });
+
+  it('accepts IPv6 addresses', () => {
+    expect(isValidHostOrIp('::1')).toBe(true);
+    expect(isValidHostOrIp('2001:db8::1')).toBe(true);
+  });
+});
+
+describe('isPrivateAddress', () => {
+  it('detects localhost', () => {
+    expect(isPrivateAddress('localhost')).toBe(true);
+    expect(isPrivateAddress('127.0.0.1')).toBe(true);
+    expect(isPrivateAddress('::1')).toBe(true);
+    expect(isPrivateAddress('[::1]')).toBe(true);
+  });
+
+  it('detects private IPv4 ranges', () => {
+    expect(isPrivateAddress('10.0.0.1')).toBe(true);
+    expect(isPrivateAddress('10.255.255.255')).toBe(true);
+    expect(isPrivateAddress('192.168.1.1')).toBe(true);
+    expect(isPrivateAddress('192.168.255.255')).toBe(true);
+    expect(isPrivateAddress('172.16.0.1')).toBe(true);
+    expect(isPrivateAddress('172.31.255.255')).toBe(true);
+  });
+
+  it('allows public IPv4 addresses', () => {
+    expect(isPrivateAddress('8.8.8.8')).toBe(false);
+    expect(isPrivateAddress('1.1.1.1')).toBe(false);
+    expect(isPrivateAddress('93.184.216.34')).toBe(false);
+  });
+
+  it('detects link-local addresses', () => {
+    expect(isPrivateAddress('169.254.1.1')).toBe(true);
+    expect(isPrivateAddress('169.254.255.255')).toBe(true);
+  });
+
+  it('detects carrier-grade NAT', () => {
+    expect(isPrivateAddress('100.64.0.1')).toBe(true);
+    expect(isPrivateAddress('100.127.255.255')).toBe(true);
+  });
+
+  it('allows non-CGNAT 100.x addresses', () => {
+    expect(isPrivateAddress('100.63.255.255')).toBe(false);
+    expect(isPrivateAddress('100.128.0.1')).toBe(false);
+  });
+
+  it('detects multicast addresses', () => {
+    expect(isPrivateAddress('ff00::')).toBe(true);
+  });
+
+  it('detects IPv4-mapped IPv6 addresses', () => {
+    expect(isPrivateAddress('::ffff:127.0.0.1')).toBe(true);
+    expect(isPrivateAddress('::ffff:10.0.0.1')).toBe(true);
+    expect(isPrivateAddress('::ffff:192.168.1.1')).toBe(true);
+    expect(isPrivateAddress('::ffff:8.8.8.8')).toBe(false);
+  });
+
+  it('detects leading-zero IPv4 forms', () => {
+    expect(isPrivateAddress('010.000.000.001')).toBe(true);
+    expect(isPrivateAddress('010.010.010.010')).toBe(true);
+  });
+
+  it('detects unspecified address', () => {
+    expect(isPrivateAddress('0.0.0.0')).toBe(true);
+    expect(isPrivateAddress('[::]')).toBe(true);
+  });
+
+  it('handles non-string input', () => {
+    expect(isPrivateAddress(null)).toBe(false);
+    expect(isPrivateAddress(undefined)).toBe(false);
+    expect(isPrivateAddress('')).toBe(false);
+  });
+
+  it('detects unique local IPv6 addresses', () => {
+    expect(isPrivateAddress('fc00::1234')).toBe(true);
+    expect(isPrivateAddress('fd12:3456:7890::1')).toBe(true);
+  });
+
+  it('detects NAT64 prefix', () => {
+    expect(isPrivateAddress('64:ff9b::192.168.1.1')).toBe(true);
+  });
+});
 
 describe('Proxy Parser', () => {
   it('парсит SOCKS5 прокси с авторизацией', () => {
@@ -45,6 +153,10 @@ describe('Proxy Parser', () => {
   it('выбрасывает ошибку при невалидном порте', () => {
     expect(() => parseProxy('host:0')).toThrow('Неверный формат прокси');
     expect(() => parseProxy('host:99999')).toThrow('Неверный формат прокси');
+  });
+
+  it('rejects null byte in host', () => {
+    expect(() => parseProxy('evil\0.com:8080:user:pass')).toThrow('Неверный формат прокси');
   });
 
   it('парсит список прокси с комментариями', () => {
@@ -106,16 +218,6 @@ describe('checkProxy', () => {
     SocksClient.createConnection = vi.fn().mockRejectedValue(new Error(message));
   }
 
-  function mockHttpRequestWithConnect(socket) {
-    http.request = vi.fn((opts, cb) => {
-      const fakeRes = { statusCode: 200 };
-      process.nextTick(() => cb(fakeRes, socket || { on: vi.fn(), destroy: vi.fn() }));
-      const req = { on: vi.fn(), end: vi.fn(), destroy: vi.fn() };
-      process.nextTick(() => req.emit && req.emit('connect', fakeRes, socket || { on: vi.fn(), destroy: vi.fn() }));
-      return req;
-    });
-  }
-
   function mockHttpsGet(ip) {
     https.get = vi.fn((url, opts, cb) => {
       const fakeRes = {
@@ -146,7 +248,7 @@ describe('checkProxy', () => {
     mockSocksError('refused');
     const r = await checkProxy({ type: 'socks5', host: 'bad.com', port: 1080 }, 3000);
     expect(r.ok).toBe(false);
-    expect(r.error).toBe('refused');
+    expect(r.error).toBe('Connection failed');
   });
 
   it('socks5: успешная проверка → ok:true + ip', async () => {
@@ -221,17 +323,39 @@ describe('checkProxy', () => {
     const r = await checkProxy({ type: 'http', host: 'slow.com', port: 8080 }, 100);
     expect(r.ok).toBe(false);
   });
+
+  it('proxy errors do not expose credentials', async () => {
+    mockSocksError('refused');
+    const r = await checkProxy({ type: 'socks5', host: 'bad.com', port: 1080, username: 'secretUser', password: 'secretPass' }, 3000);
+    expect(r.ok).toBe(false);
+    expect(r.error).not.toContain('secretUser');
+    expect(r.error).not.toContain('secretPass');
+  });
+
+  it('HTTP: CONNECT error message does not expose credentials', async () => {
+    http.request = vi.fn((opts, cb) => {
+      const req = { on: vi.fn((event, handler) => { if (event === 'error') process.nextTick(() => handler(new Error('ECONNREFUSED'))); return req; }), end: vi.fn(), destroy: vi.fn() };
+      return req;
+    });
+    const r = await checkProxy({ type: 'http', host: 'proxy.com', port: 8080, username: 'secretUser', password: 'secretPass' }, 3000);
+    expect(r.ok).toBe(false);
+    expect(r.error).not.toContain('secretUser');
+    expect(r.error).not.toContain('secretPass');
+  });
 });
 
 describe('rotateProxy', () => {
   let origHttpGet;
+  let origHttpsGet;
 
   beforeEach(() => {
     origHttpGet = http.get;
+    origHttpsGet = https.get;
   });
 
   afterEach(() => {
     http.get = origHttpGet;
+    https.get = origHttpsGet;
   });
 
   it('успешная ротация с status 200', async () => {
@@ -271,7 +395,7 @@ describe('rotateProxy', () => {
       const req = { on: vi.fn((event, handler) => { if (event === 'error') process.nextTick(() => handler(new Error('ENOTFOUND'))); return req; }) };
       return req;
     });
-    await expect(rotateProxy('http://invalid-url/rotate')).rejects.toThrow('ENOTFOUND');
+    await expect(rotateProxy('http://invalid-url/rotate')).rejects.toThrow('Network error');
   });
 
   it('таймаут ротации → reject', async () => {
@@ -280,6 +404,45 @@ describe('rotateProxy', () => {
       return req;
     });
     await expect(rotateProxy('http://slow-proxy/rotate', 50)).rejects.toThrow('Rotation timeout');
+  });
+
+  it('rejects localhost rotation URL', async () => {
+    await expect(rotateProxy('http://localhost:8080/rotate')).rejects.toThrow('private/local addresses');
+    await expect(rotateProxy('http://127.0.0.1:8080/rotate')).rejects.toThrow('private/local addresses');
+    await expect(rotateProxy('http://[::1]:8080/rotate')).rejects.toThrow('private/local addresses');
+  });
+
+  it('rejects private network rotation URL', async () => {
+    await expect(rotateProxy('http://192.168.1.1/rotate')).rejects.toThrow('private/local addresses');
+    await expect(rotateProxy('http://10.0.0.1/rotate')).rejects.toThrow('private/local addresses');
+    await expect(rotateProxy('http://172.16.0.1/rotate')).rejects.toThrow('private/local addresses');
+  });
+
+  it('rejects link-local rotation URL', async () => {
+    await expect(rotateProxy('http://169.254.1.1/rotate')).rejects.toThrow('private/local addresses');
+  });
+
+  it('rejects redirect to private address', async () => {
+    let firstCall = true;
+    http.get = vi.fn((url, opts, cb) => {
+      if (firstCall) {
+        firstCall = false;
+        const fakeRes = { statusCode: 302, headers: { location: 'http://10.0.0.1/rotate' }, on: vi.fn(), destroy: vi.fn() };
+        process.nextTick(() => cb(fakeRes));
+        return { on: vi.fn(), destroy: vi.fn() };
+      }
+      return { on: vi.fn(), destroy: vi.fn() };
+    });
+    await expect(rotateProxy('http://api.example.com/rotate')).rejects.toThrow('private/local addresses');
+  });
+
+  it('rejects redirect loop beyond limit', async () => {
+    http.get = vi.fn((url, opts, cb) => {
+      const fakeRes = { statusCode: 302, headers: { location: 'http://api.example.com/rotate2' }, on: vi.fn(), destroy: vi.fn() };
+      process.nextTick(() => cb(fakeRes));
+      return { on: vi.fn(), destroy: vi.fn() };
+    });
+    await expect(rotateProxy('http://api.example.com/rotate')).rejects.toThrow('Too many redirects');
   });
 });
 
@@ -338,7 +501,7 @@ describe('getTimezoneByIp', () => {
     });
     const r = await getTimezoneByIp('bad-host');
     expect(r.ok).toBe(false);
-    expect(r.error).toBe('ENOTFOUND');
+    expect(r.error).toBe('Network error');
   });
 
   it('таймаут → ok:false', async () => {

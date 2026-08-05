@@ -4,15 +4,28 @@ const { URL } = require('url');
 const { SocksClient } = require('socks');
 const { logger } = require('../logger');
 
+const IPV4_PRIVATE = /^(127\.\d{1,3}\.\d{1,3}\.\d{1,3}|10\.\d{1,3}\.\d{1,3}\.\d{1,3}|192\.168\.\d{1,3}\.\d{1,3}|172\.(1[6-9]|2\d|3[01])\.\d{1,3}\.\d{1,3}|100\.(6[4-9]|[7-9]\d|1[01]\d|12[0-7])\.\d{1,3}\.\d{1,3}|169\.254\.\d{1,3}\.\d{1,3}|0\.0\.0\.0)$/;
+const IPV4_LEADING_ZERO = /^0\d+/;
+const IPV4_OCTET = /^\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}$/;
+const ROTATION_RESPONSE_LIMIT = 10 * 1024 * 1024;
+const MAX_REDIRECTS = 5;
+
 function parseProxy(proxyString) {
   const urlRegex = /^(https?|socks5):\/\/(?:([^:]+):([^@]+)@)?([^:]+):(\d+)$/;
   const urlMatch = proxyString.match(urlRegex);
   
   if (urlMatch) {
+    const port = parseInt(urlMatch[5], 10);
+    if (port <= 0 || port > 65535) throw new Error(`Неверный формат прокси: ${proxyString}`);
+
+    if (!isValidHostOrIp(urlMatch[4])) {
+      throw new Error(`Неверный формат прокси: ${proxyString}`);
+    }
+
     return {
       type: urlMatch[1],
       host: urlMatch[4],
-      port: parseInt(urlMatch[5], 10),
+      port,
       username: urlMatch[2] || null,
       password: urlMatch[3] || null,
     };
@@ -23,6 +36,7 @@ function parseProxy(proxyString) {
     const [host, port, username, password] = colonParts;
     const portNum = parseInt(port, 10);
     if (!isNaN(portNum) && portNum > 0 && portNum <= 65535) {
+      if (!isValidHostOrIp(host)) throw new Error(`Неверный формат прокси: ${proxyString}`);
       return { type: 'http', host, port: portNum, username, password };
     }
   }
@@ -31,11 +45,67 @@ function parseProxy(proxyString) {
     const [host, port] = colonParts;
     const portNum = parseInt(port, 10);
     if (!isNaN(portNum) && portNum > 0 && portNum <= 65535) {
+      if (!isValidHostOrIp(host)) throw new Error(`Неверный формат прокси: ${proxyString}`);
       return { type: 'http', host, port: portNum, username: null, password: null };
     }
   }
 
   throw new Error(`Неверный формат прокси: ${proxyString}`);
+}
+
+function isValidHostOrIp(host) {
+  if (!host || typeof host !== 'string') return false;
+  const lower = host.toLowerCase();
+
+  if (lower === 'localhost' || lower === '::1') return true;
+  if (lower.includes('\0') || lower.includes(' ') || lower.includes('\n') || lower.includes('\r')) return false;
+
+  if (/^[0-9a-f:]+$/i.test(lower)) return true;
+  if (/^\d+\.\d+\.\d+\.\d+$/.test(lower)) return true;
+  if (/^[a-z0-9]([a-z0-9-]*[a-z0-9])?(\.[a-z0-9]([a-z0-9-]*[a-z0-9])?)*$/i.test(lower)) return true;
+
+  return false;
+}
+
+function isPrivateAddress(hostname) {
+  if (!hostname || typeof hostname !== 'string') return false;
+  const lower = hostname.toLowerCase().trim();
+
+  if (lower === 'localhost' || lower === '[::1]' || lower === '[::]' || lower === '::1') return true;
+  if (lower === '0.0.0.0') return true;
+
+  if (lower.startsWith('127.') && IPV4_OCTET.test(lower)) {
+    const octets = lower.split('.');
+    if (octets.length === 4 && !isNaN(parseInt(octets[0])) && !isNaN(parseInt(octets[1])) &&
+        !isNaN(parseInt(octets[2])) && !isNaN(parseInt(octets[3]))) return true;
+  }
+
+  if (lower === 'fe80::' || lower.startsWith('fe80:')) return true;
+  if (lower === 'ff00::' || lower.startsWith('ff0')) return true;
+  if (lower === 'fc00::' || lower.startsWith('fc') || lower.startsWith('fd')) return true;
+
+  if (IPV4_OCTET.test(lower)) {
+    const octets = lower.split('.').map(Number);
+    if (octets.length !== 4 || octets.some(o => isNaN(o) || o > 255)) return false;
+    if (octets[0] === 10) return true;
+    if (octets[0] === 127) return true;
+    if (octets[0] === 0) return true;
+    if (octets[0] === 192 && octets[1] === 168) return true;
+    if (octets[0] === 172 && octets[1] >= 16 && octets[1] <= 31) return true;
+    if (octets[0] === 100 && octets[1] >= 64 && octets[1] <= 127) return true;
+    if (octets[0] === 169 && octets[1] === 254) return true;
+  }
+
+  if (lower.startsWith('::ffff:')) {
+    const ipv4 = lower.slice(7);
+    if (IPV4_OCTET.test(ipv4)) return isPrivateAddress(ipv4);
+  }
+
+  if (lower.startsWith('64:ff9b::') || lower.startsWith('64:ff9b:1:')) return true;
+
+  if (IPV4_OCTET.test(lower) && IPV4_LEADING_ZERO.test(lower)) return true;
+
+  return false;
 }
 
 function parseProxyList(text) {
@@ -69,7 +139,7 @@ async function checkSocks5Proxy(proxy, timeout = 10000) {
     return new Promise((resolve) => {
       const agent = new https.Agent({
         socket,
-        rejectUnauthorized: false,
+        rejectUnauthorized: true,
       });
 
       https.get('https://api.ipify.org?format=json', { agent }, (response) => {
@@ -84,7 +154,7 @@ async function checkSocks5Proxy(proxy, timeout = 10000) {
           }
         });
       }).on('error', (err) => {
-        resolve({ ok: false, error: err.message });
+        resolve({ ok: false, error: 'Connection failed' });
       });
 
       setTimeout(() => {
@@ -93,7 +163,7 @@ async function checkSocks5Proxy(proxy, timeout = 10000) {
       }, timeout);
     });
   } catch (err) {
-    return { ok: false, error: err.message };
+    return { ok: false, error: 'Connection failed' };
   }
 }
 
@@ -121,7 +191,7 @@ async function checkHttpProxy(proxy, timeout = 10000) {
 
       const agent = new https.Agent({
         socket,
-        rejectUnauthorized: false,
+        rejectUnauthorized: true,
       });
 
       https.get('https://api.ipify.org?format=json', { agent }, (response) => {
@@ -136,12 +206,12 @@ async function checkHttpProxy(proxy, timeout = 10000) {
           }
         });
       }).on('error', (err) => {
-        resolve({ ok: false, error: err.message });
+        resolve({ ok: false, error: 'Connection failed' });
       });
     });
 
     req.on('error', (err) => {
-      resolve({ ok: false, error: err.message });
+      resolve({ ok: false, error: 'Connection failed' });
     });
 
     req.on('timeout', () => {
@@ -179,49 +249,79 @@ async function checkProxy(proxy, timeout = 10000) {
 
 async function rotateProxy(rotationUrl, timeout = 10000) {
   return new Promise((resolve, reject) => {
-    let url;
-    try {
-      url = new URL(rotationUrl);
-    } catch {
-      return reject(new Error('Invalid rotation URL'));
-    }
+    const doRotate = (currentUrl, redirectsLeft) => {
+      let url;
+      try {
+        url = new URL(currentUrl);
+      } catch {
+        return reject(new Error('Invalid rotation URL'));
+      }
 
-    if (url.protocol !== 'http:' && url.protocol !== 'https:') {
-      return reject(new Error('Rotation URL must use http or https protocol'));
-    }
+      if (url.protocol !== 'http:' && url.protocol !== 'https:') {
+        return reject(new Error('Rotation URL must use http or https protocol'));
+      }
 
-    const hostname = url.hostname;
-    if (hostname === 'localhost' || hostname === '127.0.0.1' || hostname === '::1' ||
-        hostname.startsWith('192.168.') || hostname.startsWith('10.') ||
-        hostname.startsWith('172.') || hostname === '0.0.0.0') {
-      return reject(new Error('Rotation URL cannot point to private/local addresses'));
-    }
+      if (redirectsLeft <= 0) {
+        return reject(new Error('Too many redirects'));
+      }
 
-    const client = url.protocol === 'https:' ? https : http;
+      if (isPrivateAddress(url.hostname)) {
+        return reject(new Error('Rotation URL cannot point to private/local addresses'));
+      }
 
-    const req = client.get(rotationUrl, { timeout }, (res) => {
-      let data = '';
-      res.on('data', chunk => data += chunk);
-      res.on('end', () => {
-        if (res.statusCode === 200) {
-          resolve({ ok: true, data });
-        } else {
-          resolve({ ok: false, error: `Status ${res.statusCode}` });
+      const client = url.protocol === 'https:' ? https : http;
+
+      const req = client.get(currentUrl, { timeout }, (res) => {
+        if (res.statusCode === 301 || res.statusCode === 302 || res.statusCode === 307 || res.statusCode === 308) {
+          if (res.headers.location) {
+            try {
+              const nextUrl = new URL(res.headers.location, currentUrl).href;
+              res.destroy();
+              return doRotate(nextUrl, redirectsLeft - 1);
+            } catch {
+              res.destroy();
+              return reject(new Error('Invalid redirect URL'));
+            }
+          }
         }
-      });
-    });
 
-    req.on('error', reject);
-    req.on('timeout', () => {
-      req.destroy();
-      reject(new Error('Rotation timeout'));
-    });
+        let data = '';
+        let totalSize = 0;
+
+        res.on('data', (chunk) => {
+          totalSize += chunk.length;
+          if (totalSize > ROTATION_RESPONSE_LIMIT) {
+            req.destroy();
+            res.destroy();
+            reject(new Error('Rotation response too large'));
+            return;
+          }
+          data += chunk;
+        });
+
+        res.on('end', () => {
+          if (res.statusCode === 200) {
+            resolve({ ok: true, data });
+          } else {
+            resolve({ ok: false, error: `Status ${res.statusCode}` });
+          }
+        });
+      });
+
+      req.on('error', () => reject(new Error('Network error')));
+      req.on('timeout', () => {
+        req.destroy();
+        reject(new Error('Rotation timeout'));
+      });
+    };
+
+    doRotate(rotationUrl, MAX_REDIRECTS);
   });
 }
 
 async function getTimezoneByIp(ip, timeout = 5000) {
   return new Promise((resolve) => {
-    const req = http.get(`http://ip-api.com/json/${ip}?fields=status,message,timezone,countryCode,country`, { timeout }, (res) => {
+    const req = http.get(`http://ip-api.com/json/${encodeURIComponent(ip)}?fields=status,message,timezone,countryCode,country`, { timeout }, (res) => {
       let data = '';
       res.on('data', chunk => data += chunk);
       res.on('end', () => {
@@ -242,7 +342,7 @@ async function getTimezoneByIp(ip, timeout = 5000) {
     });
 
     req.on('error', (err) => {
-      resolve({ ok: false, error: err.message });
+      resolve({ ok: false, error: 'Network error' });
     });
 
     req.on('timeout', () => {
@@ -252,4 +352,4 @@ async function getTimezoneByIp(ip, timeout = 5000) {
   });
 }
 
-module.exports = { parseProxy, parseProxyList, checkProxy, rotateProxy, getTimezoneByIp };
+module.exports = { parseProxy, parseProxyList, checkProxy, rotateProxy, getTimezoneByIp, isPrivateAddress, isValidHostOrIp };

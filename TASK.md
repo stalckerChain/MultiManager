@@ -99,7 +99,7 @@
 - временный каталог удаляется после ошибки валидации или распаковки;
 - обычные ZIP/CRX с валидным manifest по-прежнему устанавливаются.
 
-### 4. Исправить proxy SSRF и TLS-проверки
+### 4. Исправить proxy SSRF и TLS-проверки ✅
 
 **Файлы:** `src/proxy/index.js`, `src/api/proxies.js`, `tests/unit/proxy.test.js`
 
