@@ -55,7 +55,7 @@
 
 **Проверка:** `npm ls adm-zip ip-address body-parser brace-expansion esbuild --all`; `npm audit --omit=dev`; полный `npm audit`.
 
-### 2. Обновить GUI/Electron dependencies
+### 2. Обновить GUI/Electron dependencies ✅
 
 **Файлы:** `gui/package.json`, `gui/package-lock.json`
 
