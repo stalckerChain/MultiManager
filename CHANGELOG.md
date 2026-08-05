@@ -2,6 +2,22 @@
 
 ## v1.4.3
 
+### Безопасность
+
+- **[SEC] Устранены уязвимости зависимостей backend.** Обновлены `adm-zip` (0.5.18 → 0.6.0), `ip-address` (10.2.0 → 10.4.0), `body-parser` (1.20.5 → 1.20.6), `brace-expansion` (1.1.15 → 1.1.18), `esbuild` (0.27.7 → 0.28.1). Генерирован чистый lock-файл. ✅ `package.json`, `package-lock.json`
+
+- **[SEC] Устранены уязвимости зависимостей GUI/Electron.** Обновлены `electron` (34.5.8 → 43.3.0), `electron-builder` (25.1.8 → 26.15.3), `better-sqlite3` (11.7.0 → 13.0.3), `cloakbrowser` (0.5.3 → 0.5.4), `postcss` (8.5.15 → 8.5.25), `js-yaml` (4.2.0 → 4.3.1), `concurrently` (9.2.3 → 9.2.4). `tar` форсирован до 7.5.22 через overrides. ✅ `gui/package.json`, `gui/package-lock.json`
+
+- **[SEC] Защита обработки ZIP/CRX расширений.** Введены лимиты на размер архива (10 MB), количество файлов (500), размер одного файла (50 MB), суммарный uncompressed size (100 MB). Добавлена проверка path traversal (`../`, абсолютные пути, drive-relative, NUL-байты, symlink/hardlink). Распаковка во временный каталог с атомарным перемещением. Валидация `name`/`targetName` от path separators и `..`. CRX: проверка границ header до `subarray`. `downloadWithRedirects`: только HTTPS, проверка redirect destinations, лимит размера ответа (20 MB). Безопасные HTTP 500 — без stack traces. ✅ `src/api/extensions.js`, `tests/unit/extensions.test.js`
+
+- **[SEC] Защита proxy от SSRF и отключённой TLS-проверки.** Добавлена `isPrivateAddress()` — проверяет localhost, loopback, RFC1918, link-local, CGNAT, multicast, unspecified, IPv4-mapped IPv6, NAT64, leading-zero формы. `rotateProxy`: валидация адреса на каждом redirect, лимит размера ответа, лимит редиректов. `checkSocks5Proxy`/`checkHttpProxy`: `rejectUnauthorized: true` вместо `false`. Ошибки не раскрывают credentials. ✅ `src/proxy/index.js`, `tests/unit/proxy.test.js`
+
+- **[SEC] Усиление Electron boundary.** Убран универсальный `invoke(channel, ...args)` из preload — только перечисленные IPC channels (13 каналов). Валидация аргументов `pty:start`. Навигационные ограничения: `setWindowOpenHandler` запрещает внешние окна, `will-navigate`/`will-redirect` разрешает только dev URL или открывает во внешнем браузере. Updater: проверка `version` в update events, `allowDowngrade: false`. ✅ `gui/src/preload/index.js`, `gui/src/main/index.js`, `gui/src/main/updater.js`
+
+- **[SEC] Audit-скрипты.** Добавлены `security:audit` в оба `package.json` — `npm audit --audit-level=high`. ✅ `package.json`, `gui/package.json`
+
+- **[CHORE] ESLint flat config.** Создан `eslint.config.mjs` для ESLint 9. Исправлены все 14 ошибок линтера: `no-empty` catch blocks, `no-control-regex`, `no-dupe-keys`. ✅ `eslint.config.mjs`, `src/api/browser.js`, `src/api/extensions.js`, `src/db/queries.js`, `src/logger/index.js`, `src/os-input/hook-worker.js`, `src/proxy/index.js`
+
 ### Исправления
 
 - **[FIX] Runtime ID расширения Zerion — имя каталога ≠ chrome-extension:// ID.**

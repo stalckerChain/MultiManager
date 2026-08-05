@@ -7,6 +7,10 @@ AI-Driven Web Automation Platform — кроссплатформенный ан�
 
 ## Что нового в v1.4.3
 
+- **[SEC] Устранены уязвимости зависимостей.** Backend: `adm-zip`, `ip-address`, `body-parser`, `brace-expansion`, `esbuild`. GUI/Electron: `electron` 34→43, `electron-builder` 25→26, `better-sqlite3` 11→13, `cloakbrowser`, `postcss`, `js-yaml`, `concurrently`, `tar` (forced 7.5.22). Production audit: 0 vulns. ✅ `package.json`, `gui/package.json`
+- **[SEC] Защита ZIP/CRX.** Path traversal, лимиты размера/файлов, атомарное перемещение, безопасные ошибки, CRX boundary checks. ✅ `src/api/extensions.js`
+- **[SEC] Защита proxy от SSRF.** `isPrivateAddress()` для всех специальных диапазонов, валидация redirect, TLS `rejectUnauthorized: true`. ✅ `src/proxy/index.js`
+- **[SEC] Electron boundary.** IPC allowlist (13 каналов), навигационные ограничения, защита updater. ✅ `gui/src/preload/index.js`, `gui/src/main/index.js`
 - **[FIX] Save в настройках больше не пересинхронизирует проекты.** Ранее `PUT /api/settings/automation` автоматически синхронизировал проекты из ФС, что приводило к восстановлению удалённых проектов после нажатия Save. Теперь Save только сохраняет пути, синхронизация — только через кнопку Sync Projects. ✅ `src/api/settings.js`
 - **[FIX] FOREIGN KEY constraint failed при удалении профилей.** `run_tasks.profile_id` теперь с `ON DELETE CASCADE`. Профили удаляются даже после участия в авто-ране. ✅ `src/db/schema.js`, `src/api/profiles.js`, GUI store/view
 - **[FEAT] Внешние пути к профилям браузера.** Добавлено поле `profile_path` для профилей — позволяет использовать браузерные профили из внешних проектов (например, stAuto0) без копирования файлов. MM запускает браузер с внешним `user-data-dir`, расширения подгружаются из профиля. ✅ `src/db/schema.js`, `src/core/profile-path.js`, `src/api/browser.js`, `src/api/validate.js`, `src/api/profiles.js`, `src/db/queries.js`, GUI
