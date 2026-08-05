@@ -1,6 +1,7 @@
 import { describe, it, expect, beforeEach, vi, afterEach } from 'vitest';
 import { RunExecutor } from '../../src/executor';
 import { EventEmitter } from 'events';
+import { readFileSync } from 'fs';
 
 const mockStream = () => ({ pipe: vi.fn() });
 
@@ -146,5 +147,29 @@ describe('RunExecutor', () => {
     await exec.start();
     // Should NOT mark task as failed because DB shows success
     expect(executor.options.updateRunTaskStatus).not.toHaveBeenCalledWith(1, 'failed');
+  });
+});
+
+// --- ZERION_ID: runtime ID resolution regression tests ---
+
+const EXECUTOR_JS = new URL('../../src/executor/index.js', import.meta.url);
+
+describe('Executor — ZERION_ID resolves runtime ID', () => {
+  const content = readFileSync(EXECUTOR_JS, 'utf-8');
+
+  it('uses resolveRuntimeId instead of directly using extensions[0]', () => {
+    expect(content).toMatch(/resolveRuntimeId\s*\(/);
+  });
+
+  it('does NOT pass extensions[0] directly as ZERION_ID', () => {
+    expect(content).not.toMatch(/zerionId\s*=\s*extensions\[0\]/);
+  });
+
+  it('passes resolved runtime ID to env ZERION_ID', () => {
+    expect(content).toContain('ZERION_ID');
+  });
+
+  it('imports resolveRuntimeId from extensions', () => {
+    expect(content).toMatch(/require\s*\(\s*['"]\.\.\/api\/extensions['"]\s*\)/);
   });
 });

@@ -234,7 +234,7 @@ GUI передаёт порт бэкенду через **env-переменну
 ### 4.13. Авто-логин Zerion по CDP ✅ РЕАЛИЗОВАНО (Roadmap Ф2 + Ф4)
 > Логика перенесена из Python (`stAuto0/Core/browser.py:348 login_zerion`) в Node.js. Python получает уже залогиненный `ws_endpoint`.
 
-Zerion ID определяется из `Secure Preferences` профиля (`extensions.settings`) — Chrome генерирует ID из публичного ключа CRX, а не из имени папки расширения. Поиск Zerion через `getManifest()` + `resolveMSG()` по имени расширения.
+Zerion ID определяется через `computeRuntimeId(manifest.key)` (SHA-256 от DER-encoded public key → `a`–`p`) и `resolveRuntimeId(extPath, profilePath)` (приоритет `Secure Preferences` по точному совпадению пути, затем `manifest.key`) — не через имя папки расширения и не через поиск по имени в Secure Preferences.
 
 Flow:
 1. Подключение к CDP через `discoverWsUrl()` (полный URL с UUID).

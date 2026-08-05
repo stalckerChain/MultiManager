@@ -252,3 +252,29 @@ describe('Browser start — browserPath type safety', () => {
     expect(String(fakePromise)).not.toBe(browserPath);
   });
 });
+
+// --- Zerion login: runtime ID resolution regression tests ---
+
+describe('Browser — zerion-login resolves runtime ID from profile.extensions', () => {
+  const content = readFileSync(BROWSER_JS, 'utf-8');
+
+  it('zerion-login handler uses tryParseJson(profile.extensions) to get extIds', () => {
+    expect(content).toMatch(/tryParseJson\s*\(\s*profile\.extensions\s*\)/);
+  });
+
+  it('zerion-login handler calls resolveRuntimeId with extPath and profileDir', () => {
+    expect(content).toMatch(/resolveRuntimeId\s*\(/);
+  });
+
+  it('zerion-login handler uses getExtensionsDir to build extPath', () => {
+    expect(content).toMatch(/path\.join\s*\(\s*extDir\s*,\s*folderName\s*\)/);
+  });
+
+  it('zerion-login throws when no extensions assigned', () => {
+    expect(content).toMatch(/Не найдено расширение Zerion в профиле/);
+  });
+
+  it('zerion-login throws when runtime ID cannot be resolved', () => {
+    expect(content).toMatch(/Не удалось определить runtime ID расширения Zerion/);
+  });
+});

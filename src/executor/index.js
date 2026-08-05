@@ -1,5 +1,7 @@
 const path = require('path');
 const fs = require('fs');
+const { getExtensionsDir, resolveRuntimeId } = require('../api/extensions');
+const { getBrowserDataDir } = require('../core/profile-path');
 
 class RunExecutor {
   static instances = new Map();
@@ -113,7 +115,12 @@ class RunExecutor {
       try {
         const extensions = JSON.parse(profile.extensions);
         if (Array.isArray(extensions) && extensions.length > 0) {
-          zerionId = extensions[0];
+          const folderName = extensions[0];
+          const extDir = getExtensionsDir();
+          const extPath = path.join(extDir, folderName);
+          const profileDir = getBrowserDataDir(profile);
+          const runtimeId = await resolveRuntimeId(extPath, profileDir);
+          if (runtimeId) zerionId = runtimeId;
         }
       } catch (e) {
         // ignore parse errors

@@ -9,7 +9,7 @@ const { injectCookies } = require('../cookie/inject');
 const { getBrowserDataDir, getExtensionsFromProfileDir } = require('../core/profile-path');
 const { logger, createProfileLogger } = require('../logger');
 const { broadcastStatus } = require('../core/websocket');
-const { getExtensionsDir, getManifest, resolveMSG } = require('./extensions');
+const { getExtensionsDir, getManifest, resolveMSG, resolveRuntimeId } = require('./extensions');
 const { humanType } = require('../typing');
 const { hasMasterKey, getMasterKey } = require('../crypto');
 const { validate, browserTypeSchema } = require('./validate');
@@ -219,7 +219,11 @@ async function loadExtensionsViaCDP(profileId, extPaths, logQueries, profileLogg
           logQueries.add(profileId, 'info', `Extension loaded via CDP: ${path.basename(extPath)}`);
           profileLogger.info({ profileId, extPath }, 'Extension loaded via CDP');
         } else {
-          logQueries.add(profileId, 'warn', `CDP load failed: ${result?.result?.value?.error || 'unknown'}`);
+          const errorDetail = result?.result?.value?.error
+            || result?.exceptionDetails?.text
+            || result?.exceptionDetails?.exception?.description
+            || 'unknown';
+          logQueries.add(profileId, 'warn', `CDP load failed: ${errorDetail}`);
         }
       } catch (err) {
         logQueries.add(profileId, 'warn', `CDP load error: ${err.message}`);
@@ -797,29 +801,16 @@ router.post('/:id/zerion-login', asyncHandler(async (req, res) => {
   if (!walletPassword) throw badRequest('Не задан wallet_password в профиле');
 
   const extDir = getExtensionsDir();
-  let zerionExtId = null;
+  const extIds = tryParseJson(profile.extensions);
+  const folderName = extIds.length > 0 ? extIds[0] : null;
 
+  if (!folderName) throw badRequest('Не найдено расширение Zerion в профиле');
+
+  const extPath = path.join(extDir, folderName);
   const profileDir = getBrowserDataDir(profile);
-  const securePrefsPath = path.join(profileDir, 'Default', 'Secure Preferences');
-  try {
-    const data = JSON.parse(await fs.promises.readFile(securePrefsPath, 'utf-8'));
-    const settings = data?.extensions?.settings || {};
-    for (const [extId, extSettings] of Object.entries(settings)) {
-      const extPath = extSettings.path;
-      if (!extPath) continue;
-      const manifest = await getManifest(extPath);
-      if (!manifest) continue;
-      const name = await resolveMSG(manifest.name, extPath) || '';
-      if (name.toLowerCase().includes('zerion')) {
-        zerionExtId = extId;
-        break;
-      }
-    }
-  } catch (err) {
-    logger.warn({ profileId: req.params.id, error: err.message }, 'zerion-login: failed to read Secure Preferences');
-  }
+  const zerionExtId = await resolveRuntimeId(extPath, profileDir);
 
-  if (!zerionExtId) throw badRequest('Не найдено расширение Zerion в профиле');
+  if (!zerionExtId) throw badRequest('Не удалось определить runtime ID расширения Zerion');
 
   logger.info({ profileId: req.params.id, cdpPort, hasPassword: !!walletPassword, zerionExtId }, 'zerion-login: starting');
 

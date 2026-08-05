@@ -509,7 +509,7 @@ Human-like ввод текста через CDP. Имитирует реальн
 
 ### POST /api/browser/:id/zerion-login
 
-Автоматическая авторизация в Zerion (ID расширения: `klghhnkeealcohjjanjjdaeeggmfmlpl`).
+Автоматическая авторизация в Zerion. Runtime ID расширения определяется через `computeRuntimeId`/`resolveRuntimeId` из `profile.extensions` (приоритет `Secure Preferences` по точному совпадению пути, затем `manifest.key`).
 
 **Тело запроса:**
 ```json

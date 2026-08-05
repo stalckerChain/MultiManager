@@ -3,6 +3,7 @@ const fs = require('fs');
 const path = require('path');
 const https = require('https');
 const http = require('http');
+const crypto = require('crypto');
 const { URL } = require('url');
 const AdmZip = require('adm-zip');
 const { getDatabase } = require('../db');
@@ -383,6 +384,48 @@ function extractZipFromCrx(buffer) {
   throw new Error(`Unsupported CRX version: ${version}`);
 }
 
+function computeRuntimeId(manifestKey) {
+  if (!manifestKey || typeof manifestKey !== 'string') return null;
+  try {
+    const rawKey = Buffer.from(manifestKey, 'base64');
+    if (rawKey.length === 0) return null;
+    const hash = crypto.createHash('sha256').update(rawKey).digest();
+    const first16 = hash.subarray(0, 16);
+    const chars = [];
+    for (let i = 0; i < 16; i++) {
+      const byte = first16[i];
+      chars.push(String.fromCharCode(0x61 + (byte >> 4)));
+      chars.push(String.fromCharCode(0x61 + (byte & 0x0f)));
+    }
+    return chars.join('');
+  } catch {
+    return null;
+  }
+}
+
+async function resolveRuntimeId(extPath, profilePath) {
+  if (profilePath) {
+    const securePrefsPath = path.join(profilePath, 'Default', 'Secure Preferences');
+    try {
+      const data = JSON.parse(await fs.promises.readFile(securePrefsPath, 'utf-8'));
+      const settings = data?.extensions?.settings || {};
+      for (const [extId, extSettings] of Object.entries(settings)) {
+        if (extSettings.path && extSettings.path === extPath) {
+          return extId;
+        }
+      }
+    } catch { /* Secure Preferences unavailable or does not contain the extension yet */ }
+  }
+
+  const manifest = await getManifest(extPath);
+  if (manifest && manifest.key) {
+    const computedId = computeRuntimeId(manifest.key);
+    if (computedId) return computedId;
+  }
+
+  return null;
+}
+
 router.delete('/:id', (req, res) => {
   try {
     const extDir = getExtensionsDir();
@@ -461,3 +504,5 @@ module.exports.resolveMSG = resolveMSG;
 module.exports.listExtensions = listExtensions;
 module.exports.extractExtensionId = extractExtensionId;
 module.exports.extractZipFromCrx = extractZipFromCrx;
+module.exports.computeRuntimeId = computeRuntimeId;
+module.exports.resolveRuntimeId = resolveRuntimeId;

@@ -4,6 +4,10 @@
 
 ### Исправления
 
+- **[FIX] Runtime ID расширения Zerion — имя каталога ≠ chrome-extension:// ID.**
+  Имя каталога расширения (`klghhnkeealcohjjanjjdaeeggmfmlpl`) не совпадает с runtime ID Chromium (`lfoeajgcchlidpicbabpmckkejpckcfb`). Использование имени каталога как `chrome-extension://` ID приводило к `ERR_BLOCKED_BY_CLIENT`. Добавлены `computeRuntimeId(manifestKey)` — SHA-256 от DER-encoded `manifest.key`, первые 16 байт → 32 символа `a`–`p` — и `resolveRuntimeId(extPath, profilePath)` — приоритет `Secure Preferences` по точному совпадению пути, затем `manifest.key`. Zerion login и `ZERION_ID` в executor теперь получают настоящий runtime ID. Улучшена диагностика CDP load: вместо `unknown` выводится `exceptionDetails.text`.
+  ✅ `src/api/extensions.js`, `src/api/browser.js`, `src/executor/index.js`, `tests/unit/extensions.test.js`, `tests/unit/browser-start-await.test.js`, `tests/unit/executor.test.js`
+
 - **[FIX] Save в настройках больше не пересинхронизирует проекты.**
   `PUT /api/settings/automation` автоматически синхронизировал проекты из ФС после каждого сохранения, что приводило к восстановлению удалённых проектов с отмеченными чекбоксами. Save теперь только сохраняет пути, синхронизация — только через кнопку Sync Projects.
   ✅ `src/api/settings.js`, `docs/API.md`
@@ -21,7 +25,7 @@
 ### Тесты
 
 - Добавлен `tests/unit/profile-path.test.js` (21 тест): helper путей, валидация, сканирование расширений внешнего профиля.
-- Всего: **804 теста** (52 файла), все проходят ✅
+- Всего: **828 тестов** (52 файла), все проходят ✅
 
 ## v1.4.3 (продолжение — автоматизация)
 

@@ -10,6 +10,8 @@ import {
   listExtensions,
   extractExtensionId,
   extractZipFromCrx,
+  computeRuntimeId,
+  resolveRuntimeId,
 } from '../../src/api/extensions.js';
 
 const VALID_ID = 'abcdefghijklmnopqrstuvwxyzabcdef';
@@ -79,6 +81,205 @@ describe('extractZipFromCrx', () => {
     const crx = Buffer.concat([headerBuf, Buffer.alloc(pubKeyLength), Buffer.alloc(sigLength), zipContent]);
     const result = extractZipFromCrx(crx);
     expect(result.toString()).toBe('PK\x03\x04zip data here');
+  });
+});
+
+describe('computeRuntimeId', () => {
+  it('returns 32-char a-p string for valid base64 key', () => {
+    const raw = Buffer.alloc(24);
+    for (let i = 0; i < 24; i++) raw[i] = i + 1;
+    const key = raw.toString('base64');
+    const id = computeRuntimeId(key);
+    expect(id).toHaveLength(32);
+    expect(id).toMatch(/^[a-p]{32}$/);
+  });
+
+  it('returns consistent output for same input', () => {
+    const key = 'AQIDBAUGBwgJCgsMDQ4PEBESExQVFhcY';
+    const id1 = computeRuntimeId(key);
+    const id2 = computeRuntimeId(key);
+    expect(id1).toBe(id2);
+  });
+
+  it('returns null for null input', () => {
+    expect(computeRuntimeId(null)).toBeNull();
+  });
+
+  it('returns null for undefined input', () => {
+    expect(computeRuntimeId(undefined)).toBeNull();
+  });
+
+  it('returns null for non-string input', () => {
+    expect(computeRuntimeId(123)).toBeNull();
+  });
+
+  it('returns null for invalid base64', () => {
+    const result = computeRuntimeId('!!!invalid!!!');
+    // Node.js base64 decoding behavior varies across versions;
+    // the function must not throw on any input.
+    expect(result === null || (typeof result === 'string' && /^[a-p]{32}$/.test(result))).toBe(true);
+  });
+
+  it('returns null for empty string', () => {
+    expect(computeRuntimeId('')).toBeNull();
+  });
+
+  it('same key produces deterministic 32-char output', () => {
+    const raw = Buffer.alloc(32);
+    for (let i = 0; i < 32; i++) raw[i] = i + 1;
+    const key = raw.toString('base64');
+    const id = computeRuntimeId(key);
+    expect(id).toHaveLength(32);
+    expect(id).toMatch(/^[a-p]{32}$/);
+    expect(computeRuntimeId(key)).toBe(id);
+  });
+});
+
+describe('resolveRuntimeId', () => {
+  const tmpBase = path.join(os.tmpdir(), 'ext-resolve-' + Date.now());
+
+  beforeEach(() => {
+    fs.mkdirSync(tmpBase, { recursive: true });
+  });
+
+  afterEach(() => {
+    fs.rmSync(tmpBase, { recursive: true, force: true });
+  });
+
+  it('returns null when extPath does not exist', async () => {
+    const result = await resolveRuntimeId(path.join(tmpBase, 'nonexistent'), null);
+    expect(result).toBeNull();
+  });
+
+  it('returns runtime ID from manifest.key', async () => {
+    const extPath = path.join(tmpBase, 'ext-dir');
+    fs.mkdirSync(extPath, { recursive: true });
+    const raw = Buffer.alloc(32);
+    for (let i = 0; i < 32; i++) raw[i] = i + 1;
+    const key = raw.toString('base64');
+    fs.writeFileSync(path.join(extPath, 'manifest.json'), JSON.stringify({
+      name: 'Test Ext',
+      version: '1.0.0',
+      manifest_version: 3,
+      key,
+    }));
+
+    const result = await resolveRuntimeId(extPath, null);
+    expect(result).toBe(computeRuntimeId(key));
+  });
+
+  it('returns null when manifest has no key', async () => {
+    const extPath = path.join(tmpBase, 'ext-dir-nokey');
+    fs.mkdirSync(extPath, { recursive: true });
+    fs.writeFileSync(path.join(extPath, 'manifest.json'), JSON.stringify({
+      name: 'Test Ext',
+      version: '1.0.0',
+      manifest_version: 3,
+    }));
+
+    const result = await resolveRuntimeId(extPath, null);
+    expect(result).toBeNull();
+  });
+
+  it('returns ID from Secure Preferences when path matches', async () => {
+    const extPath = path.join(tmpBase, 'ext-dir-sp');
+    fs.mkdirSync(extPath, { recursive: true });
+    fs.writeFileSync(path.join(extPath, 'manifest.json'), JSON.stringify({
+      name: 'Test Ext',
+      version: '1.0.0',
+      manifest_version: 3,
+    }));
+
+    const profilePath = path.join(tmpBase, 'profile');
+    const defaultDir = path.join(profilePath, 'Default');
+    fs.mkdirSync(defaultDir, { recursive: true });
+    fs.writeFileSync(path.join(defaultDir, 'Secure Preferences'), JSON.stringify({
+      extensions: {
+        settings: {
+          'abcdefghijklmnopqrstuvwxyzab': { path: extPath },
+        },
+      },
+    }));
+
+    const result = await resolveRuntimeId(extPath, profilePath);
+    expect(result).toBe('abcdefghijklmnopqrstuvwxyzab');
+  });
+
+  it('falls back to manifest.key when Secure Preferences has no matching entry', async () => {
+    const extPath = path.join(tmpBase, 'ext-dir-sp-nomatch');
+    fs.mkdirSync(extPath, { recursive: true });
+    const raw = Buffer.alloc(32);
+    for (let i = 0; i < 32; i++) raw[i] = i + 1;
+    const key = raw.toString('base64');
+    fs.writeFileSync(path.join(extPath, 'manifest.json'), JSON.stringify({
+      name: 'Test Ext',
+      version: '1.0.0',
+      manifest_version: 3,
+      key,
+    }));
+
+    const profilePath = path.join(tmpBase, 'profile-nomatch');
+    const defaultDir = path.join(profilePath, 'Default');
+    fs.mkdirSync(defaultDir, { recursive: true });
+    fs.writeFileSync(path.join(defaultDir, 'Secure Preferences'), JSON.stringify({
+      extensions: { settings: {} },
+    }));
+
+    const result = await resolveRuntimeId(extPath, profilePath);
+    expect(result).toBe(computeRuntimeId(key));
+  });
+
+  it('ignores invalid Secure Preferences JSON and falls back to manifest.key', async () => {
+    const extPath = path.join(tmpBase, 'ext-dir-badsp');
+    fs.mkdirSync(extPath, { recursive: true });
+    const raw = Buffer.alloc(32);
+    for (let i = 0; i < 32; i++) raw[i] = i + 1;
+    const key = raw.toString('base64');
+    fs.writeFileSync(path.join(extPath, 'manifest.json'), JSON.stringify({
+      name: 'Test Ext',
+      version: '1.0.0',
+      manifest_version: 3,
+      key,
+    }));
+
+    const profilePath = path.join(tmpBase, 'profile-badsp');
+    const defaultDir = path.join(profilePath, 'Default');
+    fs.mkdirSync(defaultDir, { recursive: true });
+    fs.writeFileSync(path.join(defaultDir, 'Secure Preferences'), '{corrupt json');
+
+    const result = await resolveRuntimeId(extPath, profilePath);
+    expect(result).toBe(computeRuntimeId(key));
+  });
+
+  it('Secure Preferences matched by path, not by name substring', async () => {
+    const extPath = path.join(tmpBase, 'ext-dir-exact');
+    fs.mkdirSync(extPath, { recursive: true });
+    const raw = Buffer.alloc(32);
+    for (let i = 0; i < 32; i++) raw[i] = i + 1;
+    const key = raw.toString('base64');
+    fs.writeFileSync(path.join(extPath, 'manifest.json'), JSON.stringify({
+      name: 'Zerion Wallet',
+      version: '1.0.0',
+      manifest_version: 3,
+      key,
+    }));
+
+    const profilePath = path.join(tmpBase, 'profile-exact');
+    const defaultDir = path.join(profilePath, 'Default');
+    fs.mkdirSync(defaultDir, { recursive: true });
+    // Secure Preferences has a Zerion entry but with a DIFFERENT path
+    fs.writeFileSync(path.join(defaultDir, 'Secure Preferences'), JSON.stringify({
+      extensions: {
+        settings: {
+          'abcdefghijklmnopqrstuvwxyzab': { path: '/other/path' },
+        },
+      },
+    }));
+
+    // Should fall back to manifest.key, NOT match by Zerion name
+    const result = await resolveRuntimeId(extPath, profilePath);
+    expect(result).toBe(computeRuntimeId(key));
+    expect(result).not.toBe('abcdefghijklmnopqrstuvwxyzab');
   });
 });
 

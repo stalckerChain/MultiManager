@@ -14,6 +14,7 @@ AI-Driven Web Automation Platform — кроссплатформенный ан�
 - **[FIX] Автоматизация: исправлена передача токена и диапазона в stAuto0.** Токен теперь передаётся явным CLI-аргументом `--token=` (совместимо с `MM_TOKEN` в env). Диапазон `--range` строится из числового суффикса имени профиля (`auto_002` → `002-002`), а не из DB-порядка `number`. ✅ `src/executor/index.js`, `tests/unit/executor.test.js`
 - **[FIX] Валидация `profile_path` ужесточена.** Все схемы (create, batch, update) единообразно проверяют nullable/пустой/абсолютный путь, отклоняя относительные. ✅ `src/api/validate.js`
 - **[FIX] Pre-flight проверка внешнего профиля.** До запуска браузера проверяется существование user-data-dir для профилей с `profile_path`. При отсутствии — понятная ошибка `PROFILE_DIR_NOT_FOUND`. ✅ `src/api/browser.js`
+- **[FIX] Runtime ID расширения Zerion.** Имя каталога расширения и его runtime ID Chromium теперь корректно различаются. ID вычисляется из `manifest.key` (SHA-256 → `a`–`p`) или читается из `Secure Preferences` профиля — вместо использования имени папки как `chrome-extension://` ID, что приводило к `ERR_BLOCKED_BY_CLIENT`. ✅ `src/api/extensions.js`, `src/api/browser.js`, `src/executor/index.js`
 
 ## Что нового в v1.4.2
 

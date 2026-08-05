@@ -592,3 +592,223 @@ MM не перемещает и не копирует файлы внешнег�
 - Гейт №1: пройден пользователем.
 - Гейт №2: пройден пользователем.
 - Гейт №3: выполняется после проверки окончательного результата пользователем.
+
+---
+
+# TASK — Восстановление запуска внутренних профилей
+
+## Текущая задача
+
+Починить запуск автоматизации для внутренних профилей MultiManager. Внутренним считается профиль с `profile_path = NULL`: для него должен использоваться стандартный каталог MultiManager `<APPDATA>\CloakManager\profiles\<profileId>\BrowserData`, а расширение Zerion должно определяться по полю `profiles.extensions`.
+
+Поддержку внешних профилей и расширений из stAuto0 в рамках этой задачи не изменять и не откатывать. Схему БД и колонку `profile_path` не удалять.
+
+## Установленная причина
+
+Коммит `2b73dae` определял Zerion через `profile.extensions`. В коммите `d929349` поиск был заменён на чтение `Default/Secure Preferences` и сопоставление расширения по manifest. Для внутреннего профиля расширение запускается через `--load-extension` из каталога MultiManager, но оно не обязано присутствовать в `Secure Preferences` в момент запроса login. В результате `POST /api/browser/:id/zerion-login` возвращает `400 Не найдено расширение Zerion в профиле`; stAuto0 завершает сценарий и останавливает браузер.
+
+Логи подтверждают последовательность:
+
+- браузер запускается и получает CDP-порт;
+- затем автоматизация получает ошибку `Не найдено расширение Zerion в профиле`;
+- после этого процесс браузера завершается.
+
+## План реализации
+
+### 1. Восстановить определение Zerion для внутренних профилей
+
+**Файл:** `src/api/browser.js`
+
+- В обработчике `POST /:id/zerion-login` получать список ID из `profile.extensions` через существующий `tryParseJson`.
+- Использовать первый назначенный ID, как это было в рабочей реализации до переноса логики в `Secure Preferences`.
+- Сохранить проверку наличия `wallet_password`, статуса профиля и CDP-порта.
+- Сохранить современное CDP-подключение через `discoverWsUrl`, не возвращать старый вариант с неполным WebSocket URL.
+- Не менять ветку `getBrowserDataDir(profile)` и поддержку `profile_path` для внешних профилей.
+- Не логировать пароль, токен или proxy credentials.
+
+**Проверка:** внутренний профиль с `profile_path = NULL` и `extensions = [<zerionId>]` проходит определение ID и формирует URL `chrome-extension://<zerionId>/...`.
+
+### 2. Сохранить корректный стандартный запуск браузера
+
+**Файл:** `src/api/browser.js`
+
+- Не менять формирование стандартного `user-data-dir` через `getBrowserDataDir` при `profile_path = NULL`.
+- Не менять загрузку установленного расширения из `%APPDATA%\CloakManager\extensions\<id>` и проверку `.enabled`.
+- Не удалять и не изменять `getExtensionsFromProfileDir`, `profile_path`, pre-flight внешнего каталога и связанные API-механизмы.
+- Ошибка Zerion login не должна маскироваться под ошибку запуска браузера; при диагностике сохранять различие между ошибкой login и завершением процесса.
+
+**Проверка:** существующие проверки `browser-start-await.test.js`, `browser-shutdown.test.js`, `browser-get-path.test.js` и `extensions.test.js` продолжают проходить без изменения внешне-профильного поведения.
+
+### 3. Добавить регрессионную проверку Zerion ID
+
+**Файлы:** существующий подход тестирования `tests/unit/` и минимально необходимый тест рядом с browser API.
+
+- Зафиксировать, что `profile.extensions` является источником ID для Zerion login.
+- Зафиксировать ошибку при пустом или невалидном массиве расширений.
+- Не требовать наличия `Secure Preferences` для определения Zerion ID.
+- Не добавлять тестовые реальные пароли, токены, proxy credentials или внешние пути.
+
+**Проверка:** `npm test`; отдельно проверить затронутые browser/extension/executor тесты.
+
+### 4. Ручная проверка внутреннего automation flow
+
+- Запустить профиль с `profile_path = NULL` и назначенным включённым Zerion.
+- Убедиться по логам, что браузер остаётся запущенным после `POST /api/browser/:id/start`.
+- Убедиться, что `/api/browser/:id/zerion-login` не возвращает `Не найдено расширение Zerion в профиле`.
+- Проверить, что automation run не завершает браузер сразу после старта из-за ошибки определения расширения.
+- Проверить остановку профиля штатным `POST /api/browser/:id/stop`.
+
+### 5. Контроль изменений
+
+- Не выполнять откат коммита `96e494d` целиком.
+- Не изменять внешние профили, миграции `profile_path`, GUI-поле внешнего каталога и импорт из stAuto0.
+- Не удалять данные из БД.
+- Не менять модель авторизации и API-контракт запуска.
+
+## Затрагиваемые файлы
+
+- `src/api/browser.js`
+- тесты в `tests/unit/`, покрывающие Zerion login/browser API
+
+Не затрагивать без подтверждённой необходимости:
+
+- `src/core/profile-path.js`
+- `src/cookie/inject.js`
+- `src/db/schema.js`
+- `src/db/queries.js`
+- `src/api/profiles.js`
+- `src/api/validate.js`
+- GUI и документацию внешних профилей
+
+## Риски и ограничения
+
+- Первый ID в `profile.extensions` должен соответствовать назначенному Zerion; текущий контракт automation уже передаёт первый ID через `ZERION_ID`.
+
+---
+
+# TASK — Исправление runtime ID расширения Zerion
+
+## Текущая задача
+
+Исправить открытие Zerion в автоматизации для внутренних профилей. Имя каталога расширения и его runtime ID Chromium могут отличаться, поэтому приложение не должно использовать значение `profiles.extensions` напрямую как `chrome-extension://` ID.
+
+Текущий подтверждённый случай:
+
+- каталог и значение в БД: `klghhnkeealcohjjanjjdaeeggmfmlpl`;
+- runtime ID Chromium: `lfoeajgcchlidpicbabpmckkejpckcfb`;
+- попытка открыть URL с ID каталога приводит к `ERR_BLOCKED_BY_CLIENT`.
+
+Не переименовывать каталоги расширений, не менять схему БД и не выполнять миграцию сохранённых значений `profiles.extensions`.
+
+## Установленная причина
+
+`src/api/browser.js` и `src/executor/index.js` используют первый элемент `profile.extensions` как runtime ID. В `src/api/browser.js` этот ID попадает в URL `chrome-extension://<id>/...`, а в `src/executor/index.js` передаётся через `ZERION_ID`.
+
+Для текущего расширения `manifest.key` определяет другой ID. `Secure Preferences` текущего внутреннего профиля подтверждает фактическую регистрацию расширения Chromium под ID `lfoeajgcchlidpicbabpmckkejpckcfb` с путём, указывающим на каталог `klghhnkeealcohjjanjjdaeeggmfmlpl`.
+
+Сообщение `CDP load failed: unknown` является вторичной диагностической проблемой: файловая проверка считает расширение загруженным, но не доказывает его runtime-регистрацию. Основной пользовательский сбой происходит при открытии неправильного `chrome-extension://` URL, после чего Zerion login получает таймаут и automation останавливает браузер.
+
+## План реализации
+
+### 1. Добавить вычисление runtime ID из manifest
+
+**Файл:** `src/api/extensions.js`
+
+- Добавить в этот модуль `computeRuntimeId(manifestKey)` для вычисления Chrome extension ID из `manifest.key`.
+- Добавить в этот модуль `resolveRuntimeId(extPath, profilePath)` для разрешения runtime ID по каталогу расширения и, при наличии, по `Secure Preferences` профиля.
+- В `computeRuntimeId` использовать SHA-256 от DER-encoded SubjectPublicKeyInfo: полные ASN.1-данные base64 `manifest.key`, включая алгоритм и битовую строку, без извлечения или усечения raw public key.
+- Первые 16 байт преобразовать в 32 символа диапазона `a`–`p`, согласно формату Chrome extension ID.
+- Если `manifest.key` отсутствует или невалиден, возвращать `null`, не придумывать ID по имени папки.
+- Экспортировать оба helper для использования в browser и executor.
+
+**Проверка:** unit-тест с текущим manifest подтверждает различие между именем каталога и вычисленным runtime ID; тесты для отсутствующего/невалидного `key` возвращают `null`.
+
+### 2. Разрешать фактический ID из Secure Preferences
+
+**Файлы:** `src/api/extensions.js`, `src/api/browser.js`
+
+- В `resolveRuntimeId(extPath, profilePath)` для внутреннего профиля искать в `Default/Secure Preferences` запись, у которой `extensions.settings[extensionId].path` совпадает с путём назначенного расширения.
+- Использовать найденный `extensionId` как наиболее авторитетный runtime ID текущего профиля.
+- Если `Secure Preferences` ещё не содержит запись, использовать ID, вычисленный `computeRuntimeId(manifest.key)`.
+- Не использовать имя каталога как fallback runtime ID.
+- Сохранить работу с `profile_path = NULL` и стандартным `BrowserData`.
+- Сохранить поддержку внешних профилей без изменения их path-flow.
+
+**Проверка:** для текущего профиля runtime ID разрешается как `lfoeajgcchlidpicbabpmckkejpckcfb`, а URL Zerion login больше не содержит `klghhnkeealcohjjanjjdaeeggmfmlpl`.
+
+### 3. Использовать runtime ID в Zerion login
+
+**Файл:** `src/api/browser.js`
+
+- В обработчике `POST /:id/zerion-login` получить путь расширения из первого назначенного элемента `profile.extensions`.
+- Разрешить runtime ID через helper и профильные `Secure Preferences`.
+- Передать разрешённый ID в `zerionLogin`.
+- При невозможности разрешить ID вернуть информативную ошибку без попытки открыть заведомо неправильный URL.
+- Не логировать wallet password, API token или proxy credentials.
+
+**Проверка:** `chrome-extension://<runtimeId>/popup.8e8f209b.html?...` открывается без `ERR_BLOCKED_BY_CLIENT`; отсутствие расширения или manifest key покрывается отдельной ошибкой.
+
+### 4. Передавать runtime ID в automation
+
+**Файл:** `src/executor/index.js`
+
+- Не передавать первый элемент `profile.extensions` напрямую в `ZERION_ID`.
+- Получать runtime ID через общий helper по пути расширения.
+- Передавать разрешённый ID в окружение Python-процесса.
+- Не менять формат БД и не менять имена каталогов.
+- При невозможности разрешить ID не передавать неправильное значение; ошибка должна быть отражена в результате automation.
+
+**Проверка:** unit-тест проверяет, что при отличии folder ID от runtime ID в `ZERION_ID` попадает runtime ID, а не имя каталога.
+
+### 5. Регрессионные тесты и диагностика
+
+**Файлы:** `tests/unit/extensions.test.js`, `tests/unit/executor.test.js`, тесты browser API при необходимости.
+
+- Добавить тест вычисления runtime ID из manifest key.
+- Добавить тест сопоставления записи Secure Preferences с путём расширения.
+- Добавить тест fallback на manifest key при отсутствии записи Secure Preferences.
+- Добавить тест отказа при невозможности разрешить runtime ID.
+- Проверить, что существующие тесты установки, включения и назначения расширений не изменились.
+- Улучшить сохранение причины `CDP load failed`, чтобы вместо `unknown` показывалась ошибка CDP или `Runtime.evaluate`.
+
+**Проверка:** `npm test`; отдельно browser, extension и executor tests.
+
+### 6. Ручная проверка
+
+- Запустить внутренний профиль с `profile_path = NULL` и расширением `klghhnkeealcohjjanjjdaeeggmfmlpl`.
+- Убедиться, что в `Secure Preferences` runtime ID сопоставляется с путём каталога.
+- Запустить Zerion login.
+- Убедиться, что `ERR_BLOCKED_BY_CLIENT` отсутствует и поле пароля находится через CDP.
+- Проверить automation run и штатную остановку браузера.
+- Проверить профиль без `Secure Preferences`: должен использоваться runtime ID из manifest key.
+
+## Затрагиваемые файлы
+
+- `src/api/extensions.js`
+- `src/api/browser.js`
+- `src/executor/index.js`
+- `tests/unit/extensions.test.js`
+- `tests/unit/executor.test.js`
+- browser API test при необходимости
+
+Не затрагивать:
+
+- схему и миграции БД;
+- значения `profiles.extensions`;
+- имена каталогов расширений;
+- `src/core/profile-path.js` и логику внешних user-data-dir;
+- GUI и импорт профилей из stAuto0.
+
+## Риски
+
+- Расширения без `manifest.key` не имеют стабильного ID, который можно безопасно вычислить заранее; для них требуется фактическая запись Secure Preferences.
+- Существующий hardcoded popup filename Zerion остаётся отдельным техническим долгом.
+- `Secure Preferences` является пользовательским файлом профиля; читать его можно, но нельзя повреждать или переписывать во время разрешения ID.
+- В текущих логах также присутствуют ранее замеченные proxy credentials и API tokens; их ротация и исправление логирования остаются отдельной security-задачей.
+
+## Согласования
+
+- Гейт №1: пройден пользователем («делай»).
+- Реализацию выполняет девелопер, которого пользователь запускает отдельно.
+- Захардкоженное имя popup-файла Zerion остаётся отдельным техническим долгом и в эту минимальную задачу не входит.
+- В логах ранее обнаружены чувствительные данные (`proxyUrl` с credentials и API-токены в `core.log`). Их ротация и исправление логирования требуют отдельной security-задачи и не смешиваются с восстановлением внутренних профилей.
