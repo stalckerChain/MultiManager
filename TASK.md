@@ -114,7 +114,7 @@
 
 **Тесты:** leading-zero IPv4, CIDR suffix, IPv4-mapped/NAT64 IPv6, loopback/private/link-local, DNS redirect в private адрес, redirect chain, oversized response, invalid TLS certificate и отсутствие credentials в logs/errors.
 
-### 5. Проверить и усилить Electron boundary после major update
+### 5. Проверить и усилить Electron boundary после major update ✅
 
 **Файлы:** `gui/src/main/index.js`, `gui/src/preload/index.js`, `gui/src/main/updater.js`, `gui/src/main/core-manager.js`, `gui/package.json`, GUI build configuration
 

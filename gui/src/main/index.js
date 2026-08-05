@@ -1,4 +1,4 @@
-const { app, BrowserWindow, ipcMain, Tray, Menu, nativeTheme, dialog } = require('electron');
+const { app, BrowserWindow, ipcMain, Tray, Menu, nativeTheme, dialog, shell } = require('electron');
 const path = require('path');
 const fs = require('fs');
 const http = require('http');
@@ -121,6 +121,21 @@ if (process.platform === 'win32') {
   });
 
   log('INFO', 'createWindow: BrowserWindow created');
+
+  mainWindow.webContents.setWindowOpenHandler(() => {
+    return { action: 'deny' };
+  });
+
+  mainWindow.webContents.on('will-navigate', (event, url) => {
+    if (isDev && url.startsWith('http://localhost:5173')) return;
+    event.preventDefault();
+    shell.openExternal(url).catch(() => {});
+  });
+
+  mainWindow.webContents.on('will-redirect', (event, url) => {
+    if (isDev && url.startsWith('http://localhost:5173')) return;
+    event.preventDefault();
+  });
 
   mainWindow.webContents.on('console-message', (e, level, msg, line, sourceId) => {
     const levels = ['verbose', 'info', 'warning', 'error'];
