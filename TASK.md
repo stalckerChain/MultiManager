@@ -71,7 +71,7 @@
 
 **Проверка:** `npm ls electron electron-builder cloakbrowser tar ip-address body-parser js-yaml postcss concurrently brace-expansion --all`; `cd gui && npm audit --omit=dev`; `cd gui && npm audit`.
 
-### 3. Безопасно обрабатывать ZIP/CRX расширений
+### 3. Безопасно обрабатывать ZIP/CRX расширений ✅
 
 **Файлы:** `src/api/extensions.js`, `tests/unit/extensions.test.js`
 
