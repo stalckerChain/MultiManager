@@ -11,6 +11,9 @@ const ALLOWED_INVOKE = new Set([
   'dialog:select-zip',
   'pty:start',
   'pty:stop',
+  'browser:check',
+  'browser:install',
+  'browser:path',
 ]);
 
 contextBridge.exposeInMainWorld('electronAPI', {
