@@ -21,7 +21,8 @@ const LIMITS = Object.freeze({
   MAX_NAME_LENGTH: 128,
 });
 
-const DANGEROUS_NAME_RE = /\.\.|[\\/:*?"<>|]|[\u0000-\u001f]|^[A-Za-z]:/;
+// eslint-disable-next-line no-control-regex
+const DANGEROUS_NAME_RE = /\.\.|[\\/:*?"<>|]|[\x00-\x1F]|^[A-Za-z]:/;
 
 function getExtensionsDir() {
   const platform = process.platform;
@@ -110,7 +111,7 @@ async function listExtensions(dir) {
     try {
       await fs.promises.access(path.join(extPath, '.enabled'));
       enabled = true;
-    } catch {}
+    } catch { /* .enabled file missing */ }
 
     const name = await resolveMSG(manifest.name, extPath) || entry.name;
     const description = await resolveMSG(manifest.description, extPath) || '';
@@ -215,7 +216,7 @@ async function safeExtract(zipBuffer, targetName, extDir) {
 
     return { manifest, targetPath };
   } catch (err) {
-    try { fs.rmSync(tmpDir, { recursive: true, force: true }); } catch {}
+    try { fs.rmSync(tmpDir, { recursive: true, force: true }); } catch { /* cleanup on best-effort */ }
     throw err;
   }
 }
@@ -404,7 +405,7 @@ async function resolveRuntimeId(extPath, profilePath) {
           return extId;
         }
       }
-    } catch {}
+    } catch { /* Secure Preferences unavailable */ }
   }
 
   const manifest = await getManifest(extPath);

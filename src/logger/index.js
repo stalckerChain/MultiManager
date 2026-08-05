@@ -46,7 +46,7 @@ if (process.env.NODE_ENV !== 'production') {
       options: {},
       level: 'info',
     });
-  } catch {}
+  } catch { /* pino-pretty not available */ }
 }
 
 const logger = pino({

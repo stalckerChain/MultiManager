@@ -304,10 +304,6 @@ function createProxyQueries(db) {
       );
       return decryptProxyRow(getById.get(id));
     },
-
-    delete(id) {
-      return deleteById.run(id);
-    },
   };
 }
 

@@ -172,9 +172,9 @@ async function getBrowserPath() {
         try {
           await fs.promises.access(bin);
           return bin;
-        } catch {}
+        } catch { /* binary not found at this path */ }
       }
-    } catch {}
+    } catch { /* browser detection failed */ }
   }
 
   return null;
@@ -579,7 +579,7 @@ router.post('/:id/clean', asyncHandler(async (req, res) => {
     const cachePath = path.join(profileDir, dir);
     try {
       await fs.promises.rm(cachePath, { recursive: true, force: true });
-    } catch {}
+    } catch { /* cache cleanup failed, non-fatal */ }
   }
 
   res.json({ status: 'cleaned' });

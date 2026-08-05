@@ -4,10 +4,9 @@ const { URL } = require('url');
 const { SocksClient } = require('socks');
 const { logger } = require('../logger');
 
-const IPV4_PRIVATE = /^(127\.\d{1,3}\.\d{1,3}\.\d{1,3}|10\.\d{1,3}\.\d{1,3}\.\d{1,3}|192\.168\.\d{1,3}\.\d{1,3}|172\.(1[6-9]|2\d|3[01])\.\d{1,3}\.\d{1,3}|100\.(6[4-9]|[7-9]\d|1[01]\d|12[0-7])\.\d{1,3}\.\d{1,3}|169\.254\.\d{1,3}\.\d{1,3}|0\.0\.0\.0)$/;
+const ROTATION_RESPONSE_LIMIT = 10 * 1024 * 1024;
 const IPV4_LEADING_ZERO = /^0\d+/;
 const IPV4_OCTET = /^\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}$/;
-const ROTATION_RESPONSE_LIMIT = 10 * 1024 * 1024;
 const MAX_REDIRECTS = 5;
 
 function parseProxy(proxyString) {
@@ -153,7 +152,7 @@ async function checkSocks5Proxy(proxy, timeout = 10000) {
             resolve({ ok: false, error: 'Invalid response' });
           }
         });
-      }).on('error', (err) => {
+      }).on('error', () => {
         resolve({ ok: false, error: 'Connection failed' });
       });
 
@@ -162,7 +161,7 @@ async function checkSocks5Proxy(proxy, timeout = 10000) {
         resolve({ ok: false, error: 'Timeout' });
       }, timeout);
     });
-  } catch (err) {
+  } catch {
     return { ok: false, error: 'Connection failed' };
   }
 }
@@ -205,12 +204,12 @@ async function checkHttpProxy(proxy, timeout = 10000) {
             resolve({ ok: false, error: 'Invalid response' });
           }
         });
-      }).on('error', (err) => {
+      }).on('error', () => {
         resolve({ ok: false, error: 'Connection failed' });
       });
     });
 
-    req.on('error', (err) => {
+    req.on('error', () => {
       resolve({ ok: false, error: 'Connection failed' });
     });
 
@@ -341,7 +340,7 @@ async function getTimezoneByIp(ip, timeout = 5000) {
       });
     });
 
-    req.on('error', (err) => {
+    req.on('error', () => {
       resolve({ ok: false, error: 'Network error' });
     });
 

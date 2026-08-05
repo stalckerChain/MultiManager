@@ -1,10 +1,10 @@
 process.on('uncaughtException', (err) => {
-  try { process.send({ type: 'error', data: 'uncaught: ' + err.message + '\n' + err.stack }); } catch {}
+  try { process.send({ type: 'error', data: 'uncaught: ' + err.message + '\n' + err.stack }); } catch { /* exiting */ }
   process.exit(1);
 });
 
 process.on('unhandledRejection', (err) => {
-  try { process.send({ type: 'error', data: 'unhandled: ' + String(err) }); } catch {}
+  try { process.send({ type: 'error', data: 'unhandled: ' + String(err) }); } catch { /* exiting */ }
   process.exit(1);
 });
 
@@ -61,7 +61,7 @@ try {
     eventCount++;
     try {
       if (process.send) process.send({ type, data });
-    } catch (e) {}
+    } catch (e) { /* send failed, non-fatal */ }
   }
 
   const mouseCallback = koffi.register(function(nCode, wParam, lParam) {
@@ -94,7 +94,7 @@ try {
             }
           }
         }
-      } catch (e) {}
+      } catch (e) { /* send failed, non-fatal */ }
     }
     return CallNextHookEx(mouseHook, nCode, wParam, lParam);
   }, koffi.pointer(HOOKPROC));
@@ -121,7 +121,7 @@ try {
             emit('keyUp', event);
           }
         }
-      } catch (e) {}
+      } catch (e) { /* send failed, non-fatal */ }
     }
     return CallNextHookEx(keyboardHook, nCode, wParam, lParam);
   }, koffi.pointer(HOOKPROC));
