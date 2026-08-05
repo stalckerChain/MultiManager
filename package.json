@@ -13,7 +13,8 @@
     "lint": "eslint src/",
     "typecheck": "tsc --noEmit",
     "bump": "node scripts/bump-version.mjs",
-    "build:native": "cd src/os-input/native-hooks && npx node-gyp rebuild"
+    "build:native": "cd src/os-input/native-hooks && npx node-gyp rebuild",
+    "security:audit": "npm audit --audit-level=high"
   },
   "dependencies": {
     "adm-zip": "^0.6.0",

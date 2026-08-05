@@ -10,7 +10,8 @@
     "electron:dev": "concurrently \"vite\" \"wait-on http://localhost:5173 && electron .\"",
     "electron:build": "vite build && electron-builder",
     "build:portable": "electron-builder --win portable",
-    "build:installer": "electron-builder --win nsis"
+    "build:installer": "electron-builder --win nsis",
+    "security:audit": "npm audit --audit-level=high"
   },
   "dependencies": {
     "adm-zip": "^0.6.0",

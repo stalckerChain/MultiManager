@@ -129,7 +129,7 @@
 
 **Проверка:** ручной packaged запуск, отказ внешней навигации, проверка IPC allowlist, `cd gui && npm run build`, запуск installer/portable и проверка updater без установки неподписанного/неожиданного обновления.
 
-### 6. Ограничить YAML/PostCSS build inputs
+### 6. Ограничить YAML/PostCSS build inputs ✅
 
 **Файлы:** GUI build configuration, `gui/vite.config.*`, `gui/postcss.config.*`, lock-файл; фактические callers определить поиском
 
@@ -138,7 +138,7 @@
 - Для PostCSS задавать явный `from`/`to`, не обрабатывать пользовательские source maps в build pipeline и не разрешать чтение `.map` файлов за пределами workspace.
 - Если пакет используется только внутри доверенного build-процесса и runtime reachability отсутствует, зафиксировать это тестом/конфигурацией, но не оставлять старую уязвимую версию.
 
-### 7. Регрессии и dependency policy
+### 7. Регрессии и dependency policy ✅
 
 **Файлы:** `package.json`, `gui/package.json`, `tests/unit/`, при необходимости CI-конфигурация
 
