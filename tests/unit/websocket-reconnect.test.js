@@ -153,6 +153,36 @@ describe('WebSocket — reconnect with fetchAll', () => {
 
     expect(mockProfilesStore.fetchAll).toHaveBeenCalledTimes(5);
   });
+
+  it('смена токена закрывает старое соединение и подключается с новым', () => {
+    let token = 'old-token';
+    let ws = createMockWebSocket();
+    const closed = [];
+    
+    function disconnect() {
+      closed.push(ws._url);
+      ws.close();
+      ws = null;
+    }
+
+    function makeUrl() {
+      return `ws://127.0.0.1:3000/ws?token=${token}`;
+    }
+
+    // Первое подключение
+    ws._url = makeUrl();
+    expect(ws._url).toContain('old-token');
+
+    // Ротация токена: при смене отключаем старое и подключаемся заново
+    token = 'new-token';
+    disconnect();
+    ws = createMockWebSocket();
+    ws._url = makeUrl();
+
+    expect(closed.length).toBe(1);
+    expect(ws._url).toContain('new-token');
+    expect(closed[0]).toContain('old-token');
+  });
 });
 
 describe('Status Polling — running profiles timer', () => {

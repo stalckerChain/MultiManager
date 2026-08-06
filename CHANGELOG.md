@@ -17,6 +17,9 @@
 
 ### Безопасность
 
+- **[FEAT] Постоянный API-токен автоматизации.** Токен больше не генерируется при каждом запуске: генерируется один раз при первом старте и сохраняется в `system_config.api_token`, переиспользуется при перезапусках. Electron main process не передаёт токен через env — backend резолвит его по приоритету `--api-token=` → `API_TOKEN` → `system_config.api_token` → новая генерация и сообщает main через IPC `process.send({ type: 'api-token' })`. Добавлен `POST /api/settings/api-token/regenerate` (Bearer auth): ротация действует немедленно, обновляет активный auth token, закрывает все активные WebSocket-соединения и инвалидирует старый токен. Renderer переподключает WebSocket по watcher на `appStore.token`; UI-кнопка «Regenerate API Token» в Settings с подтверждением (3 локали). Токен не логируется.
+  ✅ `src/index.js`, `src/api/auth.js`, `src/api/settings.js`, `src/core/websocket.js`, `gui/src/main/core-manager.js`, `gui/src/main/index.js`, `gui/src/preload/index.js`, `gui/src/renderer/stores/app.js`, `gui/src/renderer/composables/useWebSocket.js`, `gui/src/renderer/views/Settings.vue`, `gui/src/renderer/i18n/*.json`, `docs/API.md`, `tests/unit/settings-token.test.js` (новый)
+
 - **[SEC] Устранены уязвимости зависимостей backend.** Обновлены `adm-zip` (0.5.18 → 0.6.0), `ip-address` (10.2.0 → 10.4.0), `body-parser` (1.20.5 → 1.20.6), `brace-expansion` (1.1.15 → 1.1.18), `esbuild` (0.27.7 → 0.28.1). Генерирован чистый lock-файл. ✅ `package.json`, `package-lock.json`
 
 - **[SEC] Устранены уязвимости зависимостей GUI/Electron.** Обновлены `electron` (34.5.8 → 43.3.0), `electron-builder` (25.1.8 → 26.15.3), `better-sqlite3` (11.7.0 → 13.0.3), `cloakbrowser` (0.5.3 → 0.5.4), `postcss` (8.5.15 → 8.5.25), `js-yaml` (4.2.0 → 4.3.1), `concurrently` (9.2.3 → 9.2.4). `tar` форсирован до 7.5.22 через overrides. ✅ `gui/package.json`, `gui/package-lock.json`

@@ -102,6 +102,10 @@
     "server": "Сервер",
     "port": "Порт",
     "token": "API Токен",
+    "regenerateToken": "Сгенерировать API-токен заново",
+    "regenerateTokenConfirmTitle": "Перегенерировать API-токен?",
+    "regenerateTokenConfirm": "Текущий API-токен перестанет работать немедленно. Любые внешние automation-клиенты, использующие его, потеряют доступ. Продолжить?",
+    "regenerateTokenSuccess": "API-токен перегенерирован",
     "theme": "Тема",
     "language": "Язык",
     "themes": {

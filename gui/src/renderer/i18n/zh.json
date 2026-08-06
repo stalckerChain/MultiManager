@@ -102,6 +102,10 @@
     "server": "服务器",
     "port": "端口",
     "token": "API 令牌",
+    "regenerateToken": "重新生成 API 令牌",
+    "regenerateTokenConfirmTitle": "重新生成 API 令牌？",
+    "regenerateTokenConfirm": "当前 API 令牌将立即失效。任何使用它的外部自动化客户端将失去访问权限。是否继续？",
+    "regenerateTokenSuccess": "API 令牌已重新生成",
     "theme": "主题",
     "language": "语言",
     "themes": {

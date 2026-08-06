@@ -102,6 +102,10 @@
     "server": "Server",
     "port": "Port",
     "token": "API Token",
+    "regenerateToken": "Regenerate API Token",
+    "regenerateTokenConfirmTitle": "Regenerate API Token?",
+    "regenerateTokenConfirm": "The current API token will stop working immediately. Any external automation clients using it will lose access. Continue?",
+    "regenerateTokenSuccess": "API token regenerated",
     "theme": "Theme",
     "language": "Language",
     "themes": {

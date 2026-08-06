@@ -15,14 +15,14 @@ export function useWebSocket() {
     if (ws && ws.readyState === WebSocket.OPEN) return;
 
     const url = `ws://127.0.0.1:${appStore.port}/ws?token=${appStore.token}`;
-    console.log('[WS] Connecting to', url);
+    console.log('[WS] Connecting to', `ws://127.0.0.1:${appStore.port}/ws`);
     ws = new WebSocket(url);
 
     ws.onopen = () => {
       connected.value = true;
       reconnectDelay = 1000;
       profilesStore.fetchAll();
-      console.log('[WS] Connected to', url);
+      console.log('[WS] Connected');
     };
 
     ws.onmessage = (event) => {
@@ -97,6 +97,11 @@ export function useWebSocket() {
       disconnect();
       connect();
     }
+  });
+
+  watch(() => appStore.token, () => {
+    disconnect();
+    connect();
   });
 
   onUnmounted(() => disconnect());

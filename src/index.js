@@ -2,7 +2,8 @@ const http = require('http');
 const { app, setupWebSocket } = require('./core/app');
 const { logger } = require('./logger');
 const { initDatabase, getDatabase } = require('./db');
-const { setToken } = require('./api/auth');
+const { createSystemConfigQueries } = require('./db/queries');
+const { setToken, notifyToken } = require('./api/auth');
 const { initMasterKey, hasMasterKey } = require('./crypto');
 const { performBackup } = require('./backup');
 const crypto = require('crypto');
@@ -10,13 +11,28 @@ const crypto = require('crypto');
 const args = process.argv.slice(2);
 const tokenArg = args.find(arg => arg.startsWith('--api-token='));
 const portArg = args.find(arg => arg.startsWith('--port='));
-const token = tokenArg ? tokenArg.split('=')[1] : process.env.API_TOKEN || crypto.randomBytes(32).toString('hex');
+const explicitToken = tokenArg ? tokenArg.split('=')[1] : (process.env.API_TOKEN || null);
 const port = portArg ? parseInt(portArg.split('=')[1], 10) : (process.env.PORT || 3000);
 
-setToken(token);
 initDatabase();
 
 const db = getDatabase();
+const systemConfigQueries = createSystemConfigQueries(db);
+
+// Приоритет источников токена: --api-token= → API_TOKEN → system_config.api_token → новая генерация.
+let token;
+if (explicitToken) {
+  token = explicitToken;
+} else {
+  token = systemConfigQueries.get('api_token');
+  if (!token) {
+    token = crypto.randomBytes(32).toString('hex');
+    systemConfigQueries.set('api_token', token);
+  }
+}
+
+setToken(token);
+notifyToken(token);
 
 // Сначала sync-операции, до async
 const staleProfiles = db.prepare("SELECT id FROM profiles WHERE status IN ('running', 'starting')").all();

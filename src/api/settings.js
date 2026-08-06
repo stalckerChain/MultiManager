@@ -2,9 +2,12 @@ const express = require('express');
 const fs = require('fs');
 const path = require('path');
 const os = require('os');
+const crypto = require('crypto');
 const { getDatabase } = require('../db');
 const { createSystemConfigQueries, createProfileQueries, createProjectQueries, createMatrixQueries } = require('../db/queries');
 const { hasMasterKey, getMasterKeySource, getRecoveryKey, clearRecoveryKey, unlockWithPassword, rotateKey, generateMasterKey, generateRecoveryKey, setMasterKey, clearMasterKey } = require('../crypto');
+const { setToken, notifyToken } = require('./auth');
+const { closeAllWebSocketClients } = require('../core/websocket');
 const { logger } = require('../logger');
 
 function resolvePath(p) {
@@ -24,6 +27,20 @@ router.get('/crypto-status', (req, res) => {
     hasKey: hasMasterKey(),
     hasPassword: getMasterKeySource() === 'password',
   });
+});
+
+router.post('/api-token/regenerate', (req, res) => {
+  const db = getDatabase();
+  const configQueries = createSystemConfigQueries(db);
+  const newToken = crypto.randomBytes(32).toString('hex');
+
+  configQueries.set('api_token', newToken);
+  setToken(newToken);
+  closeAllWebSocketClients();
+  notifyToken(newToken);
+
+  logger.info('API token regenerated');
+  res.json({ token: newToken });
 });
 
 router.post('/recovery-key', (req, res) => {

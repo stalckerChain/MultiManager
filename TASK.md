@@ -1,208 +1,198 @@
-# TASK — Устранить двойную передачу клавиатуры и прокрутки в multi-control
+# TASK — Постоянный API-токен автоматизации
 
 ## Цель
 
-Устранить дублирование событий в режиме синхронизации master/slave:
+Перестать генерировать новый API-токен при каждом запуске Electron-приложения.
+Токен должен:
 
-- одна физическая клавиша должна передаваться в slave ровно один раз;
-- одна прокрутка должна передаваться в slave ровно один раз;
-- повторный запуск и остановка multi-control не должны накапливать обработчики;
-- browser-level сочетания клавиш, включая `Ctrl+W`, `Ctrl+T`, `Ctrl+1` и другие, должны обрабатываться глобальным Windows hook;
-- обычный текстовый ввод, включая `Shift`, раскладку и специальные режимы ввода, не должен ломаться после удаления CDP-перехвата клавиатуры.
+- генерироваться один раз при первом запуске;
+- сохраняться в SQLite в таблице `system_config` под ключом `api_token`;
+- использоваться повторно после перезапуска приложения;
+- регенерироваться пользователем из Settings по явному подтверждению;
+- применяться немедленно после регенерации и инвалидировать старый токен.
 
-## Установленная архитектура и причина проблемы
+## Согласованные решения
 
-### Клавиатура
+1. Хранить токен в `system_config` в открытом виде.
+2. Принять локальную модель угрозы: при наличии вредоносного кода на компьютере токен, находящийся в памяти процессов или передаваемый между ними, считается скомпрометированным. Дополнительное шифрование токена в БД в рамках этой задачи не вводить.
+3. Существующие CLI-аргумент `--api-token=` и переменная `API_TOKEN` оставить приоритетными для ручного запуска backend. Их не сохранять автоматически в БД.
+4. Для Electron-запуска использовать постоянный токен из БД. Если записи нет, сгенерировать токен криптографически стойким способом и сохранить.
+5. Регенерация из GUI должна действовать сразу, а не после перезапуска.
+6. Перед регенерацией показать пользователю подтверждение о том, что старый токен перестанет работать.
+7. Не логировать полное значение токена.
 
-Сейчас клавиатура поступает двумя путями:
+## Текущее состояние
 
-1. `SYNC_EVENT_SCRIPT` в `src/multi-control/cdp-manager.js` внедряется в master-страницу и слушает `keydown`/`keyup`. Эти события проходят через `Runtime.bindingCalled`, затем через `inputCapture.injectFromCdp()` и `MultiController`.
-2. `gui/src/main/keyboard-hooks.js` запускает native Windows keyboard hook. Он отправляет события на `POST /api/multi-control/os-keyboard`, где они также передаются в `MultiController`.
-
-Один физический key event поэтому может попасть в slave из двух источников.
-
-### Прокрутка
-
-В текущем multi-control прокрутка перехватывается через CDP-инъекцию:
-
-1. `SYNC_EVENT_SCRIPT` слушает DOM-событие `wheel`.
-2. Событие передаётся через CDP binding.
-3. `inputCapture.injectFromCdp()` эмитит событие `scroll`.
-4. `MultiController.scrollTo()` передаёт `Input.dispatchMouseEvent` типа `mouseWheel` в slave.
-
-`hook-worker.js` умеет перехватывать `WM_MOUSEWHEEL`, но в текущий multi-control не подключён. Native addon, используемый `keyboard-hooks.js`, перехватывает только клавиатуру.
-
-### Накопление listeners
-
-`wireInputToController()` в `src/api/multi-control.js` добавляет listeners к singleton `inputCapture` при каждом `POST /api/multi-control/start`. При `/stop` listeners не снимаются. Поэтому после повторного запуска один CDP `scroll` или другое CDP-событие обрабатывается несколькими listeners и повторно передаётся в controller.
-
-## Согласованное решение
-
-1. Сделать native Windows keyboard hook единственным источником клавиатурных событий.
-2. Удалить из CDP-инъекции обработчики `keydown`, `keyup`, `charInput` и `browserAction`.
-3. Оставить CDP-инъекцию для mouse и wheel-событий.
-4. Оставить в `inputCapture` только listeners mouse/wheel, сделать их подключение идемпотентным и обязательно снимать их при остановке.
-5. Сохранить текущую поддержку текстового ввода, добавив в поток native hook отдельную передачу printable text с учетом актуальной клавиши, modifiers и раскладки.
+- `gui/src/main/core-manager.js:8,52` генерирует токен через `crypto.randomBytes()` при загрузке модуля и при каждом `startCore()`.
+- `gui/src/main/core-manager.js:61` передаёт токен дочернему backend через `API_TOKEN`.
+- `src/index.js:13` принимает `--api-token=`, `API_TOKEN` или генерирует fallback-токен.
+- `src/api/auth.js` хранит активный токен только в памяти процесса через `setToken()`.
+- `system_config` и `createSystemConfigQueries()` уже существуют и подходят для постоянного значения без изменения схемы.
+- Все `/api/*` и WebSocket проходят текущую Bearer/query-аутентификацию.
+- GUI получает токен через IPC (`get-port-and-token`), хранит его в Pinia store и использует для REST и WebSocket.
+- `Settings.vue` уже отображает и копирует токен, но не умеет его регенерировать.
+- `TASK.md` до этой задачи содержал план другой задачи и заменён этим документом по согласованию пользователя.
 
 ## План реализации
 
-### Шаг 1. Проверить состояние репозитория и существующие контракты
+### 1. Реализовать единый жизненный цикл токена backend
 
-1. Проверить `git status --short` и `git diff`, не изменять чужие незавершенные изменения.
-2. Найти все использования `inputCapture`, `wireInputToController`, `injectFromCdp`, `keyboard-hooks`, `onKeyDown`, `onKeyUp`, `onCharInput`.
-3. Зафиксировать, что `InputCapture` является singleton и что listeners multi-control должны регистрироваться только для текущего активного режима.
-4. Проверить существующие unit-тесты controller, CDP manager, input capture и native hook, чтобы новые проверки соответствовали текущему стилю Vitest.
+Затрагиваемые файлы: `src/index.js`, `src/api/auth.js`, `src/api/settings.js`.
 
-### Шаг 2. Убрать CDP-источник клавиатуры
+1. Изменить порядок инициализации в `src/index.js`: разобрать CLI/env override, вызвать `initDatabase()`, прочитать `system_config.api_token`, при отсутствии сгенерировать и сохранить токен, вызвать `setToken()` и только затем создать/запустить HTTP-сервер и WebSocket.
+2. Определить приоритет источников: `--api-token=` → `API_TOKEN` → сохранённый `system_config.api_token` → новая генерация.
+3. При fallback-генерации сохранить токен в `system_config` до запуска HTTP-сервера.
+4. Не менять поведение ручного запуска с явно переданным токеном и не перезаписывать им постоянное значение.
+5. Добавить endpoint `POST /api/settings/api-token/regenerate`.
+6. Endpoint должен сгенерировать новый токен, сохранить его в `system_config`, вызвать `setToken()` и вернуть новый токен только в JSON-ответе авторизованному клиенту.
+7. После startup-разрешения токена и после runtime-ротации backend должен отправлять `process.send({ type: 'api-token', token })`, только если `process.send` доступен; вызов обернуть в проверку/`try-catch`, чтобы standalone CLI/CI-запуск не выдавал ошибку.
+8. Endpoint должен работать только через существующий auth middleware; отдельный незащищённый endpoint для получения или ротации токена не добавлять.
+9. Не включать токен в сообщения логгера, ошибки или диагностические payloads.
+10. Учесть, что endpoint доступен через `/api/settings`; отдельная master-key gate для этой операции не нужна, поскольку это не операция с зашифрованными профилями, но Bearer auth обязателен.
 
-Затрагиваемый файл: `src/multi-control/cdp-manager.js`.
+### 2. Убрать повторную генерацию в Electron main process
 
-1. Удалить из `SYNC_EVENT_SCRIPT` DOM listeners `keydown` и `keyup`.
-2. Удалить генерацию `charInput` из CDP-скрипта, так как printable text будет поступать через native hook.
-3. Удалить CDP-логику `browserAction`, включая перехват `Ctrl+W`/`Ctrl+T` через `preventDefault()`.
-4. Не удалять listeners `mousemove`, `mousedown`, `mouseup`, `wheel`, `click` и `visibilitychange`, если они нужны для текущей синхронизации мыши, прокрутки и вкладок.
-5. Проверить, что CDP binding по-прежнему используется для оставшихся событий и что удаление клавиатурного кода не меняет mouse/wheel flow.
-6. Оставить `/api/multi-control/os-keyboard` ответственным за browser-level клавиатурные сочетания.
+Затрагиваемый файл: `gui/src/main/core-manager.js`.
 
-### Шаг 3. Сделать lifecycle `inputCapture` безопасным
+1. Удалить генерацию нового токена на уровне загрузки модуля и из каждого `startCore()`.
+2. Запускать backend так, чтобы он мог разрешить постоянный токен по описанному startup-приоритету.
+3. Явно использовать IPC-канал `fork()`: backend отправляет startup- и runtime-сообщения через `process.send({ type: 'api-token', token })`, а main process принимает их через `coreProcess.on('message', ...)`.
+4. Получить фактически выбранный backend токен до возврата из `startCore()` и сохранить его в `coreToken`.
+5. Обработать через тот же `coreProcess.on('message', ...)` runtime-ротацию и обновлять `coreToken` в памяти main process.
+6. Сохранить использование актуального токена для graceful shutdown и keyboard hooks.
+7. Не выводить значение токена в логи, включая отладочные сообщения о запуске.
+8. Обеспечить обработку ошибки/выхода процесса, таймаут ожидания startup-сообщения и не оставлять `startCore()` в зависшем состоянии.
 
-Затрагиваемые файлы: `src/api/multi-control.js`, `src/os-input/input-capture.js`.
+### 3. Синхронизировать токен с renderer и IPC-слоем
 
-1. Вынести ссылки на функции-обработчики `mouseMove`, `mouseDown`, `mouseUp`, `scroll` в управляемую структуру, чтобы их можно было снять теми же ссылками.
-2. Не регистрировать `keyDown`, `keyUp` и `charInput` в `wireInputToController()`: после удаления CDP-клавиатуры эти события приходят через HTTP endpoint `/os-keyboard` и не должны проходить через `inputCapture`.
-3. Удалить из `src/os-input/input-capture.js` ветки `keyDown`, `keyUp` и связанное автоматическое создание `charInput` в `injectFromCdp()`. Оставить только реально используемые CDP-события mouse/wheel.
-4. Добавить состояние, показывающее, что mouse/wheel listeners уже подключены.
-5. При повторном вызове `wireInputToController()` не добавлять второй комплект mouse/wheel listeners.
-6. В обработке `/api/multi-control/stop` снять только listeners, установленные multi-control, через `inputCapture.off(...)`; не использовать безусловный `removeAllListeners()`.
-7. Сбрасывать состояние lifecycle после снятия listeners.
-8. Если запуск завершается исключением после подключения listeners, выполнить cleanup в error/finally-пути, чтобы частично запущенный режим не оставлял обработчики.
-9. Убедиться, что успешный новый запуск после stop снова подключает ровно один комплект listeners.
+Затрагиваемые файлы: `gui/src/main/index.js`, `gui/src/preload/index.js`, `gui/src/renderer/stores/app.js`, `gui/src/renderer/api/client.js`, при необходимости `gui/src/renderer/composables/useWebSocket.js`.
 
-### Шаг 4. Сохранить полноценный ввод текста через native hook
+1. После успешной регенерации обновить Pinia `appStore.token` и auth token Axios-клиента.
+2. Обеспечить, чтобы main process получил новое значение для `getCoreToken()`, graceful shutdown и будущего запуска keyboard hooks.
+3. Передать событие смены токена в renderer через безопасный preload API, если токен может быть ротирован не из текущего renderer-запроса.
+4. Не расширять preload API произвольным IPC-каналом: добавить только явно разрешённое событие/операцию с валидацией канала.
+5. При runtime-ротации принудительно закрыть все существующие WebSocket-соединения в `src/core/websocket.js`; соединения со старым токеном не должны продолжать работать.
+6. Добавить в `useWebSocket.js` `watch(() => appStore.token, ...)`: при изменении токена отменить reconnect timer, закрыть текущее соединение и подключиться заново с новым токеном.
+7. В `useWebSocket.js` не логировать URL с query-параметром `token`; логировать только host/port или факт подключения.
+8. Исключить сохранение токена в `localStorage`, URL приложения или другие постоянные хранилища renderer, кроме временного WebSocket URL в момент handshake.
 
-Затрагиваемые файлы: `gui/src/main/keyboard-hooks.js`, при необходимости `src/os-input/native-hooks/index.js`, `src/os-input/native-hooks/hooks.cc` и `src/api/multi-control.js`.
+### 4. Добавить управление в Settings
 
-1. Сохранить отправку `keyDown` и `keyUp` из native hook для всех клавиш и browser-level сочетаний.
-2. Для printable клавиш добавить отдельное событие текста только когда это действительно обычный ввод, а не комбинация с `Ctrl`, `Alt` или `Meta`.
-3. В native addon использовать Windows API `ToUnicodeEx()`, а не устаревший `ToAscii()`: получить текущий keyboard layout через `GetKeyboardLayout(0)`, собрать состояние modifiers/`CapsLock` через `GetKeyboardState()` и преобразовать `vkCode`/scan code в Unicode-строку.
-4. Обработать результат `ToUnicodeEx()` явно:
-   - положительный результат — передать полученную Unicode-строку как `charInput`;
-   - нулевой результат — символ не сформирован, `charInput` не отправлять;
-   - отрицательный результат — dead key; не отправлять промежуточный символ и корректно сохранить/сбросить состояние dead key перед следующим событием.
-5. Учесть AltGr: не считать комбинацию `Ctrl+Alt` обычным текстовым вводом без проверки текущей раскладки; использовать состояние клавиатуры и результат `ToUnicodeEx()`, чтобы европейские AltGr-символы формировались как текст, но browser shortcuts не превращались в `charInput`.
-6. Не пытаться имитировать IME простым `ToUnicodeEx()`: composition и committed text зависят от выбранного IME и не представлены надежно в `WH_KEYBOARD_LL`. Для IME не отправлять догадочный `charInput`; сохранить key events и зафиксировать необходимость отдельного IME text-input решения, если ручная проверка выявит регрессию.
-7. Не использовать простое преобразование виртуального кода в нижний ASCII-символ как окончательное решение: оно не учитывает `Shift`, `CapsLock`, текущую раскладку, AltGr и Unicode.
-8. Передавать в backend уже вычисленный текст отдельным событием с полем `text`, не логируя его содержимое.
-9. В `/api/multi-control/os-keyboard` явно разделить обработку:
-   - `keyDown` → `controller.onKeyDown(event)`;
-   - `keyUp` → `controller.onKeyUp(event)`;
-   - `charInput` → `controller.onCharInput({ text })`.
-10. Не отправлять `charInput` для `Ctrl`, `Meta`, browser shortcuts и прочих командных сочетаний; AltGr обрабатывать только по результату layout-aware `ToUnicodeEx()`.
-11. Проверить, что один printable key вызывает один `Input.insertText` в каждом slave и не вызывает дополнительный `charInput` из CDP.
-12. Не логировать содержимое вводимого текста, пароли, токены и другие чувствительные данные.
+Затрагиваемые файлы: `gui/src/renderer/views/Settings.vue`,
+`gui/src/renderer/i18n/en.json`, `gui/src/renderer/i18n/ru.json`,
+`gui/src/renderer/i18n/zh.json`.
 
-### Шаг 5. Проверить обработку browser-level сочетаний
+1. В существующую карточку сервера добавить кнопку `Regenerate API token`.
+2. Перед запросом показать подтверждение с предупреждением об инвалидировании старого токена и внешних automation-клиентов.
+3. Выполнить `POST /api/settings/api-token/regenerate` через текущий API client.
+4. Обновить отображаемый токен и auth token клиента без перезагрузки приложения; watcher `useWebSocket.js` должен автоматически переподключить WebSocket.
+5. Показать успешное уведомление; не показывать новый токен в уведомлении или логах.
+6. Обработать ошибку так, чтобы старый токен оставался в состоянии GUI, если сервер не подтвердил ротацию.
+7. Все новые пользовательские строки провести через `t()` и добавить переводы для трёх локалей.
 
-Затрагиваемые файлы: `gui/src/main/keyboard-hooks.js`, `src/api/multi-control.js`, при необходимости `src/multi-control/index.js`.
+### 5. Обновить документацию API и архитектурные ссылки
 
-1. `Ctrl+W` должен закрывать соответствующие slave tabs через backend, а master tab должен закрываться штатно браузером без второго CDP browserAction.
-2. `Ctrl+T` должен проходить через native hook и штатно обрабатываться master-браузером; discovery должен синхронизировать новый tab со slave.
-3. `Ctrl+1` и аналогичные browser-level shortcuts должны передаваться hook-потоком один раз.
-4. Проверить, что удаление CDP key listeners не вызывает повторного закрытия/создания вкладок.
-5. Проверить отпускание modifier keys, чтобы после комбинаций не оставались зависшие состояния в slave.
+Затрагиваемые файлы: `docs/API.md`, при необходимости `README.md`, `README.en.md`, `README.zh.md`, `TS.md`.
 
-### Шаг 6. Проверить прокрутку и разбивку wheel delta
+1. Описать постоянный жизненный цикл API-токена.
+2. Добавить описание endpoint регенерации, требования авторизации и последствия для старых клиентов.
+3. Уточнить устаревшие утверждения о генерации нового токена при каждом старте.
+4. Не документировать само значение токена и не добавлять секреты в примеры.
 
-Затрагиваемые файлы: `src/multi-control/index.js`, `src/api/multi-control.js`, при необходимости `src/multi-control/cdp-manager.js`.
+### 6. Добавить тесты
 
-1. Убедиться, что один CDP `wheel` вызывает один `controller.scrollTo()`.
-2. Учесть, что `scrollTo()` может разбивать большую дельту на несколько `mouseWheel` вызовов по `SCROLL_STEP_PX`; это допустимо только если сумма отправленных дельт равна исходной.
-3. Не подключать `hook-worker.js` к multi-control в рамках этой задачи, поскольку согласованным источником wheel остаётся CDP.
-4. Проверить обновление master/slave scroll positions после одного события и после серии событий.
-5. Проверить, что повторный start/stop не увеличивает число wheel-последовательностей.
+Основные затрагиваемые файлы: `tests/unit/auth.test.js`, новые или существующие тесты для startup/settings,
+`tests/unit/settings-automation.test.js` либо отдельный `tests/unit/settings-token.test.js`,
+`tests/unit/app-store.test.js`, при необходимости тесты `core-manager`/IPC.
 
-### Шаг 7. Добавить и обновить тесты
+Проверить:
 
-Затрагиваемые файлы: существующие тесты рядом с проверяемыми модулями, прежде всего `tests/unit/multi-control.test.js`, `tests/unit/multi-control-api.test.js`, `tests/unit/cdp-manager.test.js`, `tests/unit/os-input.test.js`.
+1. При отсутствии `system_config.api_token` токен генерируется и сохраняется.
+2. При повторной инициализации существующий токен возвращается без новой генерации.
+3. `API_TOKEN` и `--api-token=` имеют приоритет над БД и не перезаписывают сохранённый токен.
+4. Регенерация сохраняет новый токен и меняет активное значение auth middleware.
+5. Старый Bearer-токен после регенерации получает `401`, новый проходит проверку.
+6. Endpoint регенерации без Bearer-токена получает отказ.
+7. При startup backend отправляет `process.send({ type: 'api-token', token })`, Electron получает сообщение через `coreProcess.on('message', ...)` и обновляет `coreToken`.
+8. При standalone-запуске без IPC startup и runtime-ротация не завершаются ошибкой.
+9. Renderer обновляет API client и WebSocket auth после успешной ротации.
+10. Runtime-ротация закрывает активные WebSocket-соединения.
+11. Изменение `appStore.token` вызывает закрытие старого WebSocket и новое подключение с актуальным токеном.
+12. При ошибке регенерации состояние GUI не меняется.
+13. Ни один тест не проверяет или не выводит полный токен в диагностический вывод.
 
-Добавить проверки:
-
-1. Повторный вызов wiring-функции не добавляет listeners повторно.
-2. После stop listeners сняты, а последующий CDP event не вызывает controller.
-3. Сценарий `start → stop → start` создаёт ровно один рабочий комплект listeners.
-4. Один CDP wheel вызывает одну обработку `scrollTo`.
-5. Сумма нескольких `mouseWheel` шагов равна исходной delta.
-6. `src/os-input/input-capture.js` больше не обрабатывает CDP `keyDown`, `keyUp` и не создаёт из них `charInput`.
-7. Тесты `injectFromCdp` для keyDown/keyUp/charInput удалены или обновлены на проверку отсутствия мёртвого поведения.
-8. CDP script больше не содержит `keydown`, `keyup`, `charInput` и `browserAction`.
-9. Native hook keyDown/keyUp передаются в controller ровно по одному разу.
-10. `/os-keyboard` маршрутизирует `charInput` в `controller.onCharInput({ text })`.
-11. Printable text передаётся одним `charInput`/`insertText`.
-12. `Shift`, `CapsLock`, английская/русская раскладка и AltGr проверяются на Windows; dead key не отправляет промежуточный символ.
-13. Для IME не генерируется ложный `charInput`; IME composition/commit явно помечены как отдельное ограничение, если текущий hook не может их надежно получить.
-14. `Ctrl`, `Meta`, `Ctrl+1`, `Ctrl+W` и `Ctrl+T` не создают лишних text events; AltGr проверяется отдельно по выбранной раскладке.
-15. Повторная регистрация и cleanup работают при частично завершившемся запуске.
-
-Если нативное вычисление символа нельзя надежно протестировать на CI без Windows keyboard layout, вынести чистое преобразование payload в тестируемую функцию и отдельно описать ручную Windows-проверку раскладок.
-
-### Шаг 8. Проверить результат
+### 7. Проверить результат
 
 1. Запустить `npm test`.
-2. При наличии отдельных команд для GUI/native addon запустить соответствующие unit-тесты и сборочную проверку без изменения версии проекта.
-3. Выполнить ручную проверку на Windows:
-   - запустить sync;
-   - нажать обычные клавиши и проверить однократный ввод в slave;
-   - проверить `Shift`, `CapsLock`, русскую и английскую раскладки;
-   - проверить `Ctrl+1`, `Ctrl+T`, `Ctrl+W`;
-   - прокрутить master и сравнить величину прокрутки slave;
-   - выполнить несколько циклов start/stop/start;
-   - убедиться, что после каждого цикла нет удвоения.
-4. Проверить логи: одно исходное событие не должно приводить к двум controller dispatch.
-5. Проверить итоговый `git diff` и убедиться, что изменены только файлы этой задачи и тесты.
+2. Запустить backend/Electron в dev-режиме, проверить, что первый запуск создаёт `system_config.api_token`.
+3. Перезапустить приложение и убедиться, что значение токена не изменилось.
+4. Проверить REST-запрос, WebSocket и запуск automation-клиента со старым сохранённым токеном.
+5. В Settings выполнить регенерацию и проверить, что новый токен начинает работать немедленно.
+6. Проверить, что старый токен больше не принимается.
+7. Проверить graceful shutdown и keyboard hooks после регенерации.
+8. Проверить ручной запуск backend с `API_TOKEN` и `--api-token=`.
+9. Проверить повторный запуск/остановку приложения и отсутствие повторной генерации.
+10. Проверить `git diff`: изменены только файлы текущей задачи, без изменения версии проекта и без секретов.
 
 ## Затрагиваемые файлы
 
-### Основные
+### Backend
 
-- `src/multi-control/cdp-manager.js` — убрать CDP-перехват клавиатуры, оставить mouse/wheel/tab events.
-- `src/api/multi-control.js` — lifecycle listeners и маршрутизация native keyboard events.
-- `src/os-input/input-capture.js` — удалить мёртвые CDP-ветки `keyDown`, `keyUp` и `charInput`.
-- `gui/src/main/keyboard-hooks.js` — передача key events и printable text через native hook.
+- `src/index.js`
+- `src/api/auth.js`
+- `src/api/settings.js`
 
-### Возможные дополнительные
+### Electron main/preload
 
-- `src/os-input/native-hooks/index.js` — адаптация payload native addon.
-- `src/os-input/native-hooks/hooks.cc` — получение фактического символа с учетом Windows keyboard state/layout.
-- `src/multi-control/index.js` — только если потребуется уточнить маршрутизацию key/char/scroll или защиту от повторной обработки.
+- `gui/src/main/core-manager.js`
+- `gui/src/main/index.js`
+- `gui/src/preload/index.js`
+
+### Renderer
+
+- `gui/src/renderer/stores/app.js`
+- `gui/src/renderer/api/client.js`
+- `gui/src/renderer/composables/useWebSocket.js` — watcher токена, reconnect lifecycle и безопасное логирование
+- `gui/src/renderer/views/Settings.vue`
+- `gui/src/renderer/i18n/en.json`
+- `gui/src/renderer/i18n/ru.json`
+- `gui/src/renderer/i18n/zh.json`
+
+### Документация
+
+- `docs/API.md`
+- `README.md`, `README.en.md`, `README.zh.md`, `TS.md` — только если содержат устаревшее описание ротации
 
 ### Тесты
 
-- `tests/unit/multi-control.test.js`.
-- `tests/unit/multi-control-api.test.js`.
-- `tests/unit/cdp-manager.test.js`.
-- `tests/unit/os-input.test.js`.
+- `tests/unit/auth.test.js`
+- `tests/unit/settings-token.test.js` — новый тестовый файл при отсутствии подходящего существующего
+- `tests/unit/app-store.test.js`
+- `tests/unit/websocket.test.js` или соответствующий тест текущего WebSocket-модуля
+- тесты `core-manager`/IPC — если для runtime-ротации потребуется отдельное покрытие
 
 ## Ограничения и риски
 
-- Не подключать второй глобальный mouse hook в рамках этой задачи.
-- Не оставлять CDP и native hook одновременно источниками одних и тех же клавиатурных событий.
-- Не использовать `removeAllListeners()` для singleton `inputCapture`.
-- Не логировать введённый текст и секретные данные.
-- Логи могут подтверждать тип, источник, виртуальный код и количество dispatch, но не должны содержать `text`, введённые символы, пароли или токены.
 - Не менять версию проекта и release-файлы.
-- Не менять security-модель API без отдельного согласования.
-- Особое внимание уделить раскладкам, AltGr, CapsLock, IME и Unicode-вводу.
-- После удаления CDP key listeners browser-level shortcuts должны продолжить работать через native hook.
-- Если вычисление printable text на уровне native hook требует отдельной архитектуры или не может быть надежно реализовано в рамках текущего модуля, остановиться и вынести это как отдельное решение, не подменяя раскладку простым ASCII-маппингом.
+- Не добавлять новую зависимость.
+- Не менять формат существующих CLI-параметров и env-переменных.
+- Не создавать незащищённый endpoint для чтения или ротации токена.
+- Не логировать токен полностью или частично.
+- При ротации возможен короткий период рассинхронизации между backend, Electron main и renderer; обработка должна быть атомарной с точки зрения записи в БД и смены активного auth token.
+- Все активные WebSocket-соединения закрываются сразу после ротации; renderer автоматически подключается заново с новым токеном.
+- Одновременный запуск нескольких экземпляров приложения не является поддерживаемым сценарием; при необходимости его следует отдельно согласовать.
+- Смена токена должна учитывать REST, WebSocket, keyboard hooks, graceful shutdown и дочерние automation-процессы.
+- Не хранить токен в постоянном хранилище renderer.
 
 ## Критерии готовности
 
-- Клавиша не дублируется при одном запуске и после повторных start/stop.
-- Прокрутка не дублируется при одном запуске и после повторных start/stop.
-- CDP script не слушает клавиатуру.
-- Keyboard hook сохраняет browser-level shortcuts.
-- Обычный текст корректно вводится с учетом `Shift` и выбранной Windows-раскладки.
-- Listeners снимаются при stop и не регистрируются повторно.
-- В логах отсутствует содержимое вводимого текста; присутствуют только безопасные диагностические метаданные.
-- `npm test` проходит успешно.
-- Ручная Windows-проверка пройдена для клавиатуры, текста, shortcuts и прокрутки.
+- Новый токен не генерируется при обычном перезапуске приложения.
+- При первом запуске токен создаётся и появляется в `system_config`.
+- Settings позволяет подтвердить и выполнить ротацию токена.
+- Новый токен работает сразу после ротации.
+- Старый токен отклоняется.
+- REST, WebSocket, keyboard hooks, graceful shutdown и automation используют актуальный токен.
+- CLI/env override сохраняет текущую совместимость и не портит постоянный токен.
+- Все новые UI-строки локализованы.
+- `npm test` проходит.
+- В изменениях отсутствуют секреты и полные значения токенов.

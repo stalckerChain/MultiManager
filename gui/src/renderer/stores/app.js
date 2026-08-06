@@ -21,11 +21,22 @@ export const useAppStore = defineStore('app', () => {
         port.value = await window.electronAPI.getPort();
         token.value = await window.electronAPI.getToken();
       }
+      if (window.electronAPI.onApiTokenChanged) {
+        window.electronAPI.onApiTokenChanged((newToken) => {
+          applyToken(newToken);
+        });
+      }
     }
     setBaseURL(port.value);
     setAuthToken(token.value);
     serverStatus.value = 'connected';
     initialized.value = true;
+  }
+
+  function applyToken(newToken) {
+    if (!newToken) return;
+    token.value = newToken;
+    setAuthToken(newToken);
   }
 
   function setTheme(newTheme) {
@@ -44,5 +55,5 @@ export const useAppStore = defineStore('app', () => {
     i18next.changeLanguage(lang);
   }
 
-  return { port, token, theme, language, serverStatus, initialized, init, setTheme, setLanguage };
+  return { port, token, theme, language, serverStatus, initialized, init, applyToken, setTheme, setLanguage };
 });

@@ -26,6 +26,11 @@ contextBridge.exposeInMainWorld('electronAPI', {
   selectFile: (filters) => ipcRenderer.invoke('dialog:select-file', filters),
   selectZip: () => ipcRenderer.invoke('dialog:select-zip'),
   onNavigate: (callback) => ipcRenderer.on('navigate', (event, route) => callback(route)),
+  onApiTokenChanged: (callback) => {
+    const handler = (event, token) => callback(token);
+    ipcRenderer.on('api-token-changed', handler);
+    return () => ipcRenderer.removeListener('api-token-changed', handler);
+  },
   onUpdateAvailable: (callback) => ipcRenderer.on('update-available', (event, info) => callback(info)),
   onUpdateDownloaded: (callback) => ipcRenderer.on('update-downloaded', (event, info) => callback(info)),
   invoke: (channel, ...args) => {

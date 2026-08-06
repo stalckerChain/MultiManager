@@ -160,7 +160,7 @@ API_TOKEN=YOUR_SECRET_TOKEN PORT=3005 npm start
 
 ## AI Agent Integration (API Guide)
 
-All requests to the local server must include the authorization header `Authorization: Bearer <TOKEN>`. The token is generated automatically on Electron startup and is available for copying in the GUI status bar.
+All requests to the local server must include the authorization header `Authorization: Bearer <TOKEN>`. The token is persistent, generated on first launch and stored in SQLite (`system_config.api_token`); it is reused after restarts and can be regenerated in Settings. It is available for copying in the GUI status bar.
 
 ### 1. Launching a Browser Profile for AI
 

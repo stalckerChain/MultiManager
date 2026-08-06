@@ -7,6 +7,7 @@ AI-Driven Web Automation Platform — кроссплатформенный ан�
 
 ## Что нового в v1.4.2
 
+- **[FEAT] Постоянный API-токен автоматизации.** Токен больше не ротируется при каждом старте: генерируется один раз при первом запуске, сохраняется в `system_config.api_token` и переиспользуется при перезапусках. В Settings добавлена кнопка **Regenerate API Token** с подтверждением — ротация действует немедленно, инвалидирует старый токен, закрывает активные WebSocket-соединения и переподключает renderer с новым токеном. CLI-аргумент `--api-token=` и env `API_TOKEN` сохраняют приоритет для ручного запуска и не перезаписывают постоянное значение. ✅ `src/index.js`, `src/api/settings.js`, `gui/src/main/core-manager.js`, `gui/src/renderer/views/Settings.vue`
 - **[FEAT] Multi-Control: клавиатура синхронизируется через нативный hook (один источник).** Устранён double dispatch — ранее клавиша при вводе в DOM-элементе уходила в slave дважды (CDP-скрипт + OS hook). CDP-клавиатура из `SYNC_EVENT_SCRIPT` удалена; единственный источник — `WH_KEYBOARD_LL` → `/api/multi-control/os-keyboard`. Текст передаётся через `ToUnicodeEx` с учётом раскладки, Shift, CapsLock и AltGr (dead keys композируются), а не через эмуляцию keydown. Ctrl+W/T/N обрабатывает глобальный hook (Ctrl+T — браузер открывает таб нативно + автосинхронизация, Ctrl+W — закрытие slave-табов через CDP). Повторные start/stop multi-control больше не накапливают обработчики ввода. ✅ `src/multi-control/cdp-manager.js`, `src/api/multi-control.js`, `src/multi-control/index.js`, `src/os-input/native-hooks/hooks.cc`, `src/os-input/native-hooks/index.js`, `src/os-input/input-capture.js`, `gui/src/main/keyboard-hooks.js`, `gui/src/main/keyboard-hooks-payload.js`
 - **[SEC] Устранены уязвимости зависимостей.** Backend: `adm-zip`, `ip-address`, `body-parser`, `brace-expansion`, `esbuild`. GUI/Electron: `electron` 34→43, `electron-builder` 25→26, `better-sqlite3` 11→13, `cloakbrowser`, `postcss`, `js-yaml`, `concurrently`, `tar` (forced 7.5.22). Production audit: 0 vulns. ✅ `package.json`, `gui/package.json`
 - **[SEC] Защита ZIP/CRX.** Path traversal, лимиты размера/файлов, атомарное перемещение, безопасные ошибки, CRX boundary checks. ✅ `src/api/extensions.js`
@@ -105,7 +106,7 @@ MultiManager/
 ├── package.json              # Зависимости бэкенда и скрипты
 ├── vitest.config.js          # Vitest
 ├── src/                      # БЭКЕНД (Core-движок)
-│   ├── index.js              # Точка входа (fork с env API_TOKEN, env PORT)
+│   ├── index.js              # Точка входа (fork; постоянный API-токен из system_config)
 │   ├── core/
 │   │   ├── app.js            # Express + маршруты API
 │   │   └── websocket.js      # WebSocket для реалтайм-событий

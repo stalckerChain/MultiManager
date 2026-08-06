@@ -10,6 +10,16 @@ function getToken() {
   return state.apiToken;
 }
 
+function notifyToken(token) {
+  if (typeof process.send === 'function') {
+    try {
+      process.send({ type: 'api-token', token });
+    } catch (e) {
+      // ignore: standalone/CI run without IPC channel
+    }
+  }
+}
+
 function authMiddleware(req, res, next) {
   if (!state.apiToken) {
     return res.status(503).json({ error: 'Service unavailable: token not initialized' });
@@ -31,4 +41,4 @@ function authMiddleware(req, res, next) {
   next();
 }
 
-module.exports = { setToken, getToken, authMiddleware };
+module.exports = { setToken, getToken, notifyToken, authMiddleware };

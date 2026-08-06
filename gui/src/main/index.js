@@ -2,7 +2,7 @@ const { app, BrowserWindow, ipcMain, Tray, Menu, nativeTheme, dialog, shell } = 
 const path = require('path');
 const fs = require('fs');
 const http = require('http');
-const { startCore, stopCore, getCorePort, getCoreToken } = require('./core-manager');
+const { startCore, stopCore, getCorePort, getCoreToken, onTokenChange } = require('./core-manager');
 const { createTray } = require('./tray');
 const { setupUpdater } = require('./updater');
 const { setupBrowserManager } = require('./browser-manager');
@@ -96,6 +96,12 @@ async function createWindow() {
   }
   const token = getCoreToken();
   log('INFO', 'createWindow: token ready');
+
+  onTokenChange((newToken) => {
+    if (mainWindow && !mainWindow.webContents.isDestroyed()) {
+      mainWindow.webContents.send('api-token-changed', newToken);
+    }
+  });
 
   const windowTitle = isDev ? `MultiManager v${appVersion} (dev)` : `MultiManager v${appVersion}`;
 const iconPath = path.join(__dirname, '..', '..', 'resources', 'icon.ico');

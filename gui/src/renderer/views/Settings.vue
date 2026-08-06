@@ -15,6 +15,9 @@
               <EyeOutlined v-else />
             </a-button>
             <a-button size="small" type="text" @click="copyToken">Copy</a-button>
+            <a-button size="small" type="primary" danger :loading="regeneratingToken" @click="confirmRegenerateToken">
+              {{ t('settings.regenerateToken') }}
+            </a-button>
           </div>
         </a-descriptions-item>
       </a-descriptions>
@@ -147,7 +150,7 @@ import { useTranslation } from 'i18next-vue';
 import { useAppStore } from '../stores/app.js';
 import { useAutomationStore } from '../stores/automation.js';
 import client from '../api/client.js';
-import { message } from 'ant-design-vue';
+import { message, Modal } from 'ant-design-vue';
 
 const { t } = useTranslation();
 const appStore = useAppStore();
@@ -188,6 +191,32 @@ function handleLanguageChange() {
 
 function copyToken() {
   navigator.clipboard.writeText(appStore.token);
+}
+
+const regeneratingToken = ref(false);
+
+function confirmRegenerateToken() {
+  Modal.confirm({
+    title: t('settings.regenerateTokenConfirmTitle'),
+    content: t('settings.regenerateTokenConfirm'),
+    okText: t('common.confirm'),
+    cancelText: t('common.cancel'),
+    okButtonProps: { danger: true },
+    onOk: () => regenerateToken(),
+  });
+}
+
+async function regenerateToken() {
+  regeneratingToken.value = true;
+  try {
+    const { data } = await client.post('/api/settings/api-token/regenerate');
+    appStore.applyToken(data.token);
+    message.success(t('settings.regenerateTokenSuccess'));
+  } catch (err) {
+    message.error(err.message || t('common.error'));
+  } finally {
+    regeneratingToken.value = false;
+  }
 }
 
 async function fetchCryptoStatus() {

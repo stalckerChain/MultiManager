@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach, vi } from 'vitest';
-import { setToken, getToken, authMiddleware } from '../../src/api/auth.js';
+import { setToken, getToken, authMiddleware, notifyToken } from '../../src/api/auth.js';
 
 describe('Auth Middleware', () => {
   beforeEach(() => {
@@ -68,5 +68,37 @@ describe('Auth Middleware', () => {
     expect(res.status).toHaveBeenCalledWith(503);
     expect(res.json).toHaveBeenCalledWith({ error: 'Service unavailable: token not initialized' });
     expect(next).not.toHaveBeenCalled();
+  });
+});
+
+describe('notifyToken', () => {
+  it('отправляет process.send({ type: api-token }) при наличии канала', () => {
+    const send = vi.fn();
+    const original = process.send;
+    process.send = send;
+
+    notifyToken('rotation-abc');
+
+    expect(send).toHaveBeenCalledWith({ type: 'api-token', token: 'rotation-abc' });
+
+    process.send = original;
+  });
+
+  it('не бросает ошибку при standalone-запуске без IPC канала', () => {
+    const original = process.send;
+    process.send = undefined;
+
+    expect(() => notifyToken('standalone-token')).not.toThrow();
+
+    process.send = original;
+  });
+
+  it('не бросает ошибку если process.send выбрасывает исключение', () => {
+    const original = process.send;
+    process.send = () => { throw new Error('no channel'); };
+
+    expect(() => notifyToken('standalone-token')).not.toThrow();
+
+    process.send = original;
   });
 });

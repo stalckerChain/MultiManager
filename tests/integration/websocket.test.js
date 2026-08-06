@@ -2,7 +2,7 @@ import { describe, it, expect, beforeAll, afterAll, afterEach } from 'vitest';
 import http from 'http';
 import WebSocket from 'ws';
 import { app } from '../../src/core/app.js';
-import { setupWebSocket, broadcast, broadcastStatus, broadcastLog } from '../../src/core/websocket.js';
+import { setupWebSocket, broadcast, broadcastStatus, broadcastLog, closeAllWebSocketClients } from '../../src/core/websocket.js';
 
 const TEST_WS_TOKEN = 'test-ws-token-' + Date.now();
 
@@ -133,5 +133,18 @@ describe('WebSocket', () => {
     await new Promise((r) => setTimeout(r, 50));
 
     expect(() => broadcast({ test: true })).not.toThrow();
+  });
+
+  it('closeAllWebSocketClients закрывает все активные подключения', async () => {
+    const ws1 = await connect();
+    const ws2 = await connect();
+    expect(ws1.readyState).toBe(WebSocket.OPEN);
+    expect(ws2.readyState).toBe(WebSocket.OPEN);
+
+    closeAllWebSocketClients();
+
+    await new Promise((r) => setTimeout(r, 100));
+    expect(ws1.readyState).toBe(WebSocket.CLOSED);
+    expect(ws2.readyState).toBe(WebSocket.CLOSED);
   });
 });

@@ -46,6 +46,17 @@ function broadcast(data) {
   }
 }
 
+function closeAllWebSocketClients() {
+  for (const client of clients) {
+    try {
+      client.close(4401, 'Token rotated');
+    } catch (e) {
+      // ignore
+    }
+  }
+  clients.clear();
+}
+
 function broadcastStatus(profileId, status, pid = null) {
   broadcast({ type: 'status', profileId, status, pid });
 }
@@ -54,4 +65,4 @@ function broadcastLog(profileId, level, message) {
   broadcast({ type: 'log', profileId, level, message, timestamp: Date.now() });
 }
 
-module.exports = { setupWebSocket, broadcast, broadcastStatus, broadcastLog };
+module.exports = { setupWebSocket, broadcast, broadcastStatus, broadcastLog, closeAllWebSocketClients };

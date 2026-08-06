@@ -1,11 +1,12 @@
 const net = require('net');
-const crypto = require('crypto');
 const path = require('path');
 const fs = require('fs');
 
 let coreProcess = null;
 let corePort = 3000;
-let coreToken = crypto.randomBytes(32).toString('hex');
+let coreToken = '';
+let tokenWaiters = [];
+let tokenListeners = [];
 
 const isDev = !require('electron').app.isPackaged;
 
@@ -49,16 +50,42 @@ async function findFreePort(start = 3000, end = 3100) {
 }
 
 async function startCore() {
-  coreToken = crypto.randomBytes(32).toString('hex');
   corePort = await findFreePort();
-  return startCoreProcess();
+  await startCoreProcess();
+  return corePort;
+}
+
+function waitForToken(timeout = 15000) {
+  if (coreToken) return Promise.resolve(coreToken);
+  return new Promise((resolve, reject) => {
+    const timer = setTimeout(() => {
+      tokenWaiters = tokenWaiters.filter(w => w !== onToken);
+      reject(new Error('Timeout waiting for core token'));
+    }, timeout);
+    function onToken() {
+      clearTimeout(timer);
+      resolve(coreToken);
+    }
+    tokenWaiters.push(onToken);
+  });
+}
+
+function onTokenReceived(token) {
+  if (typeof token !== 'string' || token.length === 0) return;
+  coreToken = token;
+  log('INFO', 'Core token updated');
+  const waiters = tokenWaiters;
+  tokenWaiters = [];
+  waiters.forEach(w => w());
+  const listeners = tokenListeners;
+  listeners.forEach(l => l(coreToken));
 }
 
 function startCoreProcess() {
   const { fork } = require('child_process');
   log('INFO', 'startCore: forking', isDev ? '(dev)' : '(packaged)', CORE_PATH);
 
-  const forkEnv = { ...process.env, PORT: corePort, API_TOKEN: coreToken };
+  const forkEnv = { ...process.env, PORT: corePort };
 
   if (!isDev) {
     const asarNodeModules = path.join(
@@ -81,6 +108,12 @@ function startCoreProcess() {
     log('CORE-STDERR', data.toString().trim());
   });
 
+  coreProcess.on('message', (msg) => {
+    if (msg && msg.type === 'api-token') {
+      onTokenReceived(msg.token);
+    }
+  });
+
   coreProcess.on('error', (err) => {
     log('ERROR', 'Core process error:', err.message);
   });
@@ -90,7 +123,7 @@ function startCoreProcess() {
     coreProcess = null;
   });
 
-  return corePort;
+  return waitForToken();
 }
 
 function stopCore() {
@@ -111,4 +144,9 @@ function getCoreToken() {
   return coreToken;
 }
 
-module.exports = { startCore, stopCore, getCorePort, getCoreToken };
+function onTokenChange(listener) {
+  if (typeof listener !== 'function') return;
+  tokenListeners.push(listener);
+}
+
+module.exports = { startCore, stopCore, getCorePort, getCoreToken, onTokenChange };

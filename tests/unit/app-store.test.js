@@ -37,7 +37,13 @@ function createAppStore() {
     state.language = lang;
   }
 
-  return { state, init, setTheme, setLanguage };
+  function applyToken(newToken) {
+    if (!newToken) return;
+    state.token = newToken;
+    return newToken;
+  }
+
+  return { state, init, setTheme, setLanguage, applyToken };
 }
 
 describe('App Store — initialized state', () => {
@@ -108,5 +114,17 @@ describe('App Store — initialized state', () => {
     const { setAuthToken } = await import('../../gui/src/renderer/api/client.js');
     setAuthToken('abc-123');
     expect(setAuthToken).toHaveBeenCalledWith('abc-123');
+  });
+
+  it('applyToken обновляет токен состояния', () => {
+    const { state, applyToken } = createAppStore();
+    applyToken('new-token-456');
+    expect(state.token).toBe('new-token-456');
+  });
+
+  it('applyToken игнорирует пустое значение', () => {
+    const { state, applyToken } = createAppStore();
+    applyToken('');
+    expect(state.token).toBe('');
   });
 });
