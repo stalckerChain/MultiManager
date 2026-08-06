@@ -1,6 +1,6 @@
 # Changelog
 
-## v1.4.3
+## v1.4.2
 
 ### Безопасность
 
@@ -32,21 +32,6 @@
   В `run_tasks.profile_id` отсутствовал `ON DELETE CASCADE`. При DELETE профиля, имеющего строки в `run_tasks`, SQLite блокировал операцию. Добавлена миграция с recreate таблицы в транзакции.
   ✅ `src/db/schema.js`, `src/api/profiles.js`, GUI store/view
 
-### Новые возможности
-
-- **[FEAT] Внешние пути к профилям браузера (`profile_path`).**
-  Добавлено поле `profile_path` в профили — абсолютный путь к user-data-dir внешнего браузерного профиля. Позволяет использовать профили из внешних проектов (например, stAuto0) без копирования файлов. MM запускает браузер с внешним `user-data-dir`, расширения подгружаются из профиля (как в stAuto0 standalone). Гибридный режим: если `profile_path` не задан — используется стандартный путь MM.
-  ✅ `src/db/schema.js`, `src/core/profile-path.js`, `src/api/browser.js`, `src/api/validate.js`, `src/api/profiles.js`, `src/db/queries.js`, `gui/src/renderer/views/ProfileModal.vue`, `docs/API.md`, `docs/DATABASE.md`
-
-### Тесты
-
-- Добавлен `tests/unit/profile-path.test.js` (21 тест): helper путей, валидация, сканирование расширений внешнего профиля.
-- Всего: **828 тестов** (52 файла), все проходят ✅
-
-## v1.4.3 (продолжение — автоматизация)
-
-### Исправления
-
 - **[FIX] GUI: кнопка запуска automation run только для `pending`.**
   Убрана поддержка `partial` — backend не поддерживает перезапуск частично-завершённых ранов. Кнопка «Start» показывается только для статуса `pending`.
   ✅ `gui/src/renderer/views/AutomationRuns.vue`
@@ -67,19 +52,6 @@
   При `profile_path != null` перед spawn браузера проверяется `fs.existsSync(userDataDir)`. При отсутствии каталога возвращается 400 `PROFILE_DIR_NOT_FOUND` вместо создания подменного стандартного профиля.
   ✅ `src/api/browser.js`
 
-### Тесты
-
-- `tests/unit/runs-api.test.js` — новый тест: `'rejects starting without Authorization header'` (401 без токена).
-- `tests/unit/executor.test.js` — обновлён: проверка `--token=tok_xxx` вместо `not.toContain('--token=')`.
-- Удалена ссылка на несуществующий `tests/unit/inject.test.js` из CHANGELOG.
-- Всего: **804 теста** (52 файла), все проходят ✅
-
----
-
-## v1.4.2
-
-### Исправления
-
 - **[FIX] Zerion extension ID исправлен.**
   ID был захардкожен неправильно (`klghhnkeealcohjjanjjdaeeggmfmlpl`). Теперь читается из `profile.extensions` — правильный ID `kdlpoccbjdfjbmpiengmbhjdbkfkkkoj`. ✅ `src/api/browser.js`
 
@@ -88,6 +60,18 @@
 
 - **[FIX] Executor close-handler не перезаписывает success.**
   Перед пометкой задач как `failed` executor перечитывает статус из БД — если Python уже отчитался (`success`), задача не помечается как `failed`. ✅ `src/executor/index.js`
+
+- **[FIX] Retry-логика при запуске браузера.**
+  При ошибке `ERR_ADDRESS_IN_USE` автоматически повторяет запуск до 3 раз с задержкой 2 секунды. ✅ `src/api/browser.js:356-388`
+
+- **[FIX] User-Agent обновлён с Chrome 131 на Chrome 146.**
+  BrowserScan детектировал несоответствие: UA говорил Chrome 131, а реальный браузер CloakBrowser — Chrome 146. Это была мгновенная детекция. ✅ `src/fingerprint/index.js`
+
+### Новые возможности
+
+- **[FEAT] Внешние пути к профилям браузера (`profile_path`).**
+  Добавлено поле `profile_path` в профили — абсолютный путь к user-data-dir внешнего браузерного профиля. Позволяет использовать профили из внешних проектов (например, stAuto0) без копирования файлов. MM запускает браузер с внешним `user-data-dir`, расширения подгружаются из профиля (как в stAuto0 standalone). Гибридный режим: если `profile_path` не задан — используется стандартный путь MM.
+  ✅ `src/db/schema.js`, `src/core/profile-path.js`, `src/api/browser.js`, `src/api/validate.js`, `src/api/profiles.js`, `src/db/queries.js`, `gui/src/renderer/views/ProfileModal.vue`, `docs/API.md`, `docs/DATABASE.md`
 
 ### Улучшения
 
@@ -100,24 +84,20 @@
 - **[API] Настройка версии CloakBrowser.**
   Новые эндпоинты `GET/PUT /api/settings/cloakbrowser-version` для ручного задания версии. ✅ `src/api/settings.js`
 
-### Исправления
-
-- **[SEC] User-Agent обновлён с Chrome 131 на Chrome 146.**
-  BrowserScan детектировал несоответствие: UA говорил Chrome 131, а реальный браузер CloakBrowser — Chrome 146. Это была мгновенная детекция. ✅ `src/fingerprint/index.js`
-
 - **[SEC] Антидетект: timezone через `--fingerprint-timezone`.**
   Timezone теперь передаётся на уровне движка CloakBrowser через бинарный флаг `--fingerprint-timezone`, а НЕ через обнаруживаемую CDP-эмуляцию `Emulation.setTimezoneOverride`. Это исключает детектирование мультиаккаунтинга по timezone. ✅ `src/api/browser.js:301-313`
 
 - **[SEC] Антидетект: дополнительные флаги.**
   Добавлены `--lang=en-US`, `--no-first-run`, `--no-default-browser-check` — отключают первичные диалоги и стандартные проверки браузера. ✅ `src/api/browser.js:309-311`
 
-- **[FIX] Retry-логика при запуске браузера.**
-  При ошибке `ERR_ADDRESS_IN_USE` автоматически повторяет запуск до 3 раз с задержкой 2 секунды. ✅ `src/api/browser.js:356-388`
-
 ### Тесты
 
+- Добавлен `tests/unit/profile-path.test.js` (21 тест): helper путей, валидация, сканирование расширений внешнего профиля.
 - Добавлен `tests/unit/browser-start-await.test.js` (8 новых тестов): проверка `--fingerprint-timezone`, `--lang`, `--no-first-run`, `--no-default-browser-check`, `SPAWN_RETRIES`, `SPAWN_RETRY_DELAY_MS`, `ERR_ADDRESS_IN_USE`
-- Всего: **771 тестов** (49 файлов), все проходят
+- `tests/unit/runs-api.test.js` — новый тест: `'rejects starting without Authorization header'` (401 без токена).
+- `tests/unit/executor.test.js` — обновлён: проверка `--token=tok_xxx` вместо `not.toContain('--token=')`.
+- Удалена ссылка на несуществующий `tests/unit/inject.test.js` из CHANGELOG.
+- Всего: **889 тестов** (52 файла), все проходят ✅
 
 ## v1.4.1
 

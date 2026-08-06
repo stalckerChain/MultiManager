@@ -1,11 +1,11 @@
-# MultiManager v1.4.3 ✅
+# MultiManager v1.4.2 ✅
 
 AI-Driven Web Automation Platform — кроссплатформенный антидетект-браузер с интеграцией Python-фреймворка автоматизации, графическим интерфейсом и локальным REST API / WebSocket для автономных ИИ-агентов (аналог AdsPower) на базе C++ ядра CloakBrowser.
 
 > **Полная спецификация:** [TS.md](./TS.md) (MultiManager v2.0.0) + [TS_INTEGRATION.md](./TS_INTEGRATION.md) (stAuto0 интеграция).
 > **Фазы Roadmap:** Ф1–Ф4 ✅, Ф5 ✅, Ф6 ✅, **Ф7 ✅ (Automation Matrix)** — подробный план [TASK.md](./TASK.md).
 
-## Что нового в v1.4.3
+## Что нового в v1.4.2
 
 - **[SEC] Устранены уязвимости зависимостей.** Backend: `adm-zip`, `ip-address`, `body-parser`, `brace-expansion`, `esbuild`. GUI/Electron: `electron` 34→43, `electron-builder` 25→26, `better-sqlite3` 11→13, `cloakbrowser`, `postcss`, `js-yaml`, `concurrently`, `tar` (forced 7.5.22). Production audit: 0 vulns. ✅ `package.json`, `gui/package.json`
 - **[SEC] Защита ZIP/CRX.** Path traversal, лимиты размера/файлов, атомарное перемещение, безопасные ошибки, CRX boundary checks. ✅ `src/api/extensions.js`
@@ -19,8 +19,6 @@ AI-Driven Web Automation Platform — кроссплатформенный ан�
 - **[FIX] Валидация `profile_path` ужесточена.** Все схемы (create, batch, update) единообразно проверяют nullable/пустой/абсолютный путь, отклоняя относительные. ✅ `src/api/validate.js`
 - **[FIX] Pre-flight проверка внешнего профиля.** До запуска браузера проверяется существование user-data-dir для профилей с `profile_path`. При отсутствии — понятная ошибка `PROFILE_DIR_NOT_FOUND`. ✅ `src/api/browser.js`
 - **[FIX] Runtime ID расширения Zerion.** Имя каталога расширения и его runtime ID Chromium теперь корректно различаются. ID вычисляется из `manifest.key` (SHA-256 → `a`–`p`) или читается из `Secure Preferences` профиля — вместо использования имени папки как `chrome-extension://` ID, что приводило к `ERR_BLOCKED_BY_CLIENT`. ✅ `src/api/extensions.js`, `src/api/browser.js`, `src/executor/index.js`
-
-## Что нового в v1.4.2
 
 - **[FIX] Zerion auto-login в MM-mode полностью переработан.** Исправлены: CDP connect 404 (discoverWsUrl с UUID), Zerion extension ID из Secure Preferences, поиск по имени расширения, Runtime.callFunctionOn → Runtime.evaluate, overlay removal (рекурсивный), tab matching (только #/login), unlock button (клик вместо Enter).
 
