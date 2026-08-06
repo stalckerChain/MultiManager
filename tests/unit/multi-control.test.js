@@ -133,6 +133,27 @@ describe('MultiController', () => {
       expect(mockCdp.insertText).toHaveBeenCalledWith('slave-1', 'a');
     });
 
+    it('не форвардит Ctrl+W/T/N в slave (browser-level сочетания)', async () => {
+      controller.setMaster('master-1');
+      await controller.addSlave('slave-1');
+
+      await controller.onKeyDown({ key: 'w', code: 'KeyW', windowsVirtualKeyCode: 87, ctrlKey: true });
+      await controller.onKeyDown({ key: 't', code: 'KeyT', windowsVirtualKeyCode: 84, ctrlKey: true });
+      await controller.onKeyDown({ key: 'n', code: 'KeyN', windowsVirtualKeyCode: 78, ctrlKey: true });
+
+      expect(mockCdp.dispatchKeyEvent).not.toHaveBeenCalled();
+    });
+
+    it('форвардит Ctrl+1 в slave ровно один раз', async () => {
+      controller.setMaster('master-1');
+      await controller.addSlave('slave-1');
+
+      await controller.onKeyDown({ key: '1', code: 'Digit1', windowsVirtualKeyCode: 49, ctrlKey: true });
+
+      expect(mockCdp.dispatchKeyEvent).toHaveBeenCalledTimes(1);
+      expect(mockCdp.dispatchKeyEvent).toHaveBeenCalledWith('slave-1', 'keyDown', expect.objectContaining({ key: '1', ctrlKey: true }));
+    });
+
     it('транслирует scroll', async () => {
       controller.setMaster('master-1');
       await controller.addSlave('slave-1');

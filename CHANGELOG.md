@@ -2,6 +2,19 @@
 
 ## v1.4.2
 
+### Multi-Control
+
+- **[FEAT] Single-source keyboard: native hook — единственный источник клавиатуры.**
+  Устранён double dispatch: при вводе в DOM-элементе master page клавиши уходили в slave дважды — через CDP `SYNC_EVENT_SCRIPT` (`keydown`/`keyup`/`charInput`) и через нативный hook `WH_KEYBOARD_LL` → `/api/multi-control/os-keyboard`. Enter дублировался в формах.
+  **Решение:**
+  - CDP-клавиатура удалена: `SYNC_EVENT_SCRIPT` больше не вешает `keydown`/`keyup` listeners; `charInput`, `browserAction` (closeTab/newTab) и preventDefault для Ctrl+N удалены. `injectFromCdp` не эмитит клавиатурные события (`inputCapture` — только mouse/wheel).
+  - Клавиатура идёт только через native hook: `keyDown`/`keyUp` + отдельное событие `charInput` для печатных символов. Клавиша уходит в slave ровно один раз.
+  - Текст с учётом раскладки: `hooks.cc` вычисляет `text` через `ToUnicodeEx` (раскладка foreground-окна, Shift, CapsLock, AltGr; композиция dead keys через `s_deadKeyVk`/`s_deadKeyPending`). `charInput` шлётся только для plain text (не командные Ctrl/Meta/Alt без AltGr, не dead keys).
+  - Browser-сочетания: Ctrl+T — браузер мастера открывает таб нативно, синхронизация через `discoverActiveTab`; Ctrl+W — закрытие slave-табов через CDP + `unmapTab`; Ctrl+N — блокируется от форвардинга в `onKeyDown`. Ctrl+1..9 и прочие сочетания форвардятся через `dispatchKeyEvent`.
+  - Lifecycle: `wireInputToController`/`unwireInputFromController` сохраняют ссылки на handlers и снимают их через `inputCapture.off()`; `unwire` вызывается в `/stop` и в catch `/start` — повторные start/stop не накапливают обработчики.
+  - `await discoverActiveTab()` перед Enter в `/os-keyboard` — Enter уходит в актуальный таб.
+  ✅ `src/multi-control/cdp-manager.js`, `src/api/multi-control.js`, `src/multi-control/index.js`, `src/os-input/native-hooks/hooks.cc`, `src/os-input/native-hooks/index.js`, `src/os-input/input-capture.js`, `gui/src/main/keyboard-hooks.js`, `gui/src/main/keyboard-hooks-payload.js` (новый), `tests/unit/os-input.test.js`, `tests/unit/cdp-manager.test.js`, `tests/unit/multi-control.test.js`, `tests/unit/multi-control-api.test.js`, `tests/unit/keyboard-hooks-payload.test.js` (новый)
+
 ### Безопасность
 
 - **[SEC] Устранены уязвимости зависимостей backend.** Обновлены `adm-zip` (0.5.18 → 0.6.0), `ip-address` (10.2.0 → 10.4.0), `body-parser` (1.20.5 → 1.20.6), `brace-expansion` (1.1.15 → 1.1.18), `esbuild` (0.27.7 → 0.28.1). Генерирован чистый lock-файл. ✅ `package.json`, `package-lock.json`
@@ -97,7 +110,9 @@
 - `tests/unit/runs-api.test.js` — новый тест: `'rejects starting without Authorization header'` (401 без токена).
 - `tests/unit/executor.test.js` — обновлён: проверка `--token=tok_xxx` вместо `not.toContain('--token=')`.
 - Удалена ссылка на несуществующий `tests/unit/inject.test.js` из CHANGELOG.
-- Всего: **889 тестов** (52 файла), все проходят ✅
+- Добавлен `tests/unit/keyboard-hooks-payload.test.js` (11 тестов): vkToKey/vkToCode/buildKeyEvent/shouldSendCharInput (Ctrl/Meta/AltGr/dead keys/пустой text).
+- Обновлены: `tests/unit/os-input.test.js` (native hook: text/altGr/dead key; negative: CDP keyDown/charInput), `tests/unit/cdp-manager.test.js` (SYNC_EVENT_SCRIPT не перехватывает клавиатуру), `tests/unit/multi-control.test.js` (Ctrl+W/T/N не форвардятся, Ctrl+1 форвардится), `tests/unit/multi-control-api.test.js` (lifecycle wire/unwire, POST /os-keyboard маршрутизация).
+- Всего: **915 тестов** (53 файла), все проходят ✅
 
 ## v1.4.1
 

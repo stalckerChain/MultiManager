@@ -1,6 +1,7 @@
 #include <node_api.h>
 #include <windows.h>
 #include <stdlib.h>
+#include <string.h>
 
 static HHOOK g_keyboardHook = NULL;
 static napi_threadsafe_function g_tsfn = NULL;
@@ -14,7 +15,78 @@ typedef struct {
   bool shiftKey;
   bool altKey;
   bool metaKey;
+  bool altGr;
+  wchar_t chars[8];
+  int charsLen;
 } KeyEvent;
+
+// State dead key: чтобы ToUnicodeEx скомпоновал мёртвую клавишу (´ + e = é),
+// следующий символ обрабатывается со «зажатой» сохранённой мёртвой клавишей.
+static DWORD s_deadKeyVk = 0;
+static bool s_deadKeyPending = false;
+
+// Собирает 256-байтовое состояние клавиатуры для ToUnicodeEx.
+// Модификаторы берём из уже вычисленных флагов события (GetAsyncKeyState),
+// чтобы не зависеть от несвежей очереди сообщений hook-потока. Toggle-клавиши
+// (CapsLock/NumLock) читаем через GetKeyState.
+static void BuildKeyboardState(BYTE* state, const KeyEvent* evt, DWORD deadVk, bool deadPending) {
+  memset(state, 0, 256);
+  if (evt->shiftKey) {
+    state[VK_SHIFT] = 0x80;
+    state[VK_LSHIFT] = 0x80;
+    state[VK_RSHIFT] = 0x80;
+  }
+  if (evt->ctrlKey) {
+    state[VK_CONTROL] = 0x80;
+    state[VK_LCONTROL] = 0x80;
+    state[VK_RCONTROL] = 0x80;
+  }
+  if (evt->altKey) {
+    state[VK_MENU] = 0x80;
+    state[VK_LMENU] = 0x80;
+    state[VK_RMENU] = 0x80;
+  }
+  state[VK_CAPITAL] = (GetKeyState(VK_CAPITAL) & 1) ? 0x01 : 0x00;
+  state[VK_NUMLOCK] = (GetKeyState(VK_NUMLOCK) & 1) ? 0x01 : 0x00;
+  if (deadPending && deadVk != 0) state[deadVk] = 0x80;
+}
+
+// Заполняет out Unicode-символом(ами) для keyDown. Для dead key возвращает 0 и
+// переключает s_deadKeyPending, чтобы композиция обрабатывалась на следующем событии.
+static void ComputeTextForKey(const KeyEvent* ev, wchar_t* out, int bufSize, int* outLen) {
+  *outLen = 0;
+  out[0] = 0;
+
+  DWORD scanCode = ev->scanCode;
+  if (ev->flags & LLKHF_EXTENDED) scanCode |= 0x100;
+
+  HWND fg = GetForegroundWindow();
+  DWORD fgTid = fg ? GetWindowThreadProcessId(fg, NULL) : 0;
+  HKL layout = GetKeyboardLayout(fgTid ? fgTid : 0);
+
+  BYTE state[256];
+  BuildKeyboardState(state, ev, s_deadKeyPending ? s_deadKeyVk : 0, s_deadKeyPending);
+
+  (void)layout;
+
+  int r = ToUnicodeEx(ev->vkCode, scanCode, state, out, bufSize > 0 ? bufSize : 1, 0, layout);
+  if (r > 0) {
+    if (r > bufSize) r = bufSize;
+    if (r < bufSize) out[r] = 0;
+    *outLen = r;
+    s_deadKeyPending = false;
+  } else if (r < 0) {
+    // Мёртвая клавиша — промежуточный символ не отправляем.
+    s_deadKeyPending = true;
+    s_deadKeyVk = ev->vkCode;
+    out[0] = 0;
+    *outLen = 0;
+  } else {
+    s_deadKeyPending = false;
+    out[0] = 0;
+    *outLen = 0;
+  }
+}
 
 static void ExecuteJS(napi_env env, napi_value jsCb, void* ctx, void* data) {
   KeyEvent* evt = (KeyEvent*)data;
@@ -59,6 +131,14 @@ static void ExecuteJS(napi_env env, napi_value jsCb, void* ctx, void* data) {
   napi_get_boolean(env, evt->metaKey, &val);
   napi_set_named_property(env, obj, "metaKey", val);
 
+  napi_get_boolean(env, evt->altGr, &val);
+  napi_set_named_property(env, obj, "altGr", val);
+
+  // Printable text, вычисленный ToUnicodeEx с учётом раскладки. Для командных
+  // клавиш и dead key — пустая строка. Содержимое текста нигде не логируется.
+  napi_create_string_utf16(env, (const char16_t*)evt->chars, (size_t)evt->charsLen, &val);
+  napi_set_named_property(env, obj, "text", val);
+
   napi_value undefined;
   napi_get_undefined(env, &undefined);
   napi_call_function(env, undefined, jsCb, 1, &obj, NULL);
@@ -90,6 +170,22 @@ static LRESULT CALLBACK KeyboardProc(int nCode, WPARAM wParam, LPARAM lParam) {
     evt->altKey = (GetAsyncKeyState(VK_MENU) & 0x8000) != 0;
     evt->metaKey = (GetAsyncKeyState(VK_LWIN) & 0x8000) != 0 ||
                    (GetAsyncKeyState(VK_RWIN) & 0x8000) != 0;
+    // AltGr — физически правый Alt (VK_RMENU). Отличаем его от обычного Alt,
+    // чтобы AltGr-символы европейских раскладок шли как текст, а browser
+    // shortcuts (Ctrl/Alt/Meta) — нет.
+    evt->altGr = (GetAsyncKeyState(VK_RMENU) & 0x8000) != 0;
+
+    // Текст вычисляем только для keyDown: ToUnicodeEx с учётом раскладки,
+    // Shift/CapsLock и AltGr. Для keyUp/menu-событий text не нужен.
+    bool isDown = (wParam == WM_KEYDOWN || wParam == WM_SYSKEYDOWN);
+    if (isDown) {
+      int len = 0;
+      ComputeTextForKey(evt, evt->chars, 8, &len);
+      evt->charsLen = len;
+    } else {
+      evt->charsLen = 0;
+      evt->chars[0] = 0;
+    }
 
     napi_call_threadsafe_function(g_tsfn, evt, napi_tsfn_nonblocking);
   }

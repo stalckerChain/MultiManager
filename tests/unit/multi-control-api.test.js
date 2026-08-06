@@ -1,4 +1,6 @@
 ﻿import { describe, it, expect, vi, beforeEach } from 'vitest';
+import express from 'express';
+import supertest from 'supertest';
 
 // ============================================================
 // Копии зависимостей — минимум моков, чтобы тестировать изолированно
@@ -799,6 +801,139 @@ describe('focus-windows route (POST /focus-windows)', () => {
     const route = mod.stack.find(r => r.route?.path === '/focus-windows');
     expect(route).toBeDefined();
     expect(route.route.methods).toHaveProperty('post');
+  });
+});
+
+// ============================================================
+// ТЕСТЫ: lifecycle inputCapture на реальном singleton (wire/unwire)
+// ============================================================
+describe('inputCapture lifecycle (wireInputToController)', () => {
+  let mc;
+  let inputCapture;
+  let controller;
+
+  beforeEach(() => {
+    mc = require('../../src/api/multi-control.js');
+    inputCapture = require('../../src/os-input').inputCapture;
+    controller = require('../../src/multi-control').controller;
+    inputCapture.removeAllListeners();
+    mc.unwireInputFromController();
+    controller.stop();
+  });
+
+  afterEach(() => {
+    mc.unwireInputFromController();
+    inputCapture.removeAllListeners();
+  });
+
+  it('повторный вызов wire не добавляет listeners повторно (один wheel → один scrollTo)', () => {
+    const spy = vi.spyOn(controller, 'scrollTo').mockResolvedValue(undefined);
+    controller.active = true;
+
+    mc.wireInputToController();
+    mc.wireInputToController();
+
+    inputCapture.start();
+    inputCapture.injectFromCdp({ type: 'scroll', deltaX: 0, deltaY: 100 });
+    expect(spy).toHaveBeenCalledTimes(1);
+  });
+
+  it('после unwire listeners сняты и CDP event не вызывает controller', () => {
+    const spy = vi.spyOn(controller, 'scrollTo').mockResolvedValue(undefined);
+    controller.active = true;
+
+    mc.wireInputToController();
+    inputCapture.start();
+    mc.unwireInputFromController();
+
+    inputCapture.injectFromCdp({ type: 'scroll', deltaX: 0, deltaY: 100 });
+    expect(spy).not.toHaveBeenCalled();
+  });
+
+  it('сценарий start → stop → start создаёт ровно один комплект listeners', () => {
+    const spy = vi.spyOn(controller, 'scrollTo').mockResolvedValue(undefined);
+    controller.active = true;
+
+    mc.wireInputToController();
+    mc.unwireInputFromController();
+    mc.wireInputToController();
+
+    inputCapture.start();
+    inputCapture.injectFromCdp({ type: 'scroll', deltaX: 0, deltaY: 100 });
+    expect(spy).toHaveBeenCalledTimes(1);
+  });
+
+  it('не регистрирует keyDown/keyUp/charInput на inputCapture (они идут через /os-keyboard)', () => {
+    const keyDownSpy = vi.spyOn(controller, 'onKeyDown').mockResolvedValue(undefined);
+    const keyUpSpy = vi.spyOn(controller, 'onKeyUp').mockResolvedValue(undefined);
+    const charSpy = vi.spyOn(controller, 'onCharInput').mockResolvedValue(undefined);
+    controller.active = true;
+
+    mc.wireInputToController();
+
+    inputCapture.emit('keyDown', { key: 'a' });
+    inputCapture.emit('keyUp', { key: 'a' });
+    inputCapture.emit('charInput', { text: 'a' });
+
+    expect(keyDownSpy).not.toHaveBeenCalled();
+    expect(keyUpSpy).not.toHaveBeenCalled();
+    expect(charSpy).not.toHaveBeenCalled();
+  });
+
+  it('mouseMove listener регистрируется один раз', () => {
+    const spy = vi.spyOn(controller, 'onMouseMoved').mockResolvedValue(undefined);
+    controller.active = true;
+
+    mc.wireInputToController();
+    mc.wireInputToController();
+
+    inputCapture.start();
+    inputCapture.injectFromCdp({ type: 'mouseMove', x: 1, y: 2 });
+    expect(spy).toHaveBeenCalledTimes(1);
+  });
+});
+
+// ============================================================
+// ТЕСТЫ: маршрутизация /os-keyboard (keyDown/keyUp/charInput)
+// ============================================================
+describe('POST /os-keyboard маршрутизация', () => {
+  let app;
+  let controller;
+
+  beforeEach(() => {
+    controller = require('../../src/multi-control').controller;
+    controller.stop();
+    controller.active = true;
+    app = express();
+    app.use(express.json());
+    app.use('/api/multi-control', require('../../src/api/multi-control.js'));
+  });
+
+  it('маршрутизирует charInput в controller.onCharInput({ text })', async () => {
+    const spy = vi.spyOn(controller, 'onCharInput').mockResolvedValue(undefined);
+    await supertest(app)
+      .post('/api/multi-control/os-keyboard')
+      .send({ type: 'charInput', text: 'hello' })
+      .expect(200);
+    expect(spy).toHaveBeenCalledWith({ text: 'hello' });
+  });
+
+  it('маршрутизирует keyDown в controller.onKeyDown', async () => {
+    const spy = vi.spyOn(controller, 'onKeyDown').mockResolvedValue(undefined);
+    await supertest(app)
+      .post('/api/multi-control/os-keyboard')
+      .send({ type: 'keyDown', key: 'a' })
+      .expect(200);
+    expect(spy).toHaveBeenCalled();
+  });
+
+  it('маршрутизирует keyUp в controller.onKeyUp', async () => {
+    const spy = vi.spyOn(controller, 'onKeyUp').mockResolvedValue(undefined);
+    await supertest(app)
+      .post('/api/multi-control/os-keyboard')
+      .send({ type: 'keyUp', key: 'a' })
+      .expect(200);
+    expect(spy).toHaveBeenCalled();
   });
 });
 describe('onTabActivated callback (matches api/multi-control)', () => {

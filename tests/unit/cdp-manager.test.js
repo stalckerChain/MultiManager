@@ -458,4 +458,53 @@ describe('attachToExistingTarget', () => {
       expect(script).toMatch(/click[\s\S]*scrollX:\s*window\.scrollX/);
     });
   });
+
+  // Клавиатура синхронизируется ТОЛЬКО через native Windows hook (/os-keyboard).
+  // CDP-инъекция не должна слушать клавиатуру и не должна генерировать charInput
+  // или browserAction, иначе один key event дублируется в slave.
+  describe('SYNC_EVENT_SCRIPT не перехватывает клавиатуру', () => {
+    function captureInjectedScript() {
+      const sent = [];
+      const session = {
+        ws: { send: vi.fn((raw) => sent.push(JSON.parse(raw))) },
+        sessionId: 's-1',
+        targetId: 't-1',
+        profileId: 'p-1',
+      };
+      mgr._injectSyncScript(session, '__MM_SYNC_BIND__');
+      const evalMsg = sent.find(m => m.method === 'Runtime.evaluate');
+      return evalMsg.params.expression;
+    }
+
+    it('не содержит keydown listener', () => {
+      const script = captureInjectedScript();
+      expect(script).not.toMatch(/addEventListener\(['"]keydown['"]/);
+    });
+
+    it('не содержит keyup listener', () => {
+      const script = captureInjectedScript();
+      expect(script).not.toMatch(/addEventListener\(['"]keyup['"]/);
+    });
+
+    it('не содержит charInput и browserAction', () => {
+      const script = captureInjectedScript();
+      expect(script).not.toMatch(/charInput/);
+      expect(script).not.toMatch(/browserAction/);
+    });
+
+    it('не содержит preventDefault для Ctrl+W/Ctrl+T', () => {
+      const script = captureInjectedScript();
+      expect(script).not.toMatch(/preventDefault/);
+    });
+
+    it('по-прежнему слушает mouse/wheel/click/tab events', () => {
+      const script = captureInjectedScript();
+      expect(script).toMatch(/addEventListener\(['"]mousemove['"]/);
+      expect(script).toMatch(/addEventListener\(['"]mousedown['"]/);
+      expect(script).toMatch(/addEventListener\(['"]mouseup['"]/);
+      expect(script).toMatch(/addEventListener\(['"]wheel['"]/);
+      expect(script).toMatch(/addEventListener\(['"]click['"]/);
+      expect(script).toMatch(/visibilitychange/);
+    });
+  });
 });

@@ -29,33 +29,6 @@ const SYNC_EVENT_SCRIPT = `
   document.addEventListener('mousedown', function(e) { emit('mouseDown', { x: e.pageX, y: e.pageY, button: e.button, clickCount: e.detail || 1, scrollX: window.scrollX, scrollY: window.scrollY }); }, true);
   document.addEventListener('mouseup', function(e) { emit('mouseUp', { x: e.pageX, y: e.pageY, button: e.button, scrollX: window.scrollX, scrollY: window.scrollY }); }, true);
   document.addEventListener('wheel', function(e) { emit('scroll', { x: e.pageX, y: e.pageY, deltaX: e.deltaX, deltaY: e.deltaY, scrollX: window.scrollX, scrollY: window.scrollY }); }, true);
-  document.addEventListener('keydown', function(e) {
-    emit('keyDown', {
-      key: e.key,
-      code: e.code,
-      windowsVirtualKeyCode: e.keyCode,
-      ctrlKey: e.ctrlKey,
-      shiftKey: e.shiftKey,
-      altKey: e.altKey,
-      metaKey: e.metaKey
-    });
-    if (e.key.length === 1 && !e.ctrlKey && !e.metaKey && !e.altKey) {
-      emit('charInput', { text: e.key });
-    }
-    // Ctrl+W / Ctrl+T — блокируем нативную обработку и шлём browserAction
-    // для синхронного закрытия/открытия табов через CDP
-    if (e.ctrlKey && !e.shiftKey && !e.altKey && !e.metaKey) {
-      if (e.code === 'KeyW' || e.code === 'KeyT') {
-        e.preventDefault();
-        emit('browserAction', { action: e.code === 'KeyW' ? 'closeTab' : 'newTab' });
-      }
-    }
-    // Блокируем Ctrl+N (новое окно) — не поддерживается
-    if (e.ctrlKey && e.code === 'KeyN') {
-      e.preventDefault();
-    }
-  }, true);
-  document.addEventListener('keyup', function(e) { emit('keyUp', { key: e.key, code: e.code, windowsVirtualKeyCode: e.keyCode }); }, true);
   document.addEventListener('click', function(e) {
     emit('click', { x: e.pageX, y: e.pageY, button: e.button, clickCount: e.detail || 1, scrollX: window.scrollX, scrollY: window.scrollY });
   }, true);

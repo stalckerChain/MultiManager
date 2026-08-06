@@ -69,6 +69,7 @@ class NativeKeyboardHooks extends EventEmitter {
       shiftKey: event.shiftKey,
       altKey: event.altKey,
       metaKey: event.metaKey,
+      altGr: !!event.altGr,
       isExtended: !!(event.flags & (1 << 0)),
       injected: !!(event.flags & (1 << 4)),
     };
@@ -85,13 +86,23 @@ class NativeKeyboardHooks extends EventEmitter {
 
       this.emit('keyDown', eventData);
 
-      if (key.length === 1 && !event.ctrlKey && !event.altKey) {
-        this.emit('charInput', { text: key });
+      // Printable text только когда addon вычислил символ через ToUnicodeEx
+      // (layout/shift/capslock/altGr) и это не командное сочетание.
+      if (this._isPlainText(event)) {
+        this.emit('charInput', { text: event.text });
       }
     } else if (event.isUp) {
       this._lastEvent = null;
       this.emit('keyUp', eventData);
     }
+  }
+
+  _isPlainText(event) {
+    if (!event || typeof event.text !== 'string' || event.text.length === 0) return false;
+    if (event.metaKey) return false;
+    if (event.ctrlKey && !event.altGr) return false;
+    if (event.altKey && !event.altGr) return false;
+    return true;
   }
 }
 

@@ -29,9 +29,7 @@ describe('InputCapture', () => {
     cap.active = false;
     const h = vi.fn();
     cap.on('mouseMove', h);
-    cap.on('keyDown', h);
     cap.injectFromCdp({ type: 'mouseMove', x: 0, y: 0 });
-    cap.injectFromCdp({ type: 'keyDown', key: 'a' });
     expect(h).not.toHaveBeenCalled();
   });
 
@@ -77,45 +75,24 @@ describe('InputCapture', () => {
     expect(h).toHaveBeenCalledWith({ x: 100, y: 200, deltaX: 0, deltaY: -120 });
   });
 
-  it('emits keyDown', () => {
+  it('не эмитит keyDown из CDP (мёртвое поведение удалено)', () => {
     const h = vi.fn();
     cap.on('keyDown', h);
     cap.injectFromCdp({ type: 'keyDown', key: 'Enter', code: 'Enter', windowsVirtualKeyCode: 13 });
-    expect(h).toHaveBeenCalled();
+    expect(h).not.toHaveBeenCalled();
   });
 
-  it('emits keyUp', () => {
+  it('не эмитит keyUp из CDP (мёртвое поведение удалено)', () => {
     const h = vi.fn();
     cap.on('keyUp', h);
     cap.injectFromCdp({ type: 'keyUp', key: 'Enter', code: 'Enter', windowsVirtualKeyCode: 13 });
-    expect(h).toHaveBeenCalled();
+    expect(h).not.toHaveBeenCalled();
   });
 
-  it('charInput for printable char', () => {
+  it('не создаёт charInput из CDP keyDown (текст идёт через native hook)', () => {
     const h = vi.fn();
     cap.on('charInput', h);
     cap.injectFromCdp({ type: 'keyDown', key: 'a', code: 'KeyA', windowsVirtualKeyCode: 65, ctrlKey: false, shiftKey: false, altKey: false, metaKey: false });
-    expect(h).toHaveBeenCalledWith({ text: 'a' });
-  });
-
-  it('no charInput for ctrl+a', () => {
-    const h = vi.fn();
-    cap.on('charInput', h);
-    cap.injectFromCdp({ type: 'keyDown', key: 'a', code: 'KeyA', windowsVirtualKeyCode: 65, ctrlKey: true, shiftKey: false, altKey: false, metaKey: false });
-    expect(h).not.toHaveBeenCalled();
-  });
-
-  it('no charInput for alt+a', () => {
-    const h = vi.fn();
-    cap.on('charInput', h);
-    cap.injectFromCdp({ type: 'keyDown', key: 'a', code: 'KeyA', windowsVirtualKeyCode: 65, ctrlKey: false, shiftKey: false, altKey: true, metaKey: false });
-    expect(h).not.toHaveBeenCalled();
-  });
-
-  it('no charInput for meta+a', () => {
-    const h = vi.fn();
-    cap.on('charInput', h);
-    cap.injectFromCdp({ type: 'keyDown', key: 'a', code: 'KeyA', windowsVirtualKeyCode: 65, ctrlKey: false, shiftKey: false, altKey: false, metaKey: true });
     expect(h).not.toHaveBeenCalled();
   });
 
@@ -369,6 +346,8 @@ describe('NativeKeyboardHooks', () => {
       shiftKey: false,
       altKey: false,
       metaKey: false,
+      altGr: false,
+      text: 'a',
       isDown: true,
       isUp: false,
     });
@@ -376,7 +355,7 @@ describe('NativeKeyboardHooks', () => {
     expect(h).toHaveBeenCalledWith({ text: 'a' });
   });
 
-  it('does not emit charInput for Ctrl+a', () => {
+  it('does not emit charInput for Ctrl+a (browser shortcut)', () => {
     const h = vi.fn();
     hooks.on('charInput', h);
     hooks.running = true;
@@ -390,6 +369,77 @@ describe('NativeKeyboardHooks', () => {
       shiftKey: false,
       altKey: false,
       metaKey: false,
+      altGr: false,
+      text: 'a',
+      isDown: true,
+      isUp: false,
+    });
+
+    expect(h).not.toHaveBeenCalled();
+  });
+
+  it('does not emit charInput for Meta+a', () => {
+    const h = vi.fn();
+    hooks.on('charInput', h);
+    hooks.running = true;
+
+    hooks._onNativeEvent({
+      wParam: 0x0100,
+      vkCode: 0x41,
+      scanCode: 30,
+      flags: 0,
+      ctrlKey: false,
+      shiftKey: false,
+      altKey: false,
+      metaKey: true,
+      altGr: false,
+      text: 'a',
+      isDown: true,
+      isUp: false,
+    });
+
+    expect(h).not.toHaveBeenCalled();
+  });
+
+  it('emits charInput for AltGr (right alt) symbol by layout result', () => {
+    const h = vi.fn();
+    hooks.on('charInput', h);
+    hooks.running = true;
+
+    hooks._onNativeEvent({
+      wParam: 0x0100,
+      vkCode: 0x40,
+      scanCode: 29,
+      flags: 0,
+      ctrlKey: true,
+      shiftKey: false,
+      altKey: true,
+      metaKey: false,
+      altGr: true,
+      text: '@',
+      isDown: true,
+      isUp: false,
+    });
+
+    expect(h).toHaveBeenCalledWith({ text: '@' });
+  });
+
+  it('does not emit charInput when text is empty (dead key / непечатная клавиша)', () => {
+    const h = vi.fn();
+    hooks.on('charInput', h);
+    hooks.running = true;
+
+    hooks._onNativeEvent({
+      wParam: 0x0100,
+      vkCode: 0xDC,
+      scanCode: 43,
+      flags: 0,
+      ctrlKey: false,
+      shiftKey: false,
+      altKey: false,
+      metaKey: false,
+      altGr: false,
+      text: '',
       isDown: true,
       isUp: false,
     });

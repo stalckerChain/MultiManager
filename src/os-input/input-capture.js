@@ -40,15 +40,6 @@ class InputCapture extends EventEmitter {
       case 'scroll':
         this.emit('scroll', { x: event.x, y: event.y, deltaX: event.deltaX || 0, deltaY: event.deltaY || 0 });
         break;
-      case 'keyDown':
-        this.emit('keyDown', event);
-        if (event.key && event.key.length === 1 && !event.ctrlKey && !event.metaKey && !event.altKey) {
-          this.emit('charInput', { text: event.key });
-        }
-        break;
-      case 'keyUp':
-        this.emit('keyUp', event);
-        break;
     }
   }
 

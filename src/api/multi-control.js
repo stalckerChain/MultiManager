@@ -166,43 +166,49 @@ async function discoverActiveTab() {
   }
 }
 
+// Listeners, зарегистрированные multi-control на singleton inputCapture.
+// Ключ — имя события, значение — та же ссылка на функцию, которую передали в
+// `inputCapture.on(...)`. Это позволяет снять ровно свои listeners через
+// `inputCapture.off(name, handler)`, не трогая чужие и не вызывая
+// `removeAllListeners()`. Listening monkey: mouse/wheel идут из CDP, клавиатура —
+// из native hook через /os-keyboard и через inputCapture не проходит.
+const inputListeners = new Map();
+
 function wireInputToController() {
-  inputCapture.on('mouseMove', (event) => {
-    if (!controller.active) return;
-    controller.onMouseMoved(event);
-  });
+  if (inputListeners.size > 0) {
+    logger.info('MULTI-CONTROL: Input already wired, skipping');
+    return;
+  }
 
-  inputCapture.on('mouseDown', (event) => {
-    if (!controller.active) return;
-    controller.onMousePressed(event);
-  });
+  const handlers = {
+    mouseMove: (event) => {
+      if (controller.active) controller.onMouseMoved(event);
+    },
+    mouseDown: (event) => {
+      if (controller.active) controller.onMousePressed(event);
+    },
+    mouseUp: (event) => {
+      if (controller.active) controller.onMouseReleased(event);
+    },
+    scroll: (event) => {
+      if (controller.active) controller.scrollTo(event);
+    },
+  };
 
-  inputCapture.on('mouseUp', (event) => {
-    if (!controller.active) return;
-    controller.onMouseReleased(event);
-  });
-
-  inputCapture.on('scroll', (event) => {
-    if (!controller.active) return;
-    controller.scrollTo(event);
-  });
-
-  inputCapture.on('keyDown', (event) => {
-    if (!controller.active) return;
-    controller.onKeyDown(event);
-  });
-
-  inputCapture.on('keyUp', (event) => {
-    if (!controller.active) return;
-    controller.onKeyUp(event);
-  });
-
-  inputCapture.on('charInput', (event) => {
-    if (!controller.active) return;
-    controller.onCharInput(event);
-  });
-
+  for (const [name, handler] of Object.entries(handlers)) {
+    inputCapture.on(name, handler);
+    inputListeners.set(name, handler);
+  }
   logger.info('MULTI-CONTROL: Input wired to controller');
+}
+
+function unwireInputFromController() {
+  if (inputListeners.size === 0) return;
+  for (const [name, handler] of inputListeners) {
+    inputCapture.off(name, handler);
+  }
+  inputListeners.clear();
+  logger.info('MULTI-CONTROL: Input unwired from controller');
 }
 
 router.get('/status', (req, res) => {
@@ -226,28 +232,9 @@ router.post('/start', async (req, res) => {
       if (profileId === masterId && controller.active) {
         logger.info({
           eventType: event.type,
-          key: event.key,
-          ctrlKey: event.ctrlKey,
-          action: event.action,
           sessionId,
           activeMasterTab: controller.activeMasterTab,
         }, 'MC-EVENT: received from master');
-
-        if (event.type === 'browserAction') {
-          const activeTab = controller.activeMasterTab;
-          logger.info({ action: event.action, activeTab, tabMappingSize: controller.tabMapping.size }, 'MC-EVENT: browserAction received');
-          if (event.action === 'closeTab' && activeTab) {
-            const bySlave = controller.tabMapping.get(activeTab);
-            if (bySlave) {
-              for (const [slaveId, slaveTargetId] of bySlave) {
-                cdpManager.closeTarget(slaveId, slaveTargetId);
-                logger.info({ slaveId, slaveTargetId, masterTargetId: activeTab }, 'MC-EVENT: closed slave tab via browserAction');
-              }
-            }
-            controller.unmapTab(activeTab);
-            return;
-          }
-        }
 
         if (event.type === 'tabActivated') {
           const targetId = cdpManager.targetBySid.get(sessionId);
@@ -391,6 +378,10 @@ router.post('/start', async (req, res) => {
 
     res.json({ status: 'active', masterId, mode: 'cdp' });
   } catch (err) {
+    // Если запуск упал уже после подключения listeners, не оставляем обработчики,
+    // чтобы частично запущенный режим не дублировал события при следующем старте.
+    inputCapture.stop();
+    unwireInputFromController();
     logger.error({ err: err.message }, 'Multi-control: failed to start');
     res.status(500).json({ error: `Ошибка запуска: ${err.message}` });
   }
@@ -404,6 +395,7 @@ router.post('/stop', async (req, res) => {
   pendingSync.clear();
   attachedMasterTabs.clear();
   inputCapture.stop();
+  unwireInputFromController();
   cdpManager.onEvent = null;
   cdpManager.onNavigate = null;
   cdpManager.onNewTab = null;
@@ -545,6 +537,10 @@ router.post('/os-keyboard', async (req, res) => {
     controller.onKeyDown(event);
   } else if (event.type === 'keyUp') {
     controller.onKeyUp(event);
+  } else if (event.type === 'charInput') {
+    // Printable text, вычисленный native hook'ом (ToUnicodeEx) с учётом раскладки.
+    // Не логируем содержимое текста.
+    controller.onCharInput({ text: event.text || '' });
   }
 
   res.json({ ok: true });
@@ -637,3 +633,5 @@ router.post('/focus-windows', async (req, res) => {
 });
 
 module.exports = router;
+module.exports.wireInputToController = wireInputToController;
+module.exports.unwireInputFromController = unwireInputFromController;

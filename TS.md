@@ -156,8 +156,10 @@ GUI передаёт порт бэкенду через **env-переменну
 - `GET|POST|DELETE /api/cookies/:profileId`, экспорт в JSON/Netscape. ✅ `src/api/cookies.js`, `src/cookie/inject.js`
 - Инжекция в `--user-data-dir` профиля перед запуском. ✅ `src/api/browser.js:289`
 
-### 4.4. Логика синхронизатора (Multi-Control) v0.15.0 ✅ РЕАЛИЗОВАНО
-- CDP-синтез мыши/клавиатуры + Native OS hooks (WH_KEYBOARD_LL) для browser chrome. ✅ `src/multi-control/`, `src/os-input/native-hooks/`
+### 4.4. Логика синхронизатора (Multi-Control) v0.16.0 ✅ РЕАЛИЗОВАНО
+- CDP-синтез мыши/скролла + Native OS hooks (WH_KEYBOARD_LL) как единственный источник клавиатуры (v0.16.0: CDP-клавиатура удалена, double dispatch устранён). ✅ `src/multi-control/`, `src/os-input/native-hooks/`
+- Текст в slave через `Input.insertText` — `charInput` вычисляется addon'ом через `ToUnicodeEx` (раскладка, Shift, CapsLock, AltGr, dead keys). ✅ `src/os-input/native-hooks/hooks.cc`, `gui/src/main/keyboard-hooks-payload.js`
+- Browser-сочетания: Ctrl+T/W/N обрабатывает нативный hook (Ctrl+T — нативный таб + `/json` polling). ✅ `src/api/multi-control.js`
 - MouseSmoother (ghost-cursor path(), Безье + Fitts + overshoot), `flush()` перед кликом, микрошаговый скролл. ✅ `src/multi-control/mouse-smoothing.js`
 - Tab Mapping 1:N (`Map<masterTargetId, Map<slaveId, slaveTargetId>>`). ✅ `src/multi-control/cdp-manager.js`
 - Активация фокуса: `Target.activateTarget` → `Page.bringToFront` → `DOM.focus` + `body.focus()`.

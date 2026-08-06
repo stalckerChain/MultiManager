@@ -25,19 +25,19 @@ CDP Target.targetInfoChanged (master browser)
 
 ## Режимы работы
 
-### CDP-based синхронизация (основной)
+### CDP-based синхронизация (mouse/wheel)
 - Мышь: движение, клик, скролл
-- Клавиатура: нажатия, Enter, стрелки
-- Текст: Input.insertText через charInput
 - Навигация: master переходит → slave следует
 - Переключение вкладок: активация в master → активация в slaves
+- Клавиатура через CDP **удалена** — единственный источник клавиатуры — native hook (см. ниже)
 
-### Native hooks (WH_KEYBOARD_LL)
+### Native hooks (WH_KEYBOARD_LL) — единственный источник клавиатуры
 - C++ addon перехватывает ВСЕ клавиши на уровне ОС через `WH_KEYBOARD_LL`
 - HTTP POST → `/api/multi-control/os-keyboard`
 - Единственный источник событий для browser chrome (адресная строка, tab bar)
-- Также перехватывает browser shortcuts (Ctrl+T, Ctrl+W, etc.)
-- **Double dispatch**: при вводе в DOM-элементе клавиши уходят в slave дважды (CDP + native hook)
+- Единственный источник клавиатуры для **всех** вводов (в т.ч. DOM-элементы) — CDP-клавиатура из SYNC_EVENT_SCRIPT удалена
+- Перехватывает browser shortcuts (Ctrl+T, Ctrl+W, etc.)
+- **Double dispatch устранён**: клавиша уходит в slave ровно один раз
 
 ## Tab Mapping (1:N)
 
@@ -83,34 +83,37 @@ tabIndex   = Array<masterTargetId>  // упорядоченная матрица
 
 ### CDP SYNC_EVENT_SCRIPT (DOM-события + tabActivated)
 - Инжектится в master page через `Page.addScriptToEvaluateOnNewDocument`
-- Ловит DOM-события: mousemove, mousedown, mouseup, wheel, keydown, keyup, click
+- Ловит DOM-события: mousemove, mousedown, mouseup, wheel, click
 - Ловит `visibilitychange` → при `document.hidden === false` эмитит `tabActivated`
 - `tabActivated` → `Runtime.bindingCalled` → `onEvent` → `targetId = targetBySid.get(sessionId)` → `setActiveMasterTab(targetId)` → `_syncActiveTabToSlaves` → `activateAndFocusTarget`
 - Активация Slaves происходит **только** через `tabActivated` (Master реально переключился на вкладку). Фоновое создание вкладок (middle-click, контекстное меню) не триггерит синхронизацию
 - **Не ловит** события в browser chrome: адресная строка, tab bar, меню
 - `tabActivated` не вызывает `injectFromCdp()` (фокус синхронизируется через CDP, не через OS input)
-- Остальные события идут через `injectFromCdp()` → `controller.onKeyDown/onMousePressed/etc.`
+- Остальные события идут через `injectFromCdp()` → `controller.onMousePressed/onMouseMoved/scrollTo`
+- **keydown/keyup/charInput из скрипта удалены** — клавиатура не идёт по CDP
 
 ### Native hooks (WH_KEYBOARD_LL)
 - C++ addon перехватывает ВСЕ клавиши на уровне ОС
 - HTTP POST → `/api/multi-control/os-keyboard`
-- Идёт напрямую в `controller.onKeyDown/onKeyUp` (минуя `inputCapture`)
+- Идёт напрямую в `controller.onKeyDown/onKeyUp/onCharInput` (минуя `inputCapture`)
 - **Всегда активен**, включая ввод в адресной строке
 - Шлёт `keyDown`/`keyUp` для ЛЮБЫХ клавиш, не только Ctrl+T/W
+- Текст (`charInput`) вычисляется в addon'е через `ToUnicodeEx` с учётом раскладки, Shift, CapsLock и AltGr; шлётся отдельным событием только для печатных символов
 
-### Double Dispatch (важно!)
+### Текст с учётом раскладки (ToUnicodeEx)
 
-Когда пользователь печатает текст в DOM-элементе master page (например, в `<input>` на сайте), **оба источника срабатывают одновременно**:
+При вводе в DOM-элементе печатный символ передаётся в slave через `Input.insertText` (`charInput`), а не через `Input.dispatchKeyEvent`. Это даёт:
 
-1. CDP script ловит keydown → `onKeyDown` → dispatch в slave
-2. Native hook ловит ту же клавишу → `/os-keyboard` → `onKeyDown` → dispatch в slave
+- Корректные символы любой раскладки (ЙЦУКЕН, QWERTY, европейские с AltGr) — не зависит от `key`/`code` эмуляции
+- Поддержка Shift, CapsLock и AltGr (правый Alt) — `altGr` отличает AltGr-символы от командных сочетаний Alt
+- Композиция dead keys (`´` + `e` = `é`) — состояние dead key хранится в addon'е (`s_deadKeyVk`/`s_deadKeyPending`) и подаётся в следующий вызов `ToUnicodeEx`
+- Командные сочетания (Ctrl/Meta/Alt без AltGr), непечатные клавиши и dead keys текстом **не** считаются — `charInput` для них не отправляется
 
-Одна и та же клавиша уходит в slave **дважды**. В случае Enter это может вызвать:
-- Дублированное нажатие в форме
-- Двойную отправку
-- Непредсказуемое поведение (в т.ч. открытие нового таба)
+### Double Dispatch (устранён, v0.16.0)
 
-> Double dispatch НЕ происходит для ввода в адресной строке (там нет DOM-событий).
+Ранее клавиши при вводе в DOM-элементе master page уходили в slave **дважды** (CDP-скрипт + native hook), что вызывало дублированный Enter в формах и двойную отправку.
+
+**Решение:** CDP-клавиатура полностью удалена — `SYNC_EVENT_SCRIPT` больше не ловит `keydown`/`keyup`/`charInput`, `injectFromCdp` не эмитит клавиатурные события. Единственный источник клавиатуры — native hook `WH_KEYBOARD_LL` → `/api/multi-control/os-keyboard`. Клавиша уходит в slave ровно один раз.
 
 ## Создание новых вкладок (Tab Creation)
 
@@ -347,15 +350,17 @@ if (event.type === 'keyDown' && event.key === 'Enter') {
 | `src/multi-control/mouse-smoothing.js` | MouseSmoother: ghost-cursor path() trajectory + setTimeout dispatch loop |
 | `src/api/multi-control.js` | API routes + CDP event wiring + os-keyboard + tab mapping + slave tab discovery |
 | `src/api/window-arranger.js` | Window arranger (taskbar-aware) |
-| `src/os-input/input-capture.js` | EventEmitter wrapper (CDP mode) |
-| `src/os-input/native-hooks/hooks.cc` | C++ addon: WH_KEYBOARD_LL via N-API |
+| `src/os-input/input-capture.js` | EventEmitter wrapper (mouse/wheel from CDP; клавиатура НЕ проходит) |
+| `src/os-input/native-hooks/hooks.cc` | C++ addon: WH_KEYBOARD_LL via N-API + ToUnicodeEx (раскладка/Shift/CapsLock/AltGr/dead keys) |
+| `src/os-input/native-hooks/index.js` | Backend-обёртка native hooks (эмитит text/altGr, фильтр plain text) |
 | `gui/src/main/keyboard-hooks.js` | Electron main process: bridges native hooks to backend API |
+| `gui/src/main/keyboard-hooks-payload.js` | Чистое преобразование native-события в payload (buildKeyEvent/shouldSendCharInput) |
 
 ## Архитектурные решения
 
 1. **CDP-based sync** — правильный подход для антидетект-браузера (не Windows API)
 2. **Native C++ addon** для WH_KEYBOARD_LL — koffi trampoline не работает для синхронных callback
-3. **Гибрид**: CDP для mouse/keyboard + native hooks для browser shortcuts
+3. **Разделение источников**: CDP для mouse/wheel + native hooks (WH_KEYBOARD_LL) для ВСЕЙ клавиатуры (v0.16.0) — клавиатура идёт только через OS hook, CDP-клавиатура удалена
 4. **Tab mapping 1:N** — `Map<masterTargetId, Map<slaveId, slaveTargetId>>` каждый slave маппится отдельно
 5. **tabIndex matrix** — `Array<masterTargetId>` для маппинга по порядку создания. Позволяет `onNewTab` для slave корректно определять master-таб по индексу (N-й slave → N-й master)
 6. **onClick = no-op** — mousePressed+mouseReleased из mouseDown/mouseUp уже генерируют DOM click
@@ -371,9 +376,32 @@ if (event.type === 'keyDown' && event.key === 'Enter') {
 
 ## Версия
 
-Текущая: v0.15.0 (Real-scroll coordinate sync: устранён рассинхрон курсора после wheel-скролла)
+Текущая: v0.16.0 (Single-source keyboard: native hook — единственный источник клавиатуры)
 
 ## История версий
+
+### v0.16.0 — Single-source keyboard (устранён double dispatch)
+
+**Проблема:** При вводе в DOM-элементе master page клавиши уходили в slave дважды: (1) CDP `SYNC_EVENT_SCRIPT` ловил `keydown`/`keyup`/`charInput` на странице и диспатчил через CDP; (2) native hook `WH_KEYBOARD_LL` ловил ту же клавишу на уровне ОС и слал через `/os-keyboard`. Enter мог дублироваться в формах, браузерные сочетания Ctrl+W/T/N обрабатывались CDP-скриптом.
+
+**Решение:**
+1. CDP-клавиатура удалена: `SYNC_EVENT_SCRIPT` больше не вешает `keydown`/`keyup` listeners, `charInput` и `browserAction` (closeTab/newTab) удалены, Ctrl+N preventDefault удалён. `injectFromCdp` не эмитит клавиатурные события.
+2. Единственный источник клавиатуры — native hook → `/api/multi-control/os-keyboard` → `controller.onKeyDown/onKeyUp/onCharInput`. Клавиша уходит в slave ровно один раз.
+3. Текст с учётом раскладки: addon `hooks.cc` вычисляет `text` через `ToUnicodeEx` (раскладка foreground окна, Shift, CapsLock, AltGr, dead keys). `charInput` шлётся отдельным событием только для печатных символов.
+4. Browser-сочетания: Ctrl+W/T/N обрабатывает глобальный hook (Ctrl+T — браузер открывает нативно + `discoverActiveTab` синхронизирует; Ctrl+W — закрытие slave-табов через CDP; Ctrl+N блокируется от форвардинга в `onKeyDown`). Ctrl+1..9 и другие browser-сочетания форвардятся через `dispatchKeyEvent`.
+5. Lifecycle: `wireInputToController`/`unwireInputFromController` с сохранением ссылок на handlers и `inputCapture.off()` — повторные start/stop не накапливают обработчики.
+
+| Файл | Изменение |
+|------|-----------|
+| `src/multi-control/cdp-manager.js` | SYNC_EVENT_SCRIPT: удалены keydown/keyup/charInput/browserAction/Ctrl+N |
+| `src/os-input/input-capture.js` | injectFromCdp: удалены keyDown/keyUp/charInput emission |
+| `src/api/multi-control.js` | wire/unwire lifecycle, /os-keyboard charInput, Ctrl+T/W handling, await discoverActiveTab перед Enter |
+| `src/multi-control/index.js` | onKeyDown блокирует Ctrl+W/T/N от форвардинга |
+| `src/os-input/native-hooks/hooks.cc` | ToUnicodeEx, BuildKeyboardState, altGr, dead key state, text в событии |
+| `src/os-input/native-hooks/index.js` | eventData.altGr/text, _isPlainText, emit charInput |
+| `gui/src/main/keyboard-hooks.js` | payload вынесен, charInput по shouldSendCharInput |
+| `gui/src/main/keyboard-hooks-payload.js` | Новый модуль: vkToKey/vkToCode/buildKeyEvent/shouldSendCharInput |
+| `tests/unit/*` | os-input, cdp-manager, multi-control, multi-control-api, keyboard-hooks-payload |
 
 ### v0.15.0 — Real-scroll coordinate sync (fix рассинхрона курсора после прокрутки колесом)
 
