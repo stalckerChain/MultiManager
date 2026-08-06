@@ -127,4 +127,13 @@ describe('App Store — initialized state', () => {
     applyToken('');
     expect(state.token).toBe('');
   });
+
+  it('6.12: при ошибке регенерации (пустой/ложное значение) токен GUI не меняется', () => {
+    const { state, applyToken } = createAppStore();
+    state.token = 'current-token';
+    applyToken(null);
+    applyToken('');
+    applyToken(undefined);
+    expect(state.token).toBe('current-token');
+  });
 });

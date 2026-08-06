@@ -73,4 +73,17 @@ describe('POST /api/settings/api-token/regenerate', () => {
 
     expect(goodRes.status).toBe(200);
   });
+
+  it('6.12: при ошибке регенерации активный и сохранённый токен не меняются', async () => {
+    const storedBefore = systemConfig.get('api_token');
+    const activeBefore = getToken();
+
+    const res = await request(app)
+      .post('/api/settings/api-token/regenerate')
+      .set('Authorization', 'Bearer invalid-token');
+
+    expect(res.status).toBe(401);
+    expect(getToken()).toBe(activeBefore);
+    expect(systemConfig.get('api_token')).toBe(storedBefore);
+  });
 });

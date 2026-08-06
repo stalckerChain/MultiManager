@@ -9,10 +9,12 @@ export function useWebSocket() {
   let ws = null;
   let reconnectDelay = 1000;
   let reconnectTimer = null;
+  let manualDisconnect = false;
 
   function connect() {
     if (!appStore.port) return;
     if (ws && ws.readyState === WebSocket.OPEN) return;
+    manualDisconnect = false;
 
     const url = `ws://127.0.0.1:${appStore.port}/ws?token=${appStore.token}`;
     console.log('[WS] Connecting to', `ws://127.0.0.1:${appStore.port}/ws`);
@@ -57,7 +59,9 @@ export function useWebSocket() {
     ws.onclose = () => {
       connected.value = false;
       console.log('[WS] Disconnected. Reconnecting in', reconnectDelay, 'ms');
-      scheduleReconnect();
+      if (!manualDisconnect) {
+        scheduleReconnect();
+      }
     };
 
     ws.onerror = (err) => {
@@ -76,6 +80,7 @@ export function useWebSocket() {
   }
 
   function disconnect() {
+    manualDisconnect = true;
     if (reconnectTimer) {
       clearTimeout(reconnectTimer);
       reconnectTimer = null;

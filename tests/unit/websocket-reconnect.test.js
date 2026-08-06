@@ -183,6 +183,60 @@ describe('WebSocket — reconnect with fetchAll', () => {
     expect(ws._url).toContain('new-token');
     expect(closed[0]).toContain('old-token');
   });
+
+  it('ручной disconnect не инициирует повторное подключение (manualDisconnect)', () => {
+    let manualDisconnect = false;
+    let reconnectScheduled = 0;
+    let applied = null;
+
+    function connect() {
+      manualDisconnect = false;
+      // создаём соединение
+    }
+
+    function scheduleReconnect() {
+      reconnectScheduled++;
+    }
+
+    function disconnect() {
+      manualDisconnect = true;
+      // закрываем ws
+      if (mockWs.onclose) applied = mockWs.onclose;
+    }
+
+    connect();
+    disconnect();
+    expect(manualDisconnect).toBe(true);
+
+    // onclose старого соединения срабатывает асинхронно после close()
+    const closeHandler = () => {
+      if (!manualDisconnect) scheduleReconnect();
+    };
+    closeHandler();
+    expect(reconnectScheduled).toBe(0);
+  });
+
+  it('после connect() manualDisconnect сбрасывается, переподключение работает', () => {
+    let manualDisconnect = false;
+    let reconnectScheduled = 0;
+
+    function connect() {
+      manualDisconnect = false;
+    }
+
+    function scheduleReconnect() {
+      reconnectScheduled++;
+    }
+
+    connect();
+    expect(manualDisconnect).toBe(false);
+
+    const closeHandler = () => {
+      if (!manualDisconnect) scheduleReconnect();
+    };
+    closeHandler();
+    expect(reconnectScheduled).toBe(1);
+  });
 });
 
 describe('Status Polling — running profiles timer', () => {

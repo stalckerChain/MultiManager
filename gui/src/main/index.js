@@ -23,6 +23,7 @@ try {
 
 let mainWindow = null;
 let tray = null;
+let offTokenChange = null;
 
 const isDev = !app.isPackaged;
 
@@ -97,7 +98,8 @@ async function createWindow() {
   const token = getCoreToken();
   log('INFO', 'createWindow: token ready');
 
-  onTokenChange((newToken) => {
+  if (offTokenChange) offTokenChange();
+  offTokenChange = onTokenChange((newToken) => {
     if (mainWindow && !mainWindow.webContents.isDestroyed()) {
       mainWindow.webContents.send('api-token-changed', newToken);
     }

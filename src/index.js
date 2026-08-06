@@ -3,7 +3,7 @@ const { app, setupWebSocket } = require('./core/app');
 const { logger } = require('./logger');
 const { initDatabase, getDatabase } = require('./db');
 const { createSystemConfigQueries } = require('./db/queries');
-const { setToken, notifyToken } = require('./api/auth');
+const { setToken, notifyToken, resolveToken } = require('./api/auth');
 const { initMasterKey, hasMasterKey } = require('./crypto');
 const { performBackup } = require('./backup');
 const crypto = require('crypto');
@@ -20,16 +20,11 @@ const db = getDatabase();
 const systemConfigQueries = createSystemConfigQueries(db);
 
 // Приоритет источников токена: --api-token= → API_TOKEN → system_config.api_token → новая генерация.
-let token;
-if (explicitToken) {
-  token = explicitToken;
-} else {
-  token = systemConfigQueries.get('api_token');
-  if (!token) {
-    token = crypto.randomBytes(32).toString('hex');
-    systemConfigQueries.set('api_token', token);
-  }
-}
+const { token } = resolveToken({
+  explicitToken,
+  configQueries: systemConfigQueries,
+  generate: () => crypto.randomBytes(32).toString('hex'),
+});
 
 setToken(token);
 notifyToken(token);

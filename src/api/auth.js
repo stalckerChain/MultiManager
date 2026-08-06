@@ -10,6 +10,19 @@ function getToken() {
   return state.apiToken;
 }
 
+function resolveToken({ explicitToken, configQueries, generate }) {
+  if (explicitToken) {
+    return { token: explicitToken, generated: false };
+  }
+  const saved = configQueries.get('api_token');
+  if (saved) {
+    return { token: saved, generated: false };
+  }
+  const token = generate();
+  configQueries.set('api_token', token);
+  return { token, generated: true };
+}
+
 function notifyToken(token) {
   if (typeof process.send === 'function') {
     try {
@@ -41,4 +54,4 @@ function authMiddleware(req, res, next) {
   next();
 }
 
-module.exports = { setToken, getToken, notifyToken, authMiddleware };
+module.exports = { setToken, getToken, notifyToken, authMiddleware, resolveToken };

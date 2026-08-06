@@ -1,12 +1,13 @@
 const net = require('net');
 const path = require('path');
 const fs = require('fs');
+const { createTokenHandler } = require('./core-token-handler');
 
 let coreProcess = null;
 let corePort = 3000;
-let coreToken = '';
-let tokenWaiters = [];
-let tokenListeners = [];
+
+const tokenHandler = createTokenHandler();
+tokenHandler.setLogger(log);
 
 const isDev = !require('electron').app.isPackaged;
 
@@ -56,29 +57,11 @@ async function startCore() {
 }
 
 function waitForToken(timeout = 15000) {
-  if (coreToken) return Promise.resolve(coreToken);
-  return new Promise((resolve, reject) => {
-    const timer = setTimeout(() => {
-      tokenWaiters = tokenWaiters.filter(w => w !== onToken);
-      reject(new Error('Timeout waiting for core token'));
-    }, timeout);
-    function onToken() {
-      clearTimeout(timer);
-      resolve(coreToken);
-    }
-    tokenWaiters.push(onToken);
-  });
+  return tokenHandler.waitForToken(timeout);
 }
 
 function onTokenReceived(token) {
-  if (typeof token !== 'string' || token.length === 0) return;
-  coreToken = token;
-  log('INFO', 'Core token updated');
-  const waiters = tokenWaiters;
-  tokenWaiters = [];
-  waiters.forEach(w => w());
-  const listeners = tokenListeners;
-  listeners.forEach(l => l(coreToken));
+  tokenHandler.onTokenReceived(token);
 }
 
 function startCoreProcess() {
@@ -134,6 +117,7 @@ function stopCore() {
     }
     coreProcess = null;
   }
+  tokenHandler.reset();
 }
 
 function getCorePort() {
@@ -141,12 +125,11 @@ function getCorePort() {
 }
 
 function getCoreToken() {
-  return coreToken;
+  return tokenHandler.getCoreToken();
 }
 
 function onTokenChange(listener) {
-  if (typeof listener !== 'function') return;
-  tokenListeners.push(listener);
+  tokenHandler.onTokenChange(listener);
 }
 
 module.exports = { startCore, stopCore, getCorePort, getCoreToken, onTokenChange };
