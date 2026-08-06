@@ -1,36 +1,66 @@
 const { Tray, Menu, nativeImage, app } = require('electron');
 const path = require('path');
 const fs = require('fs');
+const { resolveResourcesPath, resolveTrayResources } = require('./tray-paths');
+const { activateMainWindow } = require('./main-window-utils');
 
 let tray = null;
 
-function getResourcesPath() {
-  // Dev: resources/ is at gui/src/main/../../resources
-  // Packaged: resources/ is at {resourcesPath}/resources (due to "files" in build config)
-  if (app.isPackaged) {
-    return path.join(process.resourcesPath, 'resources');
-  }
-  return path.join(__dirname, '..', '..', 'resources');
+const LOG_DIR = path.join(app.getPath('userData'), 'logs');
+if (!fs.existsSync(LOG_DIR)) fs.mkdirSync(LOG_DIR, { recursive: true });
+
+const LOG_FILE = path.join(LOG_DIR, `app-${new Date().toISOString().slice(0, 10)}.log`);
+
+function log(level, ...args) {
+  const ts = new Date().toISOString();
+  const msg = `[${ts}] [TRAY] [${level}] ${args.join(' ')}`;
+  console.log(msg);
+  try { fs.appendFileSync(LOG_FILE, msg + '\n'); } catch (e) {}
 }
 
 function createTray(mainWindow, onQuit) {
-  // Use ICO on Windows for best tray compatibility
-  const iconName = process.platform === 'win32' ? 'tray-icon.ico' : 'tray-icon.png';
-  let iconPath = path.join(getResourcesPath(), iconName);
+  const resourcesDir = resolveResourcesPath();
+  const trayResource = resolveTrayResources({
+    resourcesDir,
+    platform: process.platform,
+  });
 
-  // Fallback to the other format
-  if (!fs.existsSync(iconPath)) {
-    const altName = iconName === 'tray-icon.ico' ? 'tray-icon.png' : 'tray-icon.ico';
-    iconPath = path.join(getResourcesPath(), altName);
+  if (!trayResource.present) {
+    log('WARN',
+      'no tray icon found. dir:', resourcesDir,
+      'primary:', trayResource.primaryPath,
+      'primaryExists:', trayResource.primaryExists,
+      'alt:', trayResource.altPath,
+      'altExists:', trayResource.altExists);
+  } else if (trayResource.fallback) {
+    log('WARN',
+      'tray icon fallback used. primary missing, using', trayResource.format,
+      'path:', trayResource.iconPath);
+  } else {
+    log('INFO', 'tray icon selected. format:', trayResource.format, 'path:', trayResource.iconPath);
   }
 
   let icon;
   try {
-    icon = nativeImage.createFromPath(iconPath);
-    if (icon.isEmpty()) icon = nativeImage.createEmpty();
-  } catch {
+    icon = nativeImage.createFromPath(trayResource.iconPath);
+    if (icon.isEmpty()) {
+      log('ERROR',
+        'nativeImage is empty for selected icon. path:', trayResource.iconPath,
+        'fileExists:', fs.existsSync(trayResource.iconPath),
+        'format:', trayResource.format,
+        'fallback:', trayResource.fallback);
+      icon = nativeImage.createEmpty();
+    }
+  } catch (err) {
+    log('ERROR',
+      'failed to load tray icon. path:', trayResource.iconPath,
+      'error:', err.message);
     icon = nativeImage.createEmpty();
   }
+
+  const showWindow = () => {
+    activateMainWindow(mainWindow);
+  };
 
   tray = new Tray(icon);
   tray.setToolTip('MultiManager');
@@ -38,16 +68,15 @@ function createTray(mainWindow, onQuit) {
   const contextMenu = Menu.buildFromTemplate([
     {
       label: 'Открыть панель',
-      click: () => {
-        mainWindow.show();
-        mainWindow.focus();
-      },
+      click: showWindow,
     },
     {
       label: 'Статус API',
       click: () => {
-        mainWindow.show();
-        mainWindow.webContents.send('navigate', 'settings');
+        activateMainWindow(mainWindow);
+        if (mainWindow && !mainWindow.isDestroyed()) {
+          mainWindow.webContents.send('navigate', 'settings');
+        }
       },
     },
     { type: 'separator' },
@@ -61,10 +90,8 @@ function createTray(mainWindow, onQuit) {
 
   tray.setContextMenu(contextMenu);
 
-  tray.on('double-click', () => {
-    mainWindow.show();
-    mainWindow.focus();
-  });
+  tray.on('double-click', showWindow);
+  tray.on('click', showWindow);
 
   return tray;
 }

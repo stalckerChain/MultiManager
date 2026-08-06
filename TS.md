@@ -397,7 +397,9 @@ Python: `connect_over_cdp("http://127.0.0.1:9331")`.
 ### 10.1. Темизация ✅ РЕАЛИЗОВАНО (`gui/src/renderer/composables/useTheme.js`)
 ### 10.2. Автозапуск Core и конфликты портов ✅ РЕАЛИЗОВАНО (`gui/src/main/core-manager.js:42-49` — инкрементный поиск 3000–3100)
 ### 10.3. WebSocket Auto-Reconnect ✅ РЕАЛИЗОВАНО (exponential backoff 1→2→4→8 сек)
-### 10.4. Системный трей ✅ РЕАЛИЗОВАНО (`gui/src/main/tray.js`)
+### 10.4. Single Instance и системный трей ✅ РЕАЛИЗОВАНО (`gui/src/main/tray.js`, `gui/src/main/index.js`)
+- **Single instance:** `app.requestSingleInstanceLock()` останавливает второй экземпляр до старта backend/окна; событие `second-instance` показывает, восстанавливает (если минимизировано) и фокусирует существующее окно. ✅ `gui/src/main/index.js`, `gui/src/main/main-window-utils.js`
+- **Tray:** обычный и двойной клик по иконке восстанавливают окно (единый `activateMainWindow`, без повторного запуска backend); контекстное меню «Выход» полностью завершает GUI и backend. Иконка резолвится относительно `__dirname` внутри `app.asar` (dev+packaged), выбор ICO/PNG и fallback с диагностическим логом. ✅ `gui/src/main/tray.js`, `gui/src/main/tray-paths.js`
 ### 10.5. Автообновление ✅ РЕАЛИЗОВАНО (`gui/src/main/updater.js` — electron-updater + GitHub Releases)
 
 ### 10.6. Settings — расширение ✅ РЕАЛИЗОВАНО (Roadmap Ф5)

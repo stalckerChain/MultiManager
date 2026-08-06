@@ -36,6 +36,10 @@
 
 ### Исправления
 
+- **[FIX] Жизненный цикл Electron: single instance, активация окна и tray.**
+  Повторный запуск приложения больше не создаёт второй Electron-процесс и второй backend: `app.requestSingleInstanceLock()` в main process останавливает второй экземпляр до старта, а событие `second-instance` показывает, восстанавливает (если окно минимизировано) и фокусирует существующее окно. Обычный клик по tray-иконке теперь восстанавливает окно так же, как «Открыть панель» и двойной клик, через единый `activateMainWindow` без повторного запуска backend. Путь к tray-иконке исправлен: ресурсы резолвятся относительно `__dirname` внутри `app.asar` (совпадает с `build.files: resources/**/*`) и в dev, и в packaged-режиме; выбор ICO для Windows / PNG для остальных платформ и fallback сохранены, а отсутствие файла или пустой `nativeImage` логируются с указанием пути, формата и причины.
+  ✅ `gui/src/main/index.js`, `gui/src/main/tray.js`, `gui/src/main/tray-paths.js` (новый), `gui/src/main/main-window-utils.js` (новый), `tests/unit/electron-lifecycle-tray.test.js` (новый)
+
 - **[FIX] Runtime ID расширения Zerion — имя каталога ≠ chrome-extension:// ID.**
   Имя каталога расширения (`klghhnkeealcohjjanjjdaeeggmfmlpl`) не совпадает с runtime ID Chromium (`lfoeajgcchlidpicbabpmckkejpckcfb`). Использование имени каталога как `chrome-extension://` ID приводило к `ERR_BLOCKED_BY_CLIENT`. Добавлены `computeRuntimeId(manifestKey)` — SHA-256 от DER-encoded `manifest.key`, первые 16 байт → 32 символа `a`–`p` — и `resolveRuntimeId(extPath, profilePath)` — приоритет `Secure Preferences` по точному совпадению пути, затем `manifest.key`. Zerion login и `ZERION_ID` в executor теперь получают настоящий runtime ID. Улучшена диагностика CDP load: вместо `unknown` выводится `exceptionDetails.text`.
   ✅ `src/api/extensions.js`, `src/api/browser.js`, `src/executor/index.js`, `tests/unit/extensions.test.js`, `tests/unit/browser-start-await.test.js`, `tests/unit/executor.test.js`

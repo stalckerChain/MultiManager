@@ -6,6 +6,7 @@ const { startCore, stopCore, getCorePort, getCoreToken, onTokenChange } = requir
 const { createTray } = require('./tray');
 const { setupUpdater } = require('./updater');
 const { setupBrowserManager } = require('./browser-manager');
+const { activateMainWindow } = require('./main-window-utils');
 const keyboardHooks = require('./keyboard-hooks');
 const pty = require('./pty');
 
@@ -44,6 +45,17 @@ log('INFO', 'isDev:', isDev, 'isPackaged:', app.isPackaged);
 log('INFO', 'appPath:', app.getAppPath());
 log('INFO', 'userData:', app.getPath('userData'));
 log('INFO', 'exePath:', process.execPath);
+
+const gotSingleInstanceLock = app.requestSingleInstanceLock();
+if (!gotSingleInstanceLock) {
+  log('INFO', 'Another MultiManager instance is already running. Quitting this instance.');
+  app.quit();
+}
+
+app.on('second-instance', () => {
+  log('INFO', 'second-instance: activating main window');
+  activateMainWindow(mainWindow);
+});
 
 async function gracefulShutdown() {
   const port = getCorePort();
@@ -245,7 +257,13 @@ if (process.platform === 'win32') {
   pty.init(mainWindow);
 }
 
-app.whenReady().then(createWindow).catch(err => {
+app.whenReady().then(() => {
+  if (!gotSingleInstanceLock) {
+    log('INFO', 'Skipping window creation: not the primary instance.');
+    return;
+  }
+  return createWindow();
+}).catch(err => {
   log('ERROR', 'app.whenReady failed:', err.message, err.stack);
 });
 
@@ -266,7 +284,9 @@ app.on('before-quit', async () => {
   log('INFO', 'before-quit');
   app.isQuitting = true;
   keyboardHooks.stop();
-  await gracefulShutdown();
+  if (mainWindow) {
+    await gracefulShutdown();
+  }
 });
 
 process.on('uncaughtException', (err) => {
