@@ -340,6 +340,7 @@ router.post('/:id/start', asyncHandler(async (req, res) => {
     '--no-first-run',
     '--no-default-browser-check',
     `--fingerprint-timezone=${timezone}`,
+    '--fingerprint-storage-quota=10240',
   ];
 
   if (profile.proxy_id) {

@@ -59,6 +59,14 @@ describe('Browser — anti-detect args and retry logic', () => {
     expect(content).not.toContain('Safari/6');
   });
 
+  it('--fingerprint-storage-quota=10240 is passed as browser arg', () => {
+    expect(content).toContain("'--fingerprint-storage-quota=10240'");
+  });
+
+  it('--unlimited-storage is not passed to the browser', () => {
+    expect(content).not.toContain('--unlimited-storage');
+  });
+
   it('--lang=en-US is passed as browser arg', () => {
     expect(content).toContain("'--lang=en-US'");
   });

@@ -13,6 +13,9 @@
   - Тесты: проверки Chrome-only UA и отсутствия Firefox/Safari в `fingerprint.test.js`, `fingerprint-edge.test.js`; наличие `--fingerprint=`, отсутствие `--fingerprint-seed=` и ручного `--user-agent` в `browser-start-await.test.js`.
   ✅ `src/fingerprint/index.js`, `src/api/browser.js`, `tests/unit/fingerprint.test.js`, `tests/unit/fingerprint-edge.test.js`, `tests/unit/browser-start-await.test.js`
 
+- **[EXP] Проверка `--fingerprint-storage-quota` (A/B-эксперимент).** BrowserScan показывал «Скрытый режим: Да, штраф -10%» из-за нормализованного CloakBrowser storage quota. В запуск MM добавлен ровно один аргумент `--fingerprint-storage-quota=10240` (после `--fingerprint-timezone`); `--unlimited-storage` не используется. Seed, proxy, extensions, CDP и остальные параметры запуска не изменены. Гипотеза подтверждена на том же профиле и прокси: штраф «Скрытый режим -10%» исчез. Решение о постоянном применении `10240` — отдельная задача после проверки влияния на остальные сигналы.
+  ✅ `src/api/browser.js`, `tests/unit/browser-start-await.test.js`
+
 ### Multi-Control
 
 - **[FEAT] Single-source keyboard: native hook — единственный источник клавиатуры.**
