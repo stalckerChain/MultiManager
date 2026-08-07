@@ -1,7 +1,45 @@
 import { describe, it, expect } from 'vitest';
-import { generateFingerprint, FINGERPRINT_DB, RESOLUTION_HARDWARE_MAP, MIN_HARDWARE } from '../../src/fingerprint/index.js';
+import { generateFingerprint, FINGERPRINT_DB, RESOLUTION_HARDWARE_MAP, MIN_HARDWARE, UA_TEMPLATES } from '../../src/fingerprint/index.js';
 
 describe('Fingerprint Edge Cases', () => {
+
+  // ── 0. Chrome-only: никаких Firefox/Safari в генерации ──
+
+  describe('Chrome-only generation', () => {
+    it('все платформы всегда возвращают Chrome UA', () => {
+      for (const platform of ['windows', 'macos', 'linux']) {
+        for (let i = 0; i < 100; i++) {
+          const fp = generateFingerprint(platform);
+          expect(fp.user_agent).toMatch(/Chrome\/\d+\./);
+        }
+      }
+    });
+
+    it('UA никогда не содержит Firefox', () => {
+      for (const platform of ['windows', 'macos', 'linux']) {
+        for (let i = 0; i < 100; i++) {
+          expect(generateFingerprint(platform).user_agent).not.toMatch(/Firefox|Gecko\/20100101/);
+        }
+      }
+    });
+
+    it('UA никогда не содержит Safari-версию без Chrome', () => {
+      for (const platform of ['windows', 'macos', 'linux']) {
+        for (let i = 0; i < 100; i++) {
+          expect(generateFingerprint(platform).user_agent).not.toMatch(/Version\/\d+\.\d+\s+Safari\/\d/);
+        }
+      }
+    });
+
+    it('UA_TEMPLATES не содержат Firefox и Safari шаблонов', () => {
+      for (const templates of Object.values(UA_TEMPLATES)) {
+        for (const tpl of templates) {
+          expect(tpl).not.toMatch(/Firefox|Gecko\/20100101/);
+          expect(tpl).not.toMatch(/Version\/__VERSION__ Safari/);
+        }
+      }
+    });
+  });
 
   // ── 1. Ultra-Wide / 4K: тяжёлые разрешения требуют мощного железа ──
 

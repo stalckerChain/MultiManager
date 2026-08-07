@@ -331,8 +331,7 @@ router.post('/:id/start', asyncHandler(async (req, res) => {
 
   const args = [
     '--remote-debugging-port=0',
-    '--fingerprint-seed=' + profile.fingerprint_seed,
-    '--user-agent=' + profile.user_agent,
+    '--fingerprint=' + profile.fingerprint_seed,
     '--resolution=' + profile.screen_resolution,
     '--cores=' + profile.hardware_cores,
     '--memory=' + profile.hardware_memory,

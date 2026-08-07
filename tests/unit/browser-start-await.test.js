@@ -41,6 +41,24 @@ describe('Browser — anti-detect args and retry logic', () => {
     expect(content).toContain('--fingerprint-timezone=');
   });
 
+  it('--fingerprint= is used instead of legacy --fingerprint-seed= (documented CloakBrowser flag)', () => {
+    expect(content).toContain("'--fingerprint=' + profile.fingerprint_seed");
+  });
+
+  it('--fingerprint-seed is not passed to the browser', () => {
+    expect(content).not.toContain('--fingerprint-seed');
+  });
+
+  it('manual --user-agent is not passed to the browser', () => {
+    expect(content).not.toContain("'--user-agent=' + profile.user_agent");
+    expect(content).not.toMatch(/['"]--user-agent=/);
+  });
+
+  it('no manual Firefox/Safari UA is forced in launch args', () => {
+    expect(content).not.toContain('Firefox');
+    expect(content).not.toContain('Safari/6');
+  });
+
   it('--lang=en-US is passed as browser arg', () => {
     expect(content).toContain("'--lang=en-US'");
   });

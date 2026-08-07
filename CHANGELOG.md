@@ -2,6 +2,17 @@
 
 ## v1.4.2
 
+### Fingerprint / Anti-detect
+
+- **[FIX] Согласование fingerprint с CloakBrowser: Chrome-only UA и документированный `--fingerprint`.**
+  Устранён конфликт Firefox/Chromium, который детектировал BrowserScan: генератор мог записать Firefox/Safari UA в профиль, а запуск навязывал сохранённый UA через `--user-agent` поверх движка Chromium 146.
+  **Решение:**
+  - `src/fingerprint/index.js` — в `UA_TEMPLATES` оставлены только Chrome-шаблоны для `windows`/`macos`/`linux`; Firefox и Safari варианты удалены, генератор больше не может их выбрать.
+  - `src/api/browser.js` — флаг `--fingerprint-seed=<uuid>` заменён на документированный CloakBrowser `--fingerprint=<seed>` (master seed для WebGL/GPU/Audio/Canvas/fonts/hardware/screen); ручной `--user-agent=` больше не передаётся в запуск.
+  - Без ручных overrides WebGL/GPU/Audio/Canvas/Renderer/Client Hints; профиль, proxy, timezone, extensions, CDP и обработка ошибок запуска сохранены.
+  - Тесты: проверки Chrome-only UA и отсутствия Firefox/Safari в `fingerprint.test.js`, `fingerprint-edge.test.js`; наличие `--fingerprint=`, отсутствие `--fingerprint-seed=` и ручного `--user-agent` в `browser-start-await.test.js`.
+  ✅ `src/fingerprint/index.js`, `src/api/browser.js`, `tests/unit/fingerprint.test.js`, `tests/unit/fingerprint-edge.test.js`, `tests/unit/browser-start-await.test.js`
+
 ### Multi-Control
 
 - **[FEAT] Single-source keyboard: native hook — единственный источник клавиатуры.**

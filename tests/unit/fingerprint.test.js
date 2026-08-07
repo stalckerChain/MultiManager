@@ -54,6 +54,46 @@ describe('Fingerprint Generator', () => {
     });
   });
 
+  // ── Chrome-only User-Agent ────────────────────────────
+
+  describe('Chrome-only User-Agent', () => {
+    it('все платформы генерируют только Chrome UA', () => {
+      for (const platform of ['windows', 'macos', 'linux']) {
+        for (let i = 0; i < 50; i++) {
+          const fp = generateFingerprint(platform);
+          expect(fp.user_agent).toMatch(/Chrome\/\d+\./);
+        }
+      }
+    });
+
+    it('UA не содержит Firefox', () => {
+      for (const platform of ['windows', 'macos', 'linux']) {
+        for (let i = 0; i < 50; i++) {
+          const fp = generateFingerprint(platform);
+          expect(fp.user_agent).not.toMatch(/Firefox|Gecko\/20100101/);
+        }
+      }
+    });
+
+    it('UA не содержит Safari (без Chrome)', () => {
+      for (const platform of ['windows', 'macos', 'linux']) {
+        for (let i = 0; i < 50; i++) {
+          const fp = generateFingerprint(platform);
+          expect(fp.user_agent).not.toMatch(/Version\/\d+\.\d+\s+Safari\/\d/);
+        }
+      }
+    });
+
+    it('UA_TEMPLATES не содержат Firefox и Safari шаблоны', () => {
+      for (const templates of Object.values(UA_TEMPLATES)) {
+        for (const tpl of templates) {
+          expect(tpl).not.toMatch(/Firefox|Gecko\/20100101/);
+          expect(tpl).not.toMatch(/Version\/__VERSION__ Safari/);
+        }
+      }
+    });
+  });
+
   // ── User-Agent ↔ Платформа ────────────────────────────
 
   describe('User-Agent ↔ Platform match', () => {

@@ -389,7 +389,7 @@ Authorization: Bearer <token>
 
 ### POST /api/browser/:id/start
 
-Запустить браузер. Автоматически проверяет прокси (если привязан). Браузер запускается с антидетект-аргументами: `--fingerprint-timezone` (timezone из GeoIP прокси, фоллбэк — профиль), `--lang=en-US`, `--no-first-run`, `--no-default-browser-check`. При ошибке `ERR_ADDRESS_IN_USE` автоматически повторяет запуск до 3 раз.
+Запустить браузер. Автоматически проверяет прокси (если привязан). Браузер запускается с антидетект-аргументами: `--fingerprint=<seed>` (документированный CloakBrowser master seed), `--resolution`, `--cores`, `--memory`, `--fingerprint-timezone` (timezone из GeoIP прокси, фоллбэк — профиль), `--lang=en-US`, `--no-first-run`, `--no-default-browser-check`. Ручной `--user-agent` не передаётся. При ошибке `ERR_ADDRESS_IN_USE` автоматически повторяет запуск до 3 раз.
 
 **Ответ (200):**
 ```json
