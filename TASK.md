@@ -1,162 +1,189 @@
-# TASK — Исправить логирование automation и исключить сырые input/mouse-события
+# TASK — Динамический ID расширения Zerion для init_wallet4browser
 
 ## Цель
 
-Сделать диагностику запуска automation полной и пригодной для расследования ошибок:
+Изменить запуск `stAuto0/scripts/init_wallet4browser.py`, чтобы URL страницы импорта кошелька строился с актуальным runtime ID расширения Zerion, полученным из MultiManager для конкретного профиля.
 
-- каждый запуск automation должен иметь связанный лог;
-- ранние ошибки не должны теряться до создания log-файла;
-- ошибки профиля, CDP и Python должны быть связаны с `run_id` и `profile_id`;
-- путь к логу и текст ошибки должны отображаться через API/GUI;
-- сырые `input/mouse`-события не должны записываться в обычный `core.log`;
-- секреты не должны попадать ни в один лог.
+Если endpoint MultiManager недоступен, запрос завершился ошибкой или ответ не содержит валидный ID расширения, скрипт должен использовать встроенный fallback ID:
+
+```text
+klghhnkeealcohjjanjjdaeeggmfmlpl
+```
+
+Текущий fallback сохраняется для совместимости с автономным/старым окружением.
 
 ## Наблюдаемая проблема
 
-Для профиля `test` браузер запускался, но automation-log отсутствовал. В профильном логе была запись:
+`stAuto0/scripts/init_wallet4browser.py` импортирует `ZERION_ID` из `Core.browser` и формирует `WALLET_URL` на уровне модуля. `Core.browser` использует устаревший ID как fallback.
+
+MultiManager уже умеет вычислять настоящий runtime ID через `resolveRuntimeId()` с учетом `Secure Preferences` конкретного профиля и `manifest.key`. Это значение уже используется в автоматическом executor-потоке и в endpoint `zerion-login`, но ручной скрипт инициализации кошелька его не запрашивают.
+
+## Архитектурное решение
+
+Добавить в authenticated internal API MultiManager endpoint:
 
 ```text
-CDP extension loading unavailable: Unexpected server response: 404
+GET /api/internal/profiles/:id/zerion-extension
 ```
 
-При этом в `run_tasks` не было полезного `error_message`, а `log_file_path` не был заполнен. Ошибка возникала в цепочке запуска профиля/расширения отдельно от executor и не была связана с automation run.
+Успешный ответ:
 
-`core.log` также содержит большой объём сырых событий вида `CDP: Input.dispatchMouseEvent` и `OS-KEYBOARD`, из-за чего файл достиг размера порядка 145 MB и затрудняет поиск ошибок.
+```json
+{
+  "id": "abcdefghijklmnopabcdefghijklmnop"
+}
+```
+
+В текущей конфигурации MultiManager профилю назначается ровно одно расширение — Zerion. Endpoint должен использовать существующую простую схему `profile.extensions[0]`, как текущие `POST /api/browser/:id/zerion-login` и executor. Поиск по manifest/name, i18n-разрешение, перебор нескольких каталогов и новый helper не нужны.
+
+1. Найти профиль по UUID.
+2. Найти первое назначенное расширение. Поле `profile.extensions` хранится как JSON-строка с массивом имен каталогов. Не импортировать локальный `tryParseJson()` из `src/api/browser.js`: он не экспортируется. Использовать `JSON.parse(profile.extensions || '[]')` внутри `try-catch` и взять только `extIds[0]`.
+3. Если JSON невалиден, список пуст, первый элемент отсутствует или не является строкой, вернуть `badRequest(...)`.
+4. Построить `extPath = path.join(getExtensionsDir(), extIds[0])` без чтения manifest и дополнительных проверок имени расширения. `extIds[0]` — только имя каталога, его нельзя возвращать как runtime ID.
+5. Определить профильный browser data directory.
+6. Вызвать `resolveRuntimeId(extPath, profileDir)`.
+7. Проверить, что результат соответствует Chrome extension ID: ровно 32 строчных символа `a-z`.
+8. Вернуть `{ id }`.
+
+Критически важно сохранить существующий `resolveRuntimeId()` без изменений: он сначала ищет ID по точному пути расширения в `Default/Secure Preferences`, затем вычисляет runtime ID из `manifest.key`. Для текущего расширения имя каталога `klghhnkeealcohjjanjjdaeeggmfmlpl` не является runtime ID; endpoint должен вернуть результат resolver (текущий ожидаемый runtime ID — `lfoeajgcchlidpicbabpmckkejpckcfb`), а не имя каталога.
+
+Существующий алгоритм `resolveRuntimeId()` не дублировать и не заменять.
+
+В `stAuto0` клиент должен запрашивать ID для каждого конкретного профиля после получения списка профилей и до открытия страницы кошелька. `profile_id` уже сохраняется в нормализованном аккаунте через `MultiManagerClient.normalize_account()` и доступен как `account["profile_id"]`. URL не должен оставаться глобальной константой, зависящей от значения, полученного при импорте модуля.
+
+Логика выбора ID:
+
+1. Начать с встроенного fallback ID.
+2. Запросить новый endpoint с коротким timeout.
+3. При успешном ответе и валидном `id` использовать полученное значение.
+4. При недоступности MM, timeout, сетевой ошибке, HTTP-ошибке или невалидном ответе записать предупреждение без секретов и использовать fallback.
+5. Сформировать URL импорта кошелька только после выбора ID.
+
+Fallback не должен менять существующий API и не должен мешать автономному запуску stAuto0.
 
 ## Затрагиваемые файлы
 
-Основные:
+### MultiManager
 
-- `src/logger/index.js`
-- `src/api/runs.js`
-- `src/api/browser.js`
-- `src/executor/index.js`
-- `src/db/queries.js`
-- `src/api/multi-control.js`
-- `src/multi-control/index.js`
-- `src/multi-control/cdp-manager.js`
+- `src/api/internal.js`
+  - добавить endpoint для runtime ID конкретного профиля;
+  - использовать `extIds[0]` как единственное назначенное расширение;
+  - явно импортировать `getExtensionsDir` и `resolveRuntimeId` из `./extensions`;
+  - импортировать `getBrowserDataDir` из общего модуля `../core/profile-path` (не импортировать его из `./browser`, чтобы не создавать зависимость internal API от browser router);
+  - импортировать `asyncHandler` и фабрики `notFound`, `badRequest`, `serverError` из `./errors`;
+  - обернуть async handler в `asyncHandler`, чтобы ошибки `resolveRuntimeId()` корректно передавались в общий обработчик ошибок;
+  - использовать существующие profile queries, `getExtensionsDir()`, `getBrowserDataDir()` и `resolveRuntimeId()`;
+  - возвращать точные HTTP-статусы:
+    - `notFound('Профиль')` / `404` — профиль не найден;
+    - `badRequest(...)` / `400` — расширение не назначено профилю;
+    - `badRequest(...)` / `400` — runtime ID не определяется;
+    - `badRequest(...)` / `400` — runtime ID не прошел проверку формата;
+  - после `resolveRuntimeId()` валидировать ID на сервере регулярным выражением `/^[a-z]{32}$/`; `resolveRuntimeId()` сам формат не валидирует;
+  - обернуть вызов `resolveRuntimeId()` в `try-catch`: ошибки входных данных возвращать как `badRequest(...)` / `400`, неожиданные filesystem/runtime ошибки — как `serverError(...)` / `500` без stack trace и секретов;
+  - не логировать токены, wallet password или proxy credentials.
 
-Тесты:
+- `src/api/browser.js` и `src/executor/index.js`
+  - не менять существующее использование `extIds[0]`;
+  - сохранить текущий API, security-поведение и передачу `ZERION_ID` в executor.
 
-- существующие unit-тесты для runs/executor/browser/logger;
-- при необходимости новый `tests/unit/logger.test.js`.
+- `tests/unit/internal-profiles.test.js` или отдельный unit-тест internal API
+ - успешное разрешение ID;
+  - профиль не найден;
+  - расширение не назначено;
+  - невалидный JSON в `profile.extensions`;
+  - пустой массив `profile.extensions`;
+  - первый элемент `profile.extensions` не является строкой;
+  - runtime ID не определяется;
+  - регрессия: при каталоге `klghhnkeealcohjjanjjdaeeggmfmlpl` ответом является runtime ID из `Secure Preferences`/`manifest.key`, а не имя каталога;
+  - исключение `resolveRuntimeId()` и unexpected filesystem error;
+  - проверка формата ответа;
+  - мокать `profileQueries.getById()`;
+  - мокать `getExtensionsDir()`;
+  - мокать `getBrowserDataDir()`;
+  - мокать `resolveRuntimeId()`.
 
-GUI менять только если после заполнения `log_file_path` или `error_message` обнаружится несовместимость отображения.
+- `tests/unit/browser-start-await.test.js` и `tests/unit/executor.test.js`
+  - убедиться, что существующие потребители продолжают использовать первое назначенное расширение и не требуют нового helper.
 
-## План реализации
+- `docs/API.md`
+  - описать новый endpoint, параметры, ответ и основные ошибки.
 
-### 1. Фильтрация сырых событий — [x] выполнено
+- `docs/API.en.md` и `docs/API.zh.md`
+  - также описать новый endpoint, чтобы документация API была синхронизирована во всех существующих языковых версиях.
 
-- [x] Не отправлять обычные `input/mouse/keyboard`-события в основной `logger` и `core.log`.
-- [x] Сохранить функциональность обработки событий и WebSocket/CDP-синхронизации; изменить только диагностическое логирование.
-- [x] Ошибки обработки событий, нарушения протокола и итоговые результаты оставить в `core.log`.
-- [x] Для обычного `logger` уровень `debug` должен оставаться выключенным при стандартном `LOG_LEVEL=info`.
-- [x] Сырые клавиши, координаты, scroll-параметры и полные payload событий не логировать даже в debug-режиме: клавиатурный ввод может содержать пароли.
-- [x] В `src/api/multi-control.js:489-496` заменить per-event `info` на безопасную debug-метрику без `event.key`; логика Ctrl+T/Ctrl+W и ошибки сохранить на `info`/`error`.
-- [x] В `src/multi-control/index.js:464` убрать per-event `SENT to slave`; вести агрегированные счётчики по slave/type или писать только ошибки.
-- [x] В `src/multi-control/cdp-manager.js` убрать per-event `info` для `dispatchMouseEvent`; оставить предупреждения об отсутствии соединения и ошибки.
-- [x] Не поднимать профильный logger до debug для сырых событий: фильтрация выполняется на местах вызова.
-- [x] Функциональность обработки событий и WebSocket/CDP-синхронизации не менять.
+### stAuto0
 
-### 2. Безусловное создание run-логов — [x] выполнено
+`stAuto0` — внешний проект в `C:\Users\stalcker\AI\stAuto0`, отдельный git-репозиторий и не часть рабочего дерева MultiManager. Изменения в перечисленных ниже файлах выполняются разработчиком отдельно в этом репозитории; в MultiManager PR/ревью проверяется только API-контракт и серверная часть, а проверка Python-клиента требует доступа к внешнему репозиторию.
 
-- [x] Создавать каталог и файл лога профиля сразу после начала `_executeProfile()`, до `resolveRuntimeId()` и других pre-flight операций.
-- [x] Передавать явный `runId` в связанные функции; `AsyncLocalStorage` не использовать.
-- [x] Использовать безопасное имя файла: заменять символы по регулярному выражению `/[<>:"/\\|?*\x00-\x1F]/g`, удалять точки/пробелы в конце, ограничивать имя 100 символами; при пустом результате использовать `profile_<profile_id>`.
-- [x] Использовать единый путь `logs/runs/<run_id>/<safe_profile_name>.log`.
-- [x] Записывать в файл структурированные строки с этапами:
-  - [x] `profile_preflight_started`;
-  - [x] `runtime_id_resolution` без секретов;
-  - [x] `browser_connection`/`cdp_extension_loading`;
-  - [x] `python_spawn`;
-  - [x] `python_exit`;
-  - [x] `task_status`;
-  - [x] `run_error`.
-- [x] При ошибке `mkdirSync()`/создания stream записывать безопасную ошибку в основной `logger`, а `error_message` и статус задачи обновлять через БД даже без `logPath`; исходное исключение не проглатывать.
+- `C:\Users\stalcker\AI\stAuto0\Core\multimanager.py`
+  - добавить метод `get_zerion_extension_id(profile_id)` с Bearer-auth и `aiohttp.ClientTimeout(total=3)`;
+  - проверять HTTP-статус и формат JSON;
+  - не логировать token или содержимое учетных данных.
 
-### 3. Связь БД с логами — [x] выполнено
+- `C:\Users\stalcker\AI\stAuto0\scripts\init_wallet4browser.py`
+  - убрать формирование `WALLET_URL` на уровне модуля из статического `ZERION_ID`;
+  - получить runtime ID через `MultiManagerClient` для текущего `profile_id`;
+  - применить fallback при недоступности endpoint или невалидном ответе;
+  - формировать URL внутри `init_wallet()` перед `page.goto()`;
+  - сохранить текущую последовательность импорта mnemonic и закрытия браузера.
 
-- [x] После создания log-файла передавать `logPath` во все вызовы `updateRunTaskStatus()` для соответствующих задач, включая `running`, `failed` и итоговые статусы.
-- [x] При ошибке обновлять `run_tasks.error_message` безопасным сообщением.
-- [x] Не перезаписывать более информативную исходную ошибку общей фразой `failed`.
-- [x] Для ошибок до запуска Python указывать фактический этап и причину, например `CDP extension loading: Unexpected server response: 404`.
-- [x] Сохранять корректный статус run/task при ошибках executor, browser и CDP.
+- `C:\Users\stalcker\AI\stAuto0\tests\test_multimanager.py`
+  - тест успешного запроса ID;
+  - тест HTTP-ошибки/невалидного ответа.
 
-### 4. Связь запуска браузера и automation — [x] выполнено
+- тесты `C:\Users\stalcker\AI\stAuto0\scripts\init_wallet4browser.py` не обязательны: добавлять их только если запуск скрипта можно изолировать моками без реального браузера и MultiManager; при чрезмерно сложном мокировании достаточно unit-тестов `MultiManagerClient` и ручной проверки URL/fallback
+  - проверка использования ответа MM;
+  - проверка fallback при недоступности endpoint;
+  - проверка построенного URL.
 
-- [x] Передавать явный `runId` в функции загрузки расширений и CDP-проверок, если профиль запускается в рамках automation.
-- [x] При ручном запуске профиля использовать `runId = null`: писать в профильный лог и БД профиля, не создавать фиктивный automation run.
-- [x] Ошибки `loadExtensionsViaCDP()` не должны запускаться как необрабатываемый fire-and-forget без результата для вызывающего процесса; вызов должен быть `await`/`catch` с записью этапа и причины.
-- [x] Результат загрузки каждого расширения должен быть доступен вызывающему коду и записываться в связанный run/profile log.
-- [x] Сохранить отдельный профильный лог для независимого запуска браузера, но не использовать его как единственный источник ошибки automation.
+## Совместимость и ограничения
 
-### 5. Защита логов и размер файлов — [x] выполнено
+- Endpoint добавляется аддитивно; существующие API-контракты не изменяются.
+- Bearer-auth остается обязательной: internal API уже защищен общим middleware приложения.
+- ID расширения не является секретом, но его не нужно включать в избыточные логи или смешивать с учетными данными.
+- Не менять схему БД: необходимые данные уже находятся в профиле, каталоге расширений и browser data directory.
+- Не менять версию проекта, `CHANGELOG.md` и release-файлы.
+- Не менять контракт и реализацию `POST /api/browser/:id/zerion-login` и автоматического executor-потока в рамках этой задачи: они уже используют первое назначенное расширение и должны сохранить это поведение.
+- Не удалять fallback из `Core/browser.py` в рамках этой задачи: он нужен для автономного режима и является согласованным резервным значением.
+- Не добавлять новую зависимость.
 
-- [x] Не логировать `proxyUrl` целиком в `src/api/browser.js:353`; разрешены только `type`, host, port и `has_auth`.
-- [x] Не логировать `child.env`, аргументы с `--token` или иные структуры, содержащие `MM_TOKEN`.
-- [x] Проверить все новые и изменённые log fields на отсутствие API token, `MM_TOKEN`, wallet password, proxy username/password и master key.
-- [x] В `zerionLogin()` сохранять только `hasPassword`; не логировать значение wallet password.
-- [x] Не выводить командную строку с секретами в лог без маскирования.
-- [x] Добавить зависимость `pino-roll` для ротации основного `core.log`; это единственная новая зависимость задачи и должна быть отражена в `package.json`/lock-файле.
-- [x] Для `core.log` использовать лимит 10 MB на файл и хранить максимум 5 ротированных файлов.
-- [x] Реализовать очистку run-логов без отдельного постоянно работающего процесса:
-  - [x] выполнять очистку при старте приложения;
-  - [x] повторно выполнять её при создании нового run-лога;
-  - [x] удалять файлы и каталоги старше 30 дней;
-  - [x] после очистки удалять самые старые run-логи, пока суммарный размер каталога не станет не более 1 GB;
-  - [x] не удалять активный лог текущего run.
+## Тесты
 
-## Тесты — [x] выполнено
+### Unit
 
-Добавить или обновить проверки:
-
-- [x] run-log создаётся до операции, которая выбрасывает ошибку;
-- [x] искусственная ошибка `resolveRuntimeId()` подтверждает, что run-log уже создан;
-- [x] `run_tasks.log_file_path` заполнен существующим путём;
-- [x] все обновления статуса executor передают `logPath`, если stream создан;
-- [x] ранняя ошибка записывается в `error_message`;
-- [x] CDP 404 попадает в связанный log/error, а executor не теряет rejection;
-- [x] сырые `mouseMoved`, `keyDown`, `keyUp` и аналогичные события не вызывают запись в основной logger даже при debug;
-- [x] безопасные агрегированные multi-control-метрики не содержат key/coords/payload;
-- [x] ошибки обработки input/CDP по-прежнему записываются;
-- [x] секретные значения отсутствуют в логируемых объектах;
-- [x] обычный debug-режим не включает сырые события без явной настройки;
-- [x] существующие тесты запуска профиля, executor и API runs продолжают проходить.
-
-## Ручная проверка
-
-1. Запустить профиль `test` и убедиться, что браузер запускается.
-2. Запустить automation с проектом `test`.
-3. Временно передать в загрузчик расширений несуществующий путь, например `C:\\nonexistent\\extension`, и воспроизвести ошибку CDP extension loading.
-4. Проверить наличие:
-   - `logs/runs/<run_id>/<profile>.log`;
-   - `log_file_path` в API run task;
-   - понятного `error_message`;
-   - `run_id` и `profile_id` в записи ошибки.
-5. Проверить, что `core.log` не содержит новые сырые `mouseMoved`/`keyDown`/`keyUp` записи.
-6. Проверить, что в `core.log`, run-логах и профильных логах нет токенов и credentials.
-7. Проверить обычный GUI-поток и открытие run-лога из интерфейса.
-
-## Проверка разработчиком
+MultiManager:
 
 ```text
 npm test
 npm run lint
 ```
 
-Дополнительно:
+Проверить новый endpoint с моками profile queries и `resolveRuntimeId()`.
 
-- проверить `npm run test:api`, если изменится API runs или internal-runs;
-- убедиться, что изменены только файлы логирования, runs/executor/browser, связанные запросы БД и тесты;
-- не менять схему БД без отдельной необходимости: требуемые `log_file_path` и `error_message` уже существуют;
-- не менять версию проекта и release-файлы.
+stAuto0:
 
-## Ограничения
+```text
+pytest
+```
 
-- Не менять формат запуска stAuto0 и API-контракт без необходимости.
-- Не удалять обработку событий, только убрать их подробную запись из обычного `core.log`.
-- Не использовать `AsyncLocalStorage` для передачи `runId`; контекст передавать явно.
-- Использовать `pino-roll` для ротации `core.log`.
-- Run-логи хранить не более 30 дней и 1 GB суммарно.
-- Не логировать секреты даже в debug-режиме.
-- Не маскировать реальные ошибки общей фразой и не проглатывать rejected promises.
+Проверить `MultiManagerClient` с моками HTTP-сессии: success, timeout/connection error, non-2xx и invalid JSON/ID.
+
+### Ручная проверка
+
+1. Запустить MultiManager и Zerion-профиль с назначенным расширением.
+2. Вызвать `GET /api/internal/profiles/<profile_id>/zerion-extension` с Bearer token и проверить runtime ID.
+3. Запустить `python scripts/init_wallet4browser.py <account>` и убедиться, что переход выполняется на `chrome-extension://<полученный-id>/popup.8e8f209b.html?...`.
+4. Проверить запуск диапазона аккаунтов: для каждого профиля должен использоваться ID, полученный для этого профиля.
+5. Остановить MultiManager или заблокировать endpoint и убедиться, что скрипт не падает из-за запроса и использует встроенный fallback ID.
+6. Проверить, что в логах отсутствуют MM token, mnemonic, wallet password и proxy credentials.
+7. Убедиться, что существующий автоматический запуск и `zerion-login` продолжают работать.
+
+## Критерии готовности
+
+- Для доступного MultiManager `init_wallet4browser.py` использует ID, возвращенный endpoint конкретного профиля.
+- При недоступном endpoint используется `klghhnkeealcohjjanjjdaeeggmfmlpl`, и сценарий продолжает работу.
+- Неверный ответ endpoint не приводит к открытию URL с `None`, пустым значением или произвольной строкой.
+- Сервер валидирует runtime ID до отправки ответа клиенту регулярным выражением `/^[a-z]{32}$/`; клиент также проверяет формат перед использованием и применяет fallback при невалидном значении.
+- Новый endpoint требует Bearer-auth и не раскрывает секретные поля.
+- Unit-тесты и lint проходят в MultiManager, тесты stAuto0 проходят.
+- Изменения ограничены перечисленными файлами и не требуют миграции БД.
