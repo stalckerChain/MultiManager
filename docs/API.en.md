@@ -376,6 +376,15 @@ Delete all profile cookies.
 
 Start browser. Automatically checks proxy if assigned. Browser launches with anti-detect args: `--fingerprint-timezone` (timezone from GeoIP proxy, fallback — profile), `--lang=en-US`, `--no-first-run`, `--no-default-browser-check`. On `ERR_ADDRESS_IN_USE` error, automatically retries up to 3 times.
 
+**Optional request body:**
+```json
+{
+  "run_id": "run-123"
+}
+```
+
+`run_id` — automation run identifier. When provided, extension loading stages (`browser_connection`, `cdp_extension_loading`) and failures are written to the linked run log (`logs/runs/<run_id>/<profile>.log`). Omitting `run_id` (manual profile launch) keeps those stages out of a run log. Contains no secrets. The automation client (e.g. `stAuto0`, which receives `--run-id` from the executor) is expected to pass it in this body.
+
 **Response (200):**
 ```json
 {

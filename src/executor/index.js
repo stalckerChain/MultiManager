@@ -205,7 +205,11 @@ class RunExecutor {
     let logStream;
     try {
       logStream = fs.createWriteStream(filePath, { flags: 'a' });
-      logStream.on('error', () => {});
+      logStream.on('error', (err) => {
+        if (this.options.logger) {
+          this.options.logger.warn({ err: err.message, profileId, runId: this.run.id }, 'Run log stream error');
+        }
+      });
       child = this.options.spawn(this.options.pythonPath, args, {
         cwd: this.options.stAuto0Path,
         stdio: ['ignore', 'pipe', 'pipe'],

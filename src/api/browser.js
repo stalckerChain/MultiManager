@@ -486,8 +486,12 @@ router.post('/:id/start', asyncHandler(async (req, res) => {
   }
 
   if (enabledExtPaths.length > 0) {
+    // run_id из тела запроса обязателен при запуске в рамках automation (POST /api/runs/:id/start):
+    // automation-клиент (stAuto0) передаёт его в body, т.к. получает --run-id от executor.
+    // При ручном запуске run_id = null — этапы CDP не дублируются в run-лог.
+    const runId = req.body?.run_id || req.query?.run_id || null;
     try {
-      await loadExtensionsViaCDP(req.params.id, req.body?.run_id || null, enabledExtPaths, logQueries, profileLogger, profile.name);
+      await loadExtensionsViaCDP(req.params.id, runId, enabledExtPaths, logQueries, profileLogger, profile.name);
     } catch (err) {
       profileLogger.error({ profileId: req.params.id, error: err.message }, 'CDP extension loading failed');
       logQueries.add(req.params.id, 'error', `CDP extension loading failed: ${err.message}`);

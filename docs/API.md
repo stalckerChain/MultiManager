@@ -391,6 +391,17 @@ Authorization: Bearer <token>
 
 Запустить браузер. Автоматически проверяет прокси (если привязан). Браузер запускается с антидетект-аргументами: `--fingerprint-timezone` (timezone из GeoIP прокси, фоллбэк — профиль), `--lang=en-US`, `--no-first-run`, `--no-default-browser-check`. При ошибке `ERR_ADDRESS_IN_USE` автоматически повторяет запуск до 3 раз.
 
+**Тело запроса (опционально):**
+```json
+{
+  "run_id": "run-123"
+}
+```
+
+`run_id` — идентификатор automation-run. Если передан, этапы загрузки расширений через CDP (`browser_connection`, `cdp_extension_loading`) и отдельные ошибки записываются в связанный run-лог (`logs/runs/<run_id>/<profile>.log`). Без `run_id` те же этапы не дублируются в run-лог (ручной запуск профиля). Не содержит секретов.
+
+Передавать `run_id` должен automation-клиент (например `stAuto0`, который получает `--run-id` от executor).
+
 **Ответ (200):**
 ```json
 {
