@@ -230,7 +230,7 @@ router.post('/start', async (req, res) => {
   try {
     cdpManager.onEvent = (profileId, event, sessionId) => {
       if (profileId === masterId && controller.active) {
-        logger.info({
+        logger.debug({
           eventType: event.type,
           sessionId,
           activeMasterTab: controller.activeMasterTab,
@@ -486,9 +486,8 @@ router.post('/os-keyboard', async (req, res) => {
 
   const event = req.body;
 
-  logger.info({
+  logger.debug({
     type: event.type,
-    key: event.key,
     activeMasterTab: controller.activeMasterTab,
     tabMappingSize: controller.tabMapping.size,
     hasActiveMapping: controller.activeMasterTab ? controller.tabMapping.has(controller.activeMasterTab) : false,

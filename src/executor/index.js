@@ -2,6 +2,7 @@ const path = require('path');
 const fs = require('fs');
 const { getExtensionsDir, resolveRuntimeId } = require('../api/extensions');
 const { getBrowserDataDir } = require('../core/profile-path');
+const { appendRunStage, resolveRunLogPath, cleanupRunLogs } = require('../logger');
 
 class RunExecutor {
   static instances = new Map();
@@ -39,13 +40,23 @@ class RunExecutor {
         await Promise.race(running);
       }
 
-      const promise = this._executeProfile(profileId, profileTasks).catch((err) => {
+      const promise = this._executeProfile(profileId, profileTasks).catch(async (err) => {
         if (this.options.logger) {
           this.options.logger.error({ err: err.message, profileId }, 'Profile execution failed');
         }
+        const live = await this.options.getRunTasks();
         for (const task of profileTasks) {
-          if (task.status === 'running' || task.status === 'pending') {
-            this.options.updateRunTaskStatus(task.id, 'failed');
+          const current = live.find(t => t.id === task.id);
+          const stillActive = !current || current.status === 'running' || current.status === 'pending';
+          if (stillActive) {
+            this.options.updateRunTaskStatus(
+              task.id,
+              'failed',
+              null,
+              (current && current.log_file_path) || null,
+              null,
+              current && current.error_message ? null : `Profile execution failed: ${err.message}`
+            );
           }
         }
       }).finally(() => {
@@ -76,7 +87,14 @@ class RunExecutor {
         // Some tasks never reported back — mark remaining as failed
         for (const task of tasks) {
           if (task.status === 'running' || task.status === 'pending') {
-            this.options.updateRunTaskStatus(task.id, 'failed');
+            this.options.updateRunTaskStatus(
+              task.id,
+              'failed',
+              null,
+              task.log_file_path || null,
+              null,
+              task.error_message ? null : 'Run finalization: task did not report back'
+            );
           }
         }
         this.options.updateRun(this.run.id, 'partial', new Date().toISOString());
@@ -85,15 +103,47 @@ class RunExecutor {
   }
 
   async _executeProfile(profileId, tasks) {
-    for (const task of tasks) {
-      await this.options.updateRunTaskStatus(task.id, 'running');
-      task.status = 'running';
-    }
-
     const profile = this.options.getProfileById
       ? await this.options.getProfileById(profileId)
       : null;
     const profileName = profile ? profile.name : profileId;
+
+    // Безусловное создание run-лога ДО любых pre-flight операций (resolveRuntimeId
+    // и spawn находятся ниже), чтобы ранние ошибки не терялись.
+    let runLog = null;
+    try {
+      runLog = resolveRunLogPath(this.run.id, profileName, profileId);
+      fs.mkdirSync(runLog.dir, { recursive: true });
+      appendRunStage(runLog.filePath, 'profile_preflight_started', {
+        runId: this.run.id,
+        profileId,
+        profileName,
+      });
+      // Ротация размера/возраста run-логов при создании нового лога.
+      cleanupRunLogs({ activeRunId: this.run.id });
+    } catch (err) {
+      if (this.options.logger) {
+        this.options.logger.error({ err: err.message, runId: this.run.id, profileId }, 'Failed to create run log');
+      }
+      throw err;
+    }
+
+    const filePath = runLog.filePath;
+    const setTaskStatus = (taskId, status, errorMessage) => {
+      return this.options.updateRunTaskStatus(taskId, status, null, runLog ? filePath : null, null, errorMessage ? String(errorMessage) : null);
+    };
+
+    for (const task of tasks) {
+      await setTaskStatus(task.id, 'running');
+      task.status = 'running';
+      appendRunStage(filePath, 'task_status', {
+        runId: this.run.id,
+        profileId,
+        taskId: task.id,
+        projectName: task.project_name,
+        status: 'running',
+      });
+    }
 
     const projectNames = tasks.map(t => t.project_name).join(',');
     const nameMatch = profileName.match(/\d+$/);
@@ -109,10 +159,10 @@ class RunExecutor {
       `--port=${this.options.mmPort}`,
     ];
 
-    // Pass Zerion extension ID from profile's extensions field
+    // Zerion extension ID — из профайловых extensions (не логируем секреты).
     let zerionId = '';
-    if (profile && profile.extensions) {
-      try {
+    try {
+      if (profile && profile.extensions) {
         const extensions = JSON.parse(profile.extensions);
         if (Array.isArray(extensions) && extensions.length > 0) {
           const folderName = extensions[0];
@@ -122,16 +172,23 @@ class RunExecutor {
           const runtimeId = await resolveRuntimeId(extPath, profileDir);
           if (runtimeId) zerionId = runtimeId;
         }
-      } catch (e) {
-        // ignore parse errors
       }
+      appendRunStage(filePath, 'runtime_id_resolution', {
+        runId: this.run.id,
+        profileId,
+        hasZerionId: !!zerionId,
+      });
+    } catch (e) {
+      if (this.options.logger) {
+        this.options.logger.warn({ err: e.message, profileId }, 'Runtime ID resolution failed');
+      }
+      appendRunStage(filePath, 'runtime_id_resolution', {
+        runId: this.run.id,
+        profileId,
+        hasZerionId: false,
+        error: e.message,
+      });
     }
-
-    const projectRoot = path.resolve(__dirname, '..', '..');
-    const logDir = path.join(projectRoot, 'logs', 'runs', this.run.id);
-    fs.mkdirSync(logDir, { recursive: true });
-    const logPath = path.join(logDir, `${profileName}.log`);
-    const logStream = fs.createWriteStream(logPath, { flags: 'a' });
 
     if (this.options.logger) {
       this.options.logger.info({
@@ -145,19 +202,24 @@ class RunExecutor {
     }
 
     let child;
+    let logStream;
     try {
+      logStream = fs.createWriteStream(filePath, { flags: 'a' });
+      logStream.on('error', () => {});
       child = this.options.spawn(this.options.pythonPath, args, {
         cwd: this.options.stAuto0Path,
         stdio: ['ignore', 'pipe', 'pipe'],
         env: { ...process.env, MM_TOKEN: this.options.apiToken, ...(zerionId ? { ZERION_ID: zerionId } : {}) },
       });
+      appendRunStage(filePath, 'python_spawn', { runId: this.run.id, profileId });
     } catch (err) {
-      logStream.end();
+      appendRunStage(filePath, 'run_error', { runId: this.run.id, profileId, phase: 'python_spawn', error: err.message });
+      if (logStream) logStream.end();
       if (this.options.logger) {
         this.options.logger.error({ err: err.message, profileId, pythonPath: this.options.pythonPath }, 'Failed to spawn Python process');
       }
       for (const task of tasks) {
-        this.options.updateRunTaskStatus(task.id, 'failed');
+        await setTaskStatus(task.id, 'failed', `Python spawn: ${err.message}`);
       }
       throw err;
     }
@@ -170,12 +232,13 @@ class RunExecutor {
       child.on('error', (err) => {
         logStream.end();
         this.processes.delete(profileId);
+        appendRunStage(filePath, 'run_error', { runId: this.run.id, profileId, phase: 'python_exit', error: err.message });
         if (this.options.logger) {
           this.options.logger.error({ err: err.message, profileId, code: err.code }, 'Child process error');
         }
         for (const task of tasks) {
           if (task.status === 'running') {
-            this.options.updateRunTaskStatus(task.id, 'failed');
+            setTaskStatus(task.id, 'failed', `Python process error: ${err.message}`);
           }
         }
         reject(err);
@@ -184,6 +247,7 @@ class RunExecutor {
       child.on('close', async (code) => {
         logStream.end();
         this.processes.delete(profileId);
+        appendRunStage(filePath, 'python_exit', { runId: this.run.id, profileId, code });
         if (this.options.logger) {
           this.options.logger.info({ code, profileId, profileName }, 'Child process exited');
         }
@@ -193,7 +257,7 @@ class RunExecutor {
         let failedCount = 0;
         for (const task of updatedTasks) {
           if (task.status === 'running') {
-            this.options.updateRunTaskStatus(task.id, 'failed');
+            setTaskStatus(task.id, 'failed', `Process exited with code ${code} but task did not finish`);
             failedCount++;
           }
         }
@@ -207,10 +271,10 @@ class RunExecutor {
 
   cancel() {
     this._cancelled = true;
-    for (const [profileId, child] of this.processes) {
+    for (const [, child] of this.processes) {
       try {
         child.kill();
-      } catch (e) {
+      } catch {
         // ignore
       }
     }

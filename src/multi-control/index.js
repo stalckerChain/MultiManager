@@ -290,7 +290,7 @@ class MultiController {
   async onKeyDown(params) {
     if (!this.active || !this.cdp) return;
     if (params.ctrlKey && ['t', 'n', 'w'].includes((params.key || '').toLowerCase())) {
-      logger.debug({ key: params.key, ctrlKey: params.ctrlKey }, 'MC-KEY: Ctrl+W/T/N blocked from CDP forwarding (handled by browserAction or OS hook)');
+      logger.debug({ ctrlKey: params.ctrlKey }, 'MC-KEY: Ctrl+W/T/N blocked from CDP forwarding (handled by browserAction or OS hook)');
       return;
     }
     for (const [id] of this.slaves) {
@@ -430,13 +430,6 @@ class MultiController {
       logger.warn('Multi-control: _broadcastMouse called but cdp is null');
       return;
     }
-    logger.info({
-      type,
-      x: params.x,
-      y: params.y,
-      slaveCount: this.slaves.size,
-      masterId: this.masterId,
-    }, 'Multi-control: BROADCAST to slaves');
     const masterScrollX = params.scrollX || 0;
     const masterScrollY = params.scrollY || 0;
     for (const [id] of this.slaves) {
@@ -461,7 +454,6 @@ class MultiController {
             deltaY: params.deltaY,
           });
         }
-        logger.info({ slaveId: id, type, coords }, 'Multi-control: SENT to slave');
       } catch (err) {
         logger.error(`Multi-control: mouse error slave ${id}`, { error: err.message });
       }

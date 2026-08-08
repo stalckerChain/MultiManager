@@ -101,7 +101,7 @@ function createRunsRouter(opts = {}) {
       spawn,
       logger,
       getRunTasks: () => Promise.resolve(getRunTasks().getByRunId(run.id)),
-      updateRunTaskStatus: (taskId, status) => getRunTasks().updateStatus(taskId, status),
+      updateRunTaskStatus: (taskId, status, exitCode, logPath, attempts, errorMessage) => getRunTasks().updateStatus(taskId, status, exitCode, logPath, attempts, errorMessage),
       updateRun: (id, status, completedAt) => getRuns().updateStatus(id, status, null, completedAt),
       incrementRun: (id, success) => getRuns().incrementCompleted(id, success),
       getProfileById: (id) => Promise.resolve(profileQueries.getById(id)),

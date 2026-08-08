@@ -7,7 +7,7 @@ const { getDatabase, createProfileQueries, createProxyQueries, createLogQueries 
 const { checkProxy, rotateProxy, getTimezoneByIp } = require('../proxy');
 const { injectCookies } = require('../cookie/inject');
 const { getBrowserDataDir, getExtensionsFromProfileDir } = require('../core/profile-path');
-const { logger, createProfileLogger } = require('../logger');
+const { logger, createProfileLogger, appendRunStage, resolveRunLogPath } = require('../logger');
 const { broadcastStatus } = require('../core/websocket');
 const { getExtensionsDir, getManifest, resolveMSG, resolveRuntimeId } = require('./extensions');
 const { humanType } = require('../typing');
@@ -193,8 +193,20 @@ function waitForCdpPort(profileId, timeout = 15000) {
   });
 }
 
-async function loadExtensionsViaCDP(profileId, extPaths, logQueries, profileLogger) {
+async function loadExtensionsViaCDP(profileId, runId, extPaths, logQueries, profileLogger, profileName) {
   let ws;
+
+  // Если профиль запускается в рамках automation — дублируем этап в связанный
+  // run-лог. При ручном запуске runId = null и run-лог не создаётся.
+  const runLog = runId ? resolveRunLogPath(runId, profileName || profileId, profileId) : null;
+  const logRun = (stage, data) => {
+    if (!runLog) return;
+    try {
+      fs.mkdirSync(runLog.dir, { recursive: true });
+    } catch { /* ignore */ }
+    appendRunStage(runLog.filePath, stage, { runId, profileId, ...data });
+  };
+
   try {
     const port = await waitForCdpPort(profileId);
     const wsUrl = await cdp.discoverWsUrl(port);
@@ -218,19 +230,25 @@ async function loadExtensionsViaCDP(profileId, extPaths, logQueries, profileLogg
         if (result?.result?.value?.ok) {
           logQueries.add(profileId, 'info', `Extension loaded via CDP: ${path.basename(extPath)}`);
           profileLogger.info({ profileId, extPath }, 'Extension loaded via CDP');
+          logRun('cdp_extension_loading', { ok: true, extension: path.basename(extPath) });
         } else {
           const errorDetail = result?.result?.value?.error
             || result?.exceptionDetails?.text
             || result?.exceptionDetails?.exception?.description
             || 'unknown';
           logQueries.add(profileId, 'warn', `CDP load failed: ${errorDetail}`);
+          logRun('cdp_extension_loading', { ok: false, extension: path.basename(extPath), error: errorDetail });
         }
       } catch (err) {
         logQueries.add(profileId, 'warn', `CDP load error: ${err.message}`);
+        logRun('cdp_extension_loading', { ok: false, extension: path.basename(extPath), error: err.message });
       }
     }
+    logRun('browser_connection', { status: 'connected', extensionCount: extPaths.length });
   } catch (err) {
     profileLogger.warn({ profileId, error: err.message }, 'CDP extension loading unavailable');
+    logRun('browser_connection', { status: 'error', error: err.message });
+    throw new Error(`CDP extension loading: ${err.message}`);
   } finally {
     if (ws) ws.close();
   }
@@ -350,7 +368,13 @@ router.post('/:id/start', asyncHandler(async (req, res) => {
         ? `${proxy.type}://${proxy.username}:${proxy.password}@${proxy.host}:${proxy.port}`
         : `${proxy.type}://${proxy.host}:${proxy.port}`;
       args.push(`--proxy-server=${proxyUrl}`);
-      profileLogger.info({ profileId: req.params.id, proxyUrl }, 'Прокси применён');
+      profileLogger.info({
+        profileId: req.params.id,
+        proxyType: proxy.type,
+        host: proxy.host,
+        port: proxy.port,
+        hasAuth: !!proxy.username,
+      }, 'Прокси применён');
     }
   }
 
@@ -462,7 +486,12 @@ router.post('/:id/start', asyncHandler(async (req, res) => {
   }
 
   if (enabledExtPaths.length > 0) {
-    loadExtensionsViaCDP(req.params.id, enabledExtPaths, logQueries, profileLogger);
+    try {
+      await loadExtensionsViaCDP(req.params.id, req.body?.run_id || null, enabledExtPaths, logQueries, profileLogger, profile.name);
+    } catch (err) {
+      profileLogger.error({ profileId: req.params.id, error: err.message }, 'CDP extension loading failed');
+      logQueries.add(req.params.id, 'error', `CDP extension loading failed: ${err.message}`);
+    }
   }
 
   let cdpPort = null;

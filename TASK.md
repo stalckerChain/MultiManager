@@ -1,213 +1,162 @@
-# TASK — Проверка `--fingerprint-storage-quota`
+# TASK — Исправить логирование automation и исключить сырые input/mouse-события
 
-## Цель текущей итерации
+## Цель
 
-Проверить гипотезу, что BrowserScan показывает:
+Сделать диагностику запуска automation полной и пригодной для расследования ошибок:
+
+- каждый запуск automation должен иметь связанный лог;
+- ранние ошибки не должны теряться до создания log-файла;
+- ошибки профиля, CDP и Python должны быть связаны с `run_id` и `profile_id`;
+- путь к логу и текст ошибки должны отображаться через API/GUI;
+- сырые `input/mouse`-события не должны записываться в обычный `core.log`;
+- секреты не должны попадать ни в один лог.
+
+## Наблюдаемая проблема
+
+Для профиля `test` браузер запускался, но automation-log отсутствовал. В профильном логе была запись:
 
 ```text
-Скрытый режим: Да
-штраф -10%
+CDP extension loading unavailable: Unexpected server response: 404
 ```
 
-из-за нормализованного CloakBrowser storage quota.
+При этом в `run_tasks` не было полезного `error_message`, а `log_file_path` не был заполнен. Ошибка возникала в цепочке запуска профиля/расширения отдельно от executor и не была связана с automation run.
 
-В актуальной документации CloakBrowser указано, что `--fingerprint-storage-quota=<MB>` изменяет значения Storage API и предназначен для detector-ов, которые определяют incognito/private mode по quota. BrowserScan прямо указан в документации CloakBrowser как пример такого detector-а.
+`core.log` также содержит большой объём сырых событий вида `CDP: Input.dispatchMouseEvent` и `OS-KEYBOARD`, из-за чего файл достиг размера порядка 145 MB и затрудняет поиск ошибок.
 
-Это изолированный A/B-эксперимент, а не окончательное решение всей fingerprint-модели.
+## Затрагиваемые файлы
 
-## Сделать сейчас
+Основные:
 
-### 1. Изменить launch args MM
-
-Затрагиваемый файл:
-
+- `src/logger/index.js`
+- `src/api/runs.js`
 - `src/api/browser.js`
+- `src/executor/index.js`
+- `src/db/queries.js`
+- `src/api/multi-control.js`
+- `src/multi-control/index.js`
+- `src/multi-control/cdp-manager.js`
 
-В массив `args` добавить ровно один аргумент:
+Тесты:
 
-```js
-'--fingerprint-storage-quota=10240',
-```
+- существующие unit-тесты для runs/executor/browser/logger;
+- при необходимости новый `tests/unit/logger.test.js`.
 
-Рекомендуемое место — после:
+GUI менять только если после заполнения `log_file_path` или `error_message` обнаружится несовместимость отображения.
 
-```js
-`--fingerprint-timezone=${timezone}`,
-```
+## План реализации
 
-Итоговый фрагмент должен содержать:
+### 1. Фильтрация сырых событий — [x] выполнено
 
-```js
-const args = [
-  '--remote-debugging-port=0',
-  '--fingerprint=' + profile.fingerprint_seed,
-  '--resolution=' + profile.screen_resolution,
-  '--cores=' + profile.hardware_cores,
-  '--memory=' + profile.hardware_memory,
-  `--user-data-dir=${userDataDir}`,
-  '--lang=en-US',
-  '--no-first-run',
-  '--no-default-browser-check',
-  `--fingerprint-timezone=${timezone}`,
-  '--fingerprint-storage-quota=10240',
-];
-```
+- [x] Не отправлять обычные `input/mouse/keyboard`-события в основной `logger` и `core.log`.
+- [x] Сохранить функциональность обработки событий и WebSocket/CDP-синхронизации; изменить только диагностическое логирование.
+- [x] Ошибки обработки событий, нарушения протокола и итоговые результаты оставить в `core.log`.
+- [x] Для обычного `logger` уровень `debug` должен оставаться выключенным при стандартном `LOG_LEVEL=info`.
+- [x] Сырые клавиши, координаты, scroll-параметры и полные payload событий не логировать даже в debug-режиме: клавиатурный ввод может содержать пароли.
+- [x] В `src/api/multi-control.js:489-496` заменить per-event `info` на безопасную debug-метрику без `event.key`; логика Ctrl+T/Ctrl+W и ошибки сохранить на `info`/`error`.
+- [x] В `src/multi-control/index.js:464` убрать per-event `SENT to slave`; вести агрегированные счётчики по slave/type или писать только ошибки.
+- [x] В `src/multi-control/cdp-manager.js` убрать per-event `info` для `dispatchMouseEvent`; оставить предупреждения об отсутствии соединения и ошибки.
+- [x] Не поднимать профильный logger до debug для сырых событий: фильтрация выполняется на местах вызова.
+- [x] Функциональность обработки событий и WebSocket/CDP-синхронизации не менять.
 
-### 2. Удалить предыдущий экспериментальный флаг
+### 2. Безусловное создание run-логов — [x] выполнено
 
-Если в рабочем коде или незакоммиченных изменениях присутствует:
+- [x] Создавать каталог и файл лога профиля сразу после начала `_executeProfile()`, до `resolveRuntimeId()` и других pre-flight операций.
+- [x] Передавать явный `runId` в связанные функции; `AsyncLocalStorage` не использовать.
+- [x] Использовать безопасное имя файла: заменять символы по регулярному выражению `/[<>:"/\\|?*\x00-\x1F]/g`, удалять точки/пробелы в конце, ограничивать имя 100 символами; при пустом результате использовать `profile_<profile_id>`.
+- [x] Использовать единый путь `logs/runs/<run_id>/<safe_profile_name>.log`.
+- [x] Записывать в файл структурированные строки с этапами:
+  - [x] `profile_preflight_started`;
+  - [x] `runtime_id_resolution` без секретов;
+  - [x] `browser_connection`/`cdp_extension_loading`;
+  - [x] `python_spawn`;
+  - [x] `python_exit`;
+  - [x] `task_status`;
+  - [x] `run_error`.
+- [x] При ошибке `mkdirSync()`/создания stream записывать безопасную ошибку в основной `logger`, а `error_message` и статус задачи обновлять через БД даже без `logPath`; исходное исключение не проглатывать.
 
-```text
---unlimited-storage
-```
+### 3. Связь БД с логами — [x] выполнено
 
-его необходимо удалить. Одновременно использовать `--unlimited-storage` и `--fingerprint-storage-quota=10240` нельзя: эксперимент должен проверять только один новый фактор.
+- [x] После создания log-файла передавать `logPath` во все вызовы `updateRunTaskStatus()` для соответствующих задач, включая `running`, `failed` и итоговые статусы.
+- [x] При ошибке обновлять `run_tasks.error_message` безопасным сообщением.
+- [x] Не перезаписывать более информативную исходную ошибку общей фразой `failed`.
+- [x] Для ошибок до запуска Python указывать фактический этап и причину, например `CDP extension loading: Unexpected server response: 404`.
+- [x] Сохранять корректный статус run/task при ошибках executor, browser и CDP.
 
-### 3. Сохранить без изменений
+### 4. Связь запуска браузера и automation — [x] выполнено
 
-Следующие текущие аргументы и значения не менять:
+- [x] Передавать явный `runId` в функции загрузки расширений и CDP-проверок, если профиль запускается в рамках automation.
+- [x] При ручном запуске профиля использовать `runId = null`: писать в профильный лог и БД профиля, не создавать фиктивный automation run.
+- [x] Ошибки `loadExtensionsViaCDP()` не должны запускаться как необрабатываемый fire-and-forget без результата для вызывающего процесса; вызов должен быть `await`/`catch` с записью этапа и причины.
+- [x] Результат загрузки каждого расширения должен быть доступен вызывающему коду и записываться в связанный run/profile log.
+- [x] Сохранить отдельный профильный лог для независимого запуска браузера, но не использовать его как единственный источник ошибки automation.
 
-- `--fingerprint=<profile.fingerprint_seed>`;
-- `--resolution=<profile.screen_resolution>`;
-- `--cores=<profile.hardware_cores>`;
-- `--memory=<profile.hardware_memory>`;
-- `--user-data-dir=<userDataDir>`;
-- `--lang=en-US`;
-- `--no-first-run`;
-- `--no-default-browser-check`;
-- `--fingerprint-timezone=<timezone>`;
-- proxy args;
-- extensions;
-- remote debugging;
-- persistent profile logic;
-- cookie injection.
+### 5. Защита логов и размер файлов — [x] выполнено
 
-Seed профиля не менять, не регенерировать и не преобразовывать. Профиль должен запускаться с тем же fingerprint, чтобы сравнение с предыдущим BrowserScan было корректным.
+- [x] Не логировать `proxyUrl` целиком в `src/api/browser.js:353`; разрешены только `type`, host, port и `has_auth`.
+- [x] Не логировать `child.env`, аргументы с `--token` или иные структуры, содержащие `MM_TOKEN`.
+- [x] Проверить все новые и изменённые log fields на отсутствие API token, `MM_TOKEN`, wallet password, proxy username/password и master key.
+- [x] В `zerionLogin()` сохранять только `hasPassword`; не логировать значение wallet password.
+- [x] Не выводить командную строку с секретами в лог без маскирования.
+- [x] Добавить зависимость `pino-roll` для ротации основного `core.log`; это единственная новая зависимость задачи и должна быть отражена в `package.json`/lock-файле.
+- [x] Для `core.log` использовать лимит 10 MB на файл и хранить максимум 5 ротированных файлов.
+- [x] Реализовать очистку run-логов без отдельного постоянно работающего процесса:
+  - [x] выполнять очистку при старте приложения;
+  - [x] повторно выполнять её при создании нового run-лога;
+  - [x] удалять файлы и каталоги старше 30 дней;
+  - [x] после очистки удалять самые старые run-логи, пока суммарный размер каталога не станет не более 1 GB;
+  - [x] не удалять активный лог текущего run.
 
-## Тесты
+## Тесты — [x] выполнено
 
-Затрагиваемый файл:
+Добавить или обновить проверки:
 
-- `tests/unit/browser-start-await.test.js`
-
-Добавить или обновить проверку, что launch args содержат:
-
-```text
---fingerprint-storage-quota=10240
-```
-
-Проверить также:
-
-- есть `--fingerprint=`;
-- нет `--fingerprint-seed=`;
-- нет ручного `--user-agent`;
-- нет `--unlimited-storage`.
-
-Не добавлять тесты, которые требуют запуска реального BrowserScan или внешнего прокси.
+- [x] run-log создаётся до операции, которая выбрасывает ошибку;
+- [x] искусственная ошибка `resolveRuntimeId()` подтверждает, что run-log уже создан;
+- [x] `run_tasks.log_file_path` заполнен существующим путём;
+- [x] все обновления статуса executor передают `logPath`, если stream создан;
+- [x] ранняя ошибка записывается в `error_message`;
+- [x] CDP 404 попадает в связанный log/error, а executor не теряет rejection;
+- [x] сырые `mouseMoved`, `keyDown`, `keyUp` и аналогичные события не вызывают запись в основной logger даже при debug;
+- [x] безопасные агрегированные multi-control-метрики не содержат key/coords/payload;
+- [x] ошибки обработки input/CDP по-прежнему записываются;
+- [x] секретные значения отсутствуют в логируемых объектах;
+- [x] обычный debug-режим не включает сырые события без явной настройки;
+- [x] существующие тесты запуска профиля, executor и API runs продолжают проходить.
 
 ## Ручная проверка
 
-Проверять на том же MM-профиле и по возможности с тем же прокси, на котором был результат `80%`.
+1. Запустить профиль `test` и убедиться, что браузер запускается.
+2. Запустить automation с проектом `test`.
+3. Временно передать в загрузчик расширений несуществующий путь, например `C:\\nonexistent\\extension`, и воспроизвести ошибку CDP extension loading.
+4. Проверить наличие:
+   - `logs/runs/<run_id>/<profile>.log`;
+   - `log_file_path` в API run task;
+   - понятного `error_message`;
+   - `run_id` и `profile_id` в записи ошибки.
+5. Проверить, что `core.log` не содержит новые сырые `mouseMoved`/`keyDown`/`keyUp` записи.
+6. Проверить, что в `core.log`, run-логах и профильных логах нет токенов и credentials.
+7. Проверить обычный GUI-поток и открытие run-лога из интерфейса.
 
-1. Полностью остановить старый процесс CloakBrowser.
-2. Запустить профиль MM заново, чтобы новый аргумент попал в командную строку процесса.
-3. Открыть `chrome://version`.
-4. Убедиться, что в `Command Line` присутствует:
-
-```text
---fingerprint-storage-quota=10240
-```
-
-5. Проверить через DevTools Console:
-
-```js
-await navigator.storage.estimate();
-```
-
-6. Зафиксировать `quota` и `usage`.
-7. Повторно открыть `https://www.browserscan.net/ru`.
-8. Зафиксировать:
-
-- общий процент подлинности;
-- наличие или отсутствие `Скрытый режим -10%`;
-- WebGL penalty;
-- Audio penalty;
-- значение Audio;
-- WebGL vendor/renderer;
-- quota из `navigator.storage.estimate()`.
-
-Нельзя сравнивать результат с новым профилем или новым seed: это нарушит A/B-сравнение.
-
-## Проверка результата разработчиком
-
-Выполнить:
+## Проверка разработчиком
 
 ```text
 npm test
 npm run lint
 ```
 
-Также проверить, что изменены только необходимые файлы текущей задачи:
+Дополнительно:
 
-- `src/api/browser.js`;
-- `tests/unit/browser-start-await.test.js`;
-- при необходимости только связанные с тестом файлы.
+- проверить `npm run test:api`, если изменится API runs или internal-runs;
+- убедиться, что изменены только файлы логирования, runs/executor/browser, связанные запросы БД и тесты;
+- не менять схему БД без отдельной необходимости: требуемые `log_file_path` и `error_message` уже существуют;
+- не менять версию проекта и release-файлы.
 
-Не изменять версию проекта и release-файлы.
+## Ограничения
 
-## Не делать сейчас
-
-- Не изменять `stAuto0` и legacy-режим.
-- Не сравнивать бинарники и wrapper-версии.
-- Не добавлять `--unlimited-storage`.
-- Не добавлять `--fingerprint-storage-quota` с другим значением параллельно.
-- Не добавлять `--fingerprint-gpu-vendor`.
-- Не добавлять `--fingerprint-gpu-renderer`.
-- Не добавлять `--fingerprint-hardware-concurrency`.
-- Не добавлять `--fingerprint-device-memory`.
-- Не добавлять `--fingerprint-screen-width` и `--fingerprint-screen-height`.
-- Не добавлять `--fingerprint-brand` и `--fingerprint-brand-version`.
-- Не добавлять `--fingerprint-platform`.
-- Не добавлять `--fingerprint-webrtc-ip`.
-- Не добавлять `--fingerprint-noise=false`.
-- Не использовать `--fingerprint=off`.
-- Не менять старые `--resolution`, `--cores`, `--memory`.
-- Не менять WebGL, Audio, Canvas, Renderer, GPU или Client Hints вручную.
-- Не вызывать `navigator.storage.persist()` как исправление.
-- Не менять БД, API, seed профиля или persistent profile logic.
-
-## Интерпретация результата
-
-### Если штраф `Скрытый режим -10%` исчез
-
-Считать гипотезу storage quota подтвержденной. В отчете указать:
-
-- старый и новый `quota`;
-- старый и новый BrowserScan result;
-- изменились ли WebGL и Audio.
-
-Окончательное решение о постоянном использовании `10240` принимать отдельной задачей после проверки влияния на остальные сигналы.
-
-### Если quota изменилась, но штраф остался
-
-Считать, что BrowserScan использует дополнительный incognito-сигнал. Не добавлять другие флаги. Следующий этап должен быть отдельной диагностикой persistent storage и BrowserScan-specific checks.
-
-### Если quota не изменилась
-
-Проверить фактическую командную строку и версию бинарника. Если аргумент присутствует, но не работает, зафиксировать, что установленный Chromium/CloakBrowser не поддерживает этот флаг в текущей версии.
-
-### Если изменились WebGL или Audio
-
-Зафиксировать значения и не вносить дополнительные fingerprint-изменения. Это означает, что storage-флаг влияет на общий fingerprint-профиль или detector оценивает связанные параметры.
-
-## Критерии готовности
-
-- В MM добавлен только `--fingerprint-storage-quota=10240`.
-- `--unlimited-storage` отсутствует.
-- Seed и все остальные параметры запуска сохранены.
-- Добавлена unit-проверка аргумента.
-- `npm test` проходит.
-- `npm run lint` проходит.
-- BrowserScan повторно проверен на том же профиле.
-- Зафиксированы quota, общий процент и все три результата: Hidden Mode, WebGL, Audio.
-- `stAuto0`, БД, API, версия проекта и остальные fingerprint-механизмы не изменены.
+- Не менять формат запуска stAuto0 и API-контракт без необходимости.
+- Не удалять обработку событий, только убрать их подробную запись из обычного `core.log`.
+- Не использовать `AsyncLocalStorage` для передачи `runId`; контекст передавать явно.
+- Использовать `pino-roll` для ротации `core.log`.
+- Run-логи хранить не более 30 дней и 1 GB суммарно.
+- Не логировать секреты даже в debug-режиме.
+- Не маскировать реальные ошибки общей фразой и не проглатывать rejected promises.

@@ -1,6 +1,6 @@
 const http = require('http');
 const { app, setupWebSocket } = require('./core/app');
-const { logger } = require('./logger');
+const { logger, cleanupRunLogs } = require('./logger');
 const { initDatabase, getDatabase } = require('./db');
 const { createSystemConfigQueries } = require('./db/queries');
 const { setToken, notifyToken, resolveToken } = require('./api/auth');
@@ -45,6 +45,16 @@ initMasterKey(db).then(() => {
     logger.warn('Master-ключ не инициализирован — режим ожидания пароля');
   }
 }).catch(err => logger.error(`Ошибка initMasterKey: ${err.message}`));
+
+// Очистка старых run-логов при старте приложения (без отдельного процесса)
+try {
+  const result = cleanupRunLogs({ activeRunId: null });
+  if (result.removed > 0) {
+    logger.info(`Очищены устаревшие run-логи: ${result.removed} каталогов, освобождено ${result.freedBytes} байт`);
+  }
+} catch (err) {
+  logger.warn(`Очистка run-логов при старте не удалась: ${err.message}`);
+}
 
 const server = http.createServer(app);
 setupWebSocket(server);

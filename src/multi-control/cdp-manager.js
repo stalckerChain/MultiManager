@@ -237,7 +237,6 @@ class CdpManager {
               try {
                 const event = JSON.parse(bp);
                 if (event.__mm_event) {
-                  logger.info({ profileId: eventProfileId, eventType: event.type, key: event.key, ctrlKey: event.ctrlKey, action: event.action }, 'CDP-SYNC: received event');
                   this.onEvent(eventProfileId, event, msg.sessionId);
                 }
               } catch (err) {
@@ -476,7 +475,6 @@ class CdpManager {
     if (type === 'mousePressed' || type === 'mouseReleased') {
       if (!cdpParams.clickCount || cdpParams.clickCount < 1) cdpParams.clickCount = 1;
     }
-    logger.info({ profileId, type, x: params.x, y: params.y, button: params.button, clickCount: cdpParams.clickCount }, 'CDP: dispatchMouseEvent (fallback)');
     this._send(session, 'Input.dispatchMouseEvent', cdpParams);
   }
 
@@ -607,7 +605,6 @@ class CdpManager {
     if (type === 'mousePressed' || type === 'mouseReleased') {
       if (!cdpParams.clickCount || cdpParams.clickCount < 1) cdpParams.clickCount = 1;
     }
-    logger.info({ profileId, sessionId: session.sessionId, type, x: params.x, y: params.y, button: params.button, clickCount: cdpParams.clickCount }, 'CDP: Input.dispatchMouseEvent');
     this._send(session, 'Input.dispatchMouseEvent', cdpParams);
   }
 
