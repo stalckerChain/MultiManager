@@ -2,6 +2,14 @@
 
 ## v1.4.2
 
+### Интеграция / Automation
+
+- **[FEAT] Динамический runtime ID Zerion для `init_wallet4browser.py`.** Ручной скрипт инициализации кошелька строит URL импорта с актуальным runtime ID расширения Zerion, полученным из MultiManager для конкретного профиля, а не с устаревшей статической константой.
+  - `src/api/internal.js` — новый endpoint `GET /api/internal/profiles/:id/zerion-extension`: берёт первое назначенное расширение (`profile.extensions[0]`), вызывает `resolveRuntimeId()` (приоритет `Secure Preferences` по точному пути, затем `manifest.key`) и возвращает `{ id }`; сервер валидирует `^[a-z]{32}$`. Ошибки: 404 (профиль не найден), 400 (невалидный список/нет расширения/не определён runtime ID/неверный формат), 500 (неожиданная fs-ошибка) без стектрейса и секретов.
+  - Поведение `POST /api/browser/:id/zerion-login` и executor не изменено — оба продолжают использовать первое назначенное расширение.
+  - stAuto0: `Core/multimanager.py.get_zerion_extension_id(profile_id)` (Bearer auth, `ClientTimeout(total=3)`, проверка статуса/JSON/формата) и `scripts/init_wallet4browser.py` строит URL внутри `init_wallet()` с fallback `klghhnkeealcohjjanjjdaeeggmfmlpl` при недоступности MM или невалидном ответе.
+  ✅ `src/api/internal.js`, `tests/unit/internal-profiles.test.js`, docs/API*.md; stAuto0: `Core/multimanager.py`, `scripts/init_wallet4browser.py`, `tests/test_multimanager.py`
+
 ### Fingerprint / Anti-detect
 
 - **[FIX] Согласование fingerprint с CloakBrowser: Chrome-only UA и документированный `--fingerprint`.**

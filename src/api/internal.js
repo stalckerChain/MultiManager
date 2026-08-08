@@ -2,6 +2,10 @@ const express = require('express');
 const { getDatabase } = require('../db');
 const { createProfileQueries, createProxyQueries } = require('../db/queries');
 const { logger } = require('../logger');
+const path = require('path');
+const { getExtensionsDir, resolveRuntimeId } = require('./extensions');
+const { getBrowserDataDir } = require('../core/profile-path');
+const { asyncHandler, notFound, badRequest, serverError, ApiError } = require('./errors');
 
 const router = express.Router();
 
@@ -73,5 +77,49 @@ router.get('/profiles', (req, res) => {
   logger.info({ count: result.length, range: req.query.range }, '[INTERNAL] /api/internal/profiles');
   res.json(result);
 });
+
+router.get('/profiles/:id/zerion-extension', asyncHandler(async (req, res) => {
+  const db = getDatabase();
+  const profileQueries = createProfileQueries(db);
+
+  const profile = profileQueries.getById(req.params.id);
+  if (!profile) {
+    throw notFound('Профиль');
+  }
+
+  let extIds;
+  try {
+    extIds = JSON.parse(profile.extensions || '[]');
+  } catch {
+    throw badRequest('Невалидный список расширений в профиле');
+  }
+
+  if (!Array.isArray(extIds) || extIds.length === 0 || typeof extIds[0] !== 'string' || !extIds[0]) {
+    throw badRequest('Не найдено расширение Zerion в профиле');
+  }
+
+  const extPath = path.join(getExtensionsDir(), extIds[0]);
+
+  let runtimeId;
+  try {
+    const profileDir = getBrowserDataDir(profile);
+    runtimeId = await resolveRuntimeId(extPath, profileDir);
+  } catch (err) {
+    if (err instanceof ApiError) throw err;
+    logger.error({ err: err.message, profileId: req.params.id }, 'Failed to resolve Zerion extension ID');
+    throw serverError('Не удалось определить runtime ID расширения Zerion');
+  }
+
+  if (!runtimeId) {
+    throw badRequest('Не удалось определить runtime ID расширения Zerion');
+  }
+
+  if (!/^[a-z]{32}$/.test(runtimeId)) {
+    throw badRequest('Runtime ID расширения Zerion имеет неверный формат');
+  }
+
+  logger.info({ profileId: req.params.id }, '[INTERNAL] /api/internal/profiles/:id/zerion-extension resolved');
+  return res.json({ id: runtimeId });
+}));
 
 module.exports = { router, parseRange };

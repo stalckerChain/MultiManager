@@ -747,6 +747,23 @@ Get profiles by number range. Returns decrypted secrets.
 
 ---
 
+### GET /api/internal/profiles/:id/zerion-extension
+
+Return the runtime ID of the Zerion extension for a specific profile. Used by the `stAuto0` client when initializing a wallet: the import URL is built with the actual extension ID instead of a stale constant. The runtime ID is computed via `resolveRuntimeId()` (priority: exact path match in `Default/Secure Preferences`, then `manifest.key`); the extension directory name is not the runtime ID.
+
+**Parameters:** `:profileId` — profile UUID
+
+**Response (200):**
+```json
+{ "id": "abcdefghijklmnopabcdefghijklmnop" }
+```
+
+**Errors (400):** `{ "error": "Invalid extension list in the profile" }`, `{ "error": "No Zerion extension found in the profile" }`, `{ "error": "Failed to resolve the Zerion runtime ID" }`, `{ "error": "Zerion runtime ID has an invalid format" }`
+
+**Error (404):** `{ "error": "Profile not found" }`
+
+---
+
 ## Extensions
 
 ### GET /api/extensions

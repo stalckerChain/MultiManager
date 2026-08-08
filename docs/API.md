@@ -812,6 +812,23 @@ ws://127.0.0.1:{PORT}/ws?token={API_TOKEN}
 
 ---
 
+### GET /api/internal/profiles/:id/zerion-extension
+
+Вернуть runtime ID расширения Zerion для конкретного профиля. Используется клиентом `stAuto0` при инициализации кошелька: URL импорта строится с актуальным ID расширения, а не с устаревшей константой. Runtime ID вычисляется через `resolveRuntimeId()` (приоритет `Default/Secure Preferences` по точному пути, затем `manifest.key`); имя каталога расширения не является runtime ID.
+
+**Параметры:** `:id` — UUID профиля
+
+**Ответ (200):**
+```json
+{ "id": "abcdefghijklmnopabcdefghijklmnop" }
+```
+
+**Ошибки (400):** `{ "error": "Невалидный список расширений в профиле" }`, `{ "error": "Не найдено расширение Zerion в профиле" }`, `{ "error": "Не удалось определить runtime ID расширения Zerion" }`, `{ "error": "Runtime ID расширения Zerion имеет неверный формат" }`
+
+**Ошибка (404):** `{ "error": "Профиль не найден" }`
+
+---
+
 ## Расширения
 
 ### GET /api/extensions

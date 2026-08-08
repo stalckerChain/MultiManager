@@ -736,6 +736,23 @@ Authorization: Bearer <token>
 
 ---
 
+### GET /api/internal/profiles/:profileId/zerion-extension
+
+返回指定配置文件的 Zerion 扩展运行时 ID。客户端 `stAuto0` 在初始化钱包时使用：导入 URL 使用实际的扩展 ID 构建，而非过时常量。运行时 ID 通过 `resolveRuntimeId()` 计算（优先 `Default/Secure Preferences` 中的精确路径匹配，其次 `manifest.key`）；扩展目录名不是运行时 ID。
+
+**参数：** `:profileId` — 配置文件 UUID
+
+**响应 (200)：**
+```json
+{ "id": "abcdefghijklmnopabcdefghijklmnop" }
+```
+
+**错误 (400)：** `{ "error": "配置文件中的扩展列表无效" }`、`{ "error": "在配置文件中未找到 Zerion 扩展" }`、`{ "error": "无法解析 Zerion 运行时 ID" }`、`{ "error": "Zerion 运行时 ID 格式无效" }`
+
+**错误 (404)：** `{ "error": "配置文件未找到" }`
+
+---
+
 ## 扩展
 
 ### GET /api/extensions
