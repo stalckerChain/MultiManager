@@ -30,10 +30,7 @@
           <a-tag :color="typeColor(record.type)">{{ record.type.toUpperCase() }}</a-tag>
         </template>
         <template v-if="column.key === 'connection'">
-          <div class="text-xs">
-            <div class="font-mono">{{ record.host }}</div>
-            <div class="font-mono text-slate-500">{{ record.port }}</div>
-          </div>
+          <div class="text-xs font-mono">{{ record.host }}:{{ record.port }}</div>
         </template>
         <template v-if="column.key === 'accounts'">
           <div class="text-xs">

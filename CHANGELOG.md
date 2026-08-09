@@ -2,6 +2,15 @@
 
 ## v1.4.2
 
+### UI
+
+- **[UX] Отображение прокси в формате `host:port` одной строкой.** Ранее `host` и `port` показывались в две строки, а на главной порт вообще пропадал при наличии `location` (`location || port`).
+  **Решение:**
+  - `gui/src/renderer/views/Profiles.vue` — колонка `proxy`: `host:port` одной строкой (`text-xs font-mono`), локация — второй строкой (`text-xs text-slate-500`) только при наличии; логика `location || port` удалена, порт показывается всегда вместе с host.
+  - `gui/src/renderer/views/Proxies.vue` — колонка `connection`: одна строка `host:port`; вторая строка с `port` удалена (Location имеет отдельную колонку).
+  - Изменены только шаблоны `.vue`; логика, API, БД и стили Tailwind не затронуты.
+  ✅ `gui/src/renderer/views/Profiles.vue`, `gui/src/renderer/views/Proxies.vue`
+
 ### Интеграция / Automation
 
 - **[FEAT] Динамический runtime ID Zerion для `init_wallet4browser.py`.** Ручной скрипт инициализации кошелька строит URL импорта с актуальным runtime ID расширения Zerion, полученным из MultiManager для конкретного профиля, а не с устаревшей статической константой.
