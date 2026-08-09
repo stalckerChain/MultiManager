@@ -261,9 +261,9 @@ All isolated user data is stored at:
 
 | Platform | Path |
 |----------|------|
-| Windows | `%APPDATA%/CloakManager/` |
-| macOS | `~/Library/Application Support/CloakManager/` |
-| Linux | `~/.config/CloakManager/` |
+| Windows | `%APPDATA%/MultiManager/` |
+| macOS | `~/Library/Application Support/MultiManager/` |
+| Linux | `~/.config/MultiManager/` |
 
 ### System Directory Structure:
 

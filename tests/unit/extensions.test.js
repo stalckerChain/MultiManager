@@ -608,7 +608,7 @@ describe('assign-all endpoint', () => {
     tmpDir = path.join(os.tmpdir(), 'ext-test-assign-' + Date.now());
     process.env.APPDATA = tmpDir;
 
-    const extDir = path.join(tmpDir, 'CloakManager', 'extensions');
+    const extDir = path.join(tmpDir, 'MultiManager', 'extensions');
     fs.mkdirSync(extDir, { recursive: true });
     fs.mkdirSync(path.join(extDir, 'test-ext-1'), { recursive: true });
     fs.writeFileSync(path.join(extDir, 'test-ext-1', 'manifest.json'), JSON.stringify({ name: 'Test Ext', version: '1.0.0' }));
@@ -684,7 +684,7 @@ describe('ZIP security attacks', () => {
   beforeEach(() => {
     originalAppData = process.env.APPDATA;
     fs.mkdirSync(tmpDir, { recursive: true });
-    extDir = path.join(tmpDir, 'CloakManager', 'extensions');
+    extDir = path.join(tmpDir, 'MultiManager', 'extensions');
     fs.mkdirSync(extDir, { recursive: true });
     process.env.APPDATA = tmpDir;
   });

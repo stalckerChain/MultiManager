@@ -8,11 +8,12 @@ const AdmZip = require('adm-zip');
 const os = require('os');
 const { getDatabase } = require('../db');
 const { logger } = require('../logger');
+const { getDataDir } = require('../core/data-dir');
 
 const router = express.Router();
 
 const LIMITS = Object.freeze({
-  MAX_ARCHIVE_SIZE: 10 * 1024 * 1024,
+  MAX_ARCHIVE_SIZE: 20 * 1024 * 1024,
   MAX_UNCOMPRESSED_SIZE: 100 * 1024 * 1024,
   MAX_ENTRIES: 500,
   MAX_PER_FILE_SIZE: 50 * 1024 * 1024,
@@ -25,16 +26,7 @@ const LIMITS = Object.freeze({
 const DANGEROUS_NAME_RE = /\.\.|[\\/:*?"<>|]|[\x00-\x1F]|^[A-Za-z]:/;
 
 function getExtensionsDir() {
-  const platform = process.platform;
-  const home = process.env.HOME || process.env.USERPROFILE;
-
-  if (platform === 'win32') {
-    return path.join(process.env.APPDATA, 'CloakManager', 'extensions');
-  } else if (platform === 'darwin') {
-    return path.join(home, 'Library', 'Application Support', 'CloakManager', 'extensions');
-  } else {
-    return path.join(home, '.config', 'CloakManager', 'extensions');
-  }
+  return path.join(getDataDir(), 'extensions');
 }
 
 async function ensureDir(dir) {

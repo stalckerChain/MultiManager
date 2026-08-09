@@ -1,5 +1,7 @@
 const { app, BrowserWindow, ipcMain, Tray, Menu, nativeTheme, dialog, shell } = require('electron');
 const path = require('path');
+const { canonicalUserData } = require('./app-data-dir');
+app.setPath('userData', canonicalUserData(app));
 const fs = require('fs');
 const http = require('http');
 const { startCore, stopCore, getCorePort, getCoreToken, onTokenChange } = require('./core-manager');

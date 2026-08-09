@@ -1,18 +1,10 @@
 const pino = require('pino');
 const path = require('path');
 const fs = require('fs');
+const { getDataDir } = require('../core/data-dir');
 
 function getAppDir() {
-  const platform = process.platform;
-  const home = process.env.HOME || process.env.USERPROFILE;
-
-  if (platform === 'win32') {
-    return path.join(process.env.APPDATA, 'CloakManager');
-  } else if (platform === 'darwin') {
-    return path.join(home, 'Library', 'Application Support', 'CloakManager');
-  } else {
-    return path.join(home, '.config', 'CloakManager');
-  }
+  return getDataDir();
 }
 
 function ensureDir(dir) {

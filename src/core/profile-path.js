@@ -1,17 +1,9 @@
 const fs = require('fs');
 const path = require('path');
+const { getDataDir } = require('./data-dir');
 
 function getDefaultProfileDir(profileId) {
-  const platform = process.platform;
-  const home = process.env.HOME || process.env.USERPROFILE;
-
-  if (platform === 'win32') {
-    return path.join(process.env.APPDATA, 'CloakManager', 'profiles', profileId);
-  } else if (platform === 'darwin') {
-    return path.join(home, 'Library', 'Application Support', 'CloakManager', 'profiles', profileId);
-  } else {
-    return path.join(home, '.config', 'CloakManager', 'profiles', profileId);
-  }
+  return path.join(getDataDir(), 'profiles', profileId);
 }
 
 function getBrowserDataDir(profile) {

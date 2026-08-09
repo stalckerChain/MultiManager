@@ -75,7 +75,7 @@ describe('Internal Profiles - GET /profiles/:id/zerion-extension', () => {
   let originalAppData;
 
   function extensionsDir() {
-    return path.join(tmpDir, 'CloakManager', 'extensions');
+    return path.join(tmpDir, 'MultiManager', 'extensions');
   }
 
   function writeExtension(folderName, manifest) {

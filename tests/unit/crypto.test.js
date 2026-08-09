@@ -3,7 +3,7 @@ import {
   encrypt, decrypt, generateMasterKey, deriveKeyFromPassword,
   generateRecoveryKey, recoverFromRecoveryKey, encryptRow, decryptRow, decryptRows,
   setMasterKey, clearMasterKey, hasMasterKey,
-  SECRET_FIELDS, PREFIX,
+  SECRET_FIELDS, PREFIX, KEYTAR_SERVICE, KEYTAR_ACCOUNT,
 } from '../../src/crypto/index.js';
 import * as cryptoModule from '../../src/crypto/index.js';
 
@@ -216,5 +216,10 @@ describe('Crypto Module', () => {
     const path = require('path');
     const src = fs.readFileSync(path.join(__dirname, '..', '..', 'src', 'crypto', 'index.js'), 'utf8');
     expect(src).not.toContain('master_key_fallback');
+  });
+
+  it('KEYTAR_* constants use MultiManager service', () => {
+    expect(KEYTAR_SERVICE).toBe('MultiManager');
+    expect(KEYTAR_ACCOUNT).toBe('master-key');
   });
 });

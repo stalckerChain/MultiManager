@@ -8,6 +8,9 @@ const PBKDF2_ITERATIONS = 210000;
 const PBKDF2_DIGEST = 'sha256';
 const PREFIX = 'aes-256-gcm:';
 
+const KEYTAR_SERVICE = 'MultiManager';
+const KEYTAR_ACCOUNT = 'master-key';
+
 const SECRET_FIELDS = [
   'email_password',
   'twitter_password',
@@ -119,12 +122,12 @@ function clearMasterKey() {
 async function initKeytar() {
   try {
     const keytar = require('keytar');
-    const existing = await keytar.getPassword('CloakManager', 'master-key');
+    const existing = await keytar.getPassword(KEYTAR_SERVICE, KEYTAR_ACCOUNT);
     if (existing) {
       return Buffer.from(existing, 'hex');
     }
     const key = generateMasterKey();
-    await keytar.setPassword('CloakManager', 'master-key', key.toString('hex'));
+    await keytar.setPassword(KEYTAR_SERVICE, KEYTAR_ACCOUNT, key.toString('hex'));
     return key;
   } catch {
     return null;
@@ -247,4 +250,6 @@ module.exports = {
   clearRecoveryKey,
   SECRET_FIELDS,
   PREFIX,
+  KEYTAR_SERVICE,
+  KEYTAR_ACCOUNT,
 };

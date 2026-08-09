@@ -6,9 +6,9 @@ import { getDefaultProfileDir, getBrowserDataDir, validateProfilePath, getDefaul
 
 describe('profile-path', () => {
   describe('getDefaultProfileDir', () => {
-    it('returns a path under CloakManager/profiles', () => {
+    it('returns a path under MultiManager/profiles', () => {
       const dir = getDefaultProfileDir('test-id');
-      expect(dir).toContain('CloakManager');
+      expect(dir).toContain('MultiManager');
       expect(dir).toContain('profiles');
       expect(dir).toContain('test-id');
     });

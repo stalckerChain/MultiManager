@@ -123,3 +123,30 @@ describe('Core Manager — CORE_PATH construction', () => {
     expect(stat.isSymbolicLink() || stat.isDirectory()).toBe(true);
   });
 });
+
+describe('Core Manager — data dir env for forked core', () => {
+  const coreManagerSrc = fs.readFileSync(
+    path.join(PROJECT_ROOT, 'gui', 'src', 'main', 'core-manager.js'),
+    'utf8'
+  );
+
+  it('forkEnv передаёт MULTIMANAGER_DATA_DIR из app.getPath(userData)', () => {
+    const envLine = coreManagerSrc
+      .split('\n')
+      .find(line => line.includes('const forkEnv'));
+    expect(envLine).toContain('PORT');
+    expect(envLine).toContain('MULTIMANAGER_DATA_DIR');
+    expect(envLine).toContain('userData');
+    expect(envLine).not.toContain('NODE_PATH');
+    expect(coreManagerSrc).toContain('app.getPath(\'userData\')');
+    expect(coreManagerSrc).not.toContain('CloakManager');
+  });
+
+  it('NODE_PATH передаётся только в packaged режиме', () => {
+    const keyworkerBlock = coreManagerSrc.slice(
+      coreManagerSrc.indexOf('if (!isDev) {'),
+      coreManagerSrc.indexOf('coreProcess = fork(')
+    );
+    expect(keyworkerBlock).toContain('forkEnv.NODE_PATH');
+  });
+});

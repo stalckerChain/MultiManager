@@ -7,6 +7,7 @@ AI-Driven Web Automation Platform — кроссплатформенный ан�
 
 ## Что нового в v1.4.2
 
+- **[FEAT] Единый каталог данных `%APPDATA%/MultiManager`.** GUI и core используют один канонический корень данных во всех режимах (dev, packaged, standalone-core), независимо от имени приложения `multimanager-gui`. Реализовано через `app.setPath('userData', …MultiManager)` до загрузки модулей GUI (✅ `gui/src/main/app-data-dir.js`, `gui/src/main/index.js`) и единый resolver `src/core/data-dir.js`. Легаси-каталог `CloakManager` и орфанная `multimanager-gui` не используются и не мигрируются. ✅ `gui/src/main/app-data-dir.js`, `gui/src/main/index.js`, `tests/unit/app-data-dir.test.js`, `tests/unit/data-dir.test.js`
 - **[FEAT] Динамический runtime ID Zerion для `init_wallet4browser.py`.** Ручной скрипт инициализации кошелька получает актуальный runtime ID расширения Zerion через новый endpoint `GET /api/internal/profiles/:id/zerion-extension` и строит URL импорта с этим ID — вместо устаревшей статической константы. При недоступности MultiManager или невалидном ответе используется встроенный fallback. Общее поведение `zerion-login` и executor не изменено; профилю назначается ровно одно расширение (`profile.extensions[0]`). ✅ `src/api/internal.js`, `tests/unit/internal-profiles.test.js`, docs/API*.md; stAuto0: `Core/multimanager.py`, `scripts/init_wallet4browser.py`
 - **[FIX] Согласование fingerprint с CloakBrowser.** Устранён конфликт Firefox/Chromium, который видел BrowserScan: генератор больше не выбирает Firefox/Safari UA (в `UA_TEMPLATES` остались только Chrome-шаблоны), а запуск браузера использует документированный флаг `--fingerprint=<seed>` вместо несуществующего `--fingerprint-seed=<uuid>`. Ручной `--user-agent` из профиля больше не передаётся в CloakBrowser — отпечаток формирует сам движок. ✅ `src/fingerprint/index.js`, `src/api/browser.js`, `tests/unit/fingerprint.test.js`, `tests/unit/fingerprint-edge.test.js`, `tests/unit/browser-start-await.test.js`
 - **[FIX] Жизненный цикл Electron: single instance, активация окна и tray.** Повторный запуск больше не создаёт второй GUI/backend процесс: `app.requestSingleInstanceLock()` завершает второй экземпляр, а `second-instance` активирует существующее окно (восстанавливает из свёрнутого состояния, показывает и фокусирует). Обычный клик по tray-иконке открывает окно так же, как «Открыть панель» и двойной клик. Исправлен path tray-иконки в packaged-режиме (резолвится из `app.asar/resources`), с диагностическим логом при отсутствии файла или пустом `nativeImage`. ✅ `gui/src/main/index.js`, `gui/src/main/tray.js`, `gui/src/main/tray-paths.js`, `gui/src/main/main-window-utils.js`
@@ -394,9 +395,9 @@ requests.post(f"{BASE}/api/browser/{profile['id']}/stop", headers=HEADERS)
 
 | Платформа | Путь |
 |-----------|------|
-| Windows | `%APPDATA%/CloakManager/` |
-| macOS | `~/Library/Application Support/CloakManager/` |
-| Linux | `~/.config/CloakManager/` |
+| Windows | `%APPDATA%/MultiManager/` |
+| macOS | `~/Library/Application Support/MultiManager/` |
+| Linux | `~/.config/MultiManager/` |
 
 ### Структура:
 

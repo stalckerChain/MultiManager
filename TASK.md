@@ -1,189 +1,197 @@
-# TASK — Динамический ID расширения Zerion для init_wallet4browser
+# TASK — Реальная унификация каталога данных MultiManager
+
+> Переработано после верификации. Предыдущая реализация «передавать `app.getPath('userData')`»
+> выполнялась формально, но `userData` Electron в dev и packaged равен `%APPDATA%\multimanager-gui`
+> (имя приложения в `gui/package.json` = `multimanager-gui`), поэтому задача «всё под
+> `%APPDATA%\MultiManager`» фактически не выполнялась: данные шли в `%APPDATA%\multimanager-gui`.
 
 ## Цель
 
-Изменить запуск `stAuto0/scripts/init_wallet4browser.py`, чтобы URL страницы импорта кошелька строился с актуальным runtime ID расширения Zerion, полученным из MultiManager для конкретного профиля.
-
-Если endpoint MultiManager недоступен, запрос завершился ошибкой или ответ не содержит валидный ID расширения, скрипт должен использовать встроенный fallback ID:
+Сделать единственным каталогом данных приложения канонический путь
 
 ```text
-klghhnkeealcohjjanjjdaeeggmfmlpl
+%APPDATA%\MultiManager\   (Windows)
+~/Library/Application Support/MultiManager/   (macOS)
+~/.config/MultiManager/   (Linux)
 ```
 
-Текущий fallback сохраняется для совместимости с автономным/старым окружением.
+Независимо от:
+- имени приложения в `package.json` (`multimanager-gui` в dev и packaged);
+- способа запуска (GUI → forked core, core вручную, тесты).
 
-## Наблюдаемая проблема
-
-`stAuto0/scripts/init_wallet4browser.py` импортирует `ZERION_ID` из `Core.browser` и формирует `WALLET_URL` на уровне модуля. `Core.browser` использует устаревший ID как fallback.
-
-MultiManager уже умеет вычислять настоящий runtime ID через `resolveRuntimeId()` с учетом `Secure Preferences` конкретного профиля и `manifest.key`. Это значение уже используется в автоматическом executor-потоке и в endpoint `zerion-login`, но ручной скрипт инициализации кошелька его не запрашивают.
-
-## Архитектурное решение
-
-Добавить в authenticated internal API MultiManager endpoint:
+Один и тот же корень для GUI и core, единая структура:
 
 ```text
-GET /api/internal/profiles/:id/zerion-extension
+<root>/app.db
+<root>/logs/
+<root>/logs/runs/
+<root>/profiles/<profile-id>/BrowserData/
+<root>/extensions/
+<root>/backups/
 ```
 
-Успешный ответ:
+## Выявленные проблемы (факты)
 
-```json
-{
-  "id": "abcdefghijklmnopabcdefghijklmnop"
-}
-```
+1. `app.getPath('userData')` сейчас = `%APPDATA%\multimanager-gui` (лог: `userData: ...\multimanager-gui`).
+2. Рядных процессов стало три:
+   - `%APPDATA%\multimanager-gui` — фактический рабочий корень (app.db 16:11, profiles 15:07 з 09.08);
+   - `%APPDATA%\MultiManager` — fallback при ручном запуске core/тестах («Test Profile»);
+   - `%APPDATA%\CloakManager` — легаси 2010; содержит старые `BrowserData` тех же 5 UUID, что и multimanager-gui.
+3. Code-рефакторинг выполнен корректно: `src/core/data-dir.js`, `db`, `logger`, `profile-path`, `extensions`,
+   `backup`, `crypto` (keytar `MultiManager`) — всё через единый resolver. В `src/` `CloakManager` не осталось.
 
-В текущей конфигурации MultiManager профилю назначается ровно одно расширение — Zerion. Endpoint должен использовать существующую простую схему `profile.extensions[0]`, как текущие `POST /api/browser/:id/zerion-login` и executor. Поиск по manifest/name, i18n-разрешение, перебор нескольких каталогов и новый helper не нужны.
+## Согласованное решение
 
-1. Найти профиль по UUID.
-2. Найти первое назначенное расширение. Поле `profile.extensions` хранится как JSON-строка с массивом имен каталогов. Не импортировать локальный `tryParseJson()` из `src/api/browser.js`: он не экспортируется. Использовать `JSON.parse(profile.extensions || '[]')` внутри `try-catch` и взять только `extIds[0]`.
-3. Если JSON невалиден, список пуст, первый элемент отсутствует или не является строкой, вернуть `badRequest(...)`.
-4. Построить `extPath = path.join(getExtensionsDir(), extIds[0])` без чтения manifest и дополнительных проверок имени расширения. `extIds[0]` — только имя каталога, его нельзя возвращать как runtime ID.
-5. Определить профильный browser data directory.
-6. Вызвать `resolveRuntimeId(extPath, profileDir)`.
-7. Проверить, что результат соответствует Chrome extension ID: ровно 32 строчных символа `a-z`.
-8. Вернуть `{ id }`.
+1. **Канонизация корня в GUI.** В `gui/src/main/index.js` максимально рано (до любых
+   `require('./core-manager')`, `require('./tray')`, `require('./pty')`, `require('./keyboard-hooks')`,
+   `require('./browser-manager')` и до `app.getPath('userData')`) выполнить:
 
-Критически важно сохранить существующий `resolveRuntimeId()` без изменений: он сначала ищет ID по точному пути расширения в `Default/Secure Preferences`, затем вычисляет runtime ID из `manifest.key`. Для текущего расширения имя каталога `klghhnkeealcohjjanjjdaeeggmfmlpl` не является runtime ID; endpoint должен вернуть результат resolver (текущий ожидаемый runtime ID — `lfoeajgcchlidpicbabpmckkejpckcfb`), а не имя каталога.
+   ```js
+   const { app } = require('electron');
+   const path = require('path');
+   app.setPath('userData', path.join(app.getPath('appData'), 'MultiManager'));
+   ```
 
-Существующий алгоритм `resolveRuntimeId()` не дублировать и не заменять.
+   Все модули GUI уже читают `app.getPath('userData')` на этапе загрузки (`LOG_DIR`, env для core,
+   `pty`, `tray`, keyboard-hooks) — они автоматически получат канонический корень без изменений.
 
-В `stAuto0` клиент должен запрашивать ID для каждого конкретного профиля после получения списка профилей и до открытия страницы кошелька. `profile_id` уже сохраняется в нормализованном аккаунте через `MultiManagerClient.normalize_account()` и доступен как `account["profile_id"]`. URL не должен оставаться глобальной константой, зависящей от значения, полученного при импорте модуля.
+2. `gui/src/main/core-manager.js` остаётся без изменений логики: он по-прежнему передаёт
+   `app.getPath('userData')` в `forkEnv.MULTIMANAGER_DATA_DIR`, но теперь это канонический путь
+   из шага 1. Дублирующих путей не вводить.
 
-Логика выбора ID:
+3. Core-резолвер `src/core/data-dir.js` менять НЕ нужно: его fallback без env уже совпадает с
+   каноническим корнем (Windows: `APPDATA\MultiManager`, macOS: `~/Library/Application Support/MultiManager`,
+   Linux: `~/.config/MultiManager`). При запуске через GUI env для микшированного процесса задаёт
+   канонический путь — один корень в обеих ветках.
 
-1. Начать с встроенного fallback ID.
-2. Запросить новый endpoint с коротким timeout.
-3. При успешном ответе и валидном `id` использовать полученное значение.
-4. При недоступности MM, timeout, сетевой ошибке, HTTP-ошибке или невалидном ответе записать предупреждение без секретов и использовать fallback.
-5. Сформировать URL импорта кошелька только после выбора ID.
+4. Легаси и перенос не выполняются (подтверждено на гейте №1):
+   - `%APPDATA%\CloakManager` не переносится, не копируется, не переименовывается;
+   - старые keytar-записи не ищутся;
+   - старые орфанные `%APPDATA%\multimanager-gui\profiles` и `%APPDATA%\CloakManager\profiles` оставлять,
+     новых данных там не создавать.
 
-Fallback не должен менять существующий API и не должен мешать автономному запуску stAuto0.
+## Важное уточнение по работопу
 
-## Затрагиваемые файлы
+- `app.setPath('userData', ...)` выполняется до `app.whenReady()` — это допустимо по API Electron.
+- В dev и packaged вызов `app.setPath` даёт один и тот же корень, поэтому dev/продакшн и
+  standalone-core (fallback) полностью совпадают по пути.
 
-### MultiManager
+## Реализация
 
-- `src/api/internal.js`
-  - добавить endpoint для runtime ID конкретного профиля;
-  - использовать `extIds[0]` как единственное назначенное расширение;
-  - явно импортировать `getExtensionsDir` и `resolveRuntimeId` из `./extensions`;
-  - импортировать `getBrowserDataDir` из общего модуля `../core/profile-path` (не импортировать его из `./browser`, чтобы не создавать зависимость internal API от browser router);
-  - импортировать `asyncHandler` и фабрики `notFound`, `badRequest`, `serverError` из `./errors`;
-  - обернуть async handler в `asyncHandler`, чтобы ошибки `resolveRuntimeId()` корректно передавались в общий обработчик ошибок;
-  - использовать существующие profile queries, `getExtensionsDir()`, `getBrowserDataDir()` и `resolveRuntimeId()`;
-  - возвращать точные HTTP-статусы:
-    - `notFound('Профиль')` / `404` — профиль не найден;
-    - `badRequest(...)` / `400` — расширение не назначено профилю;
-    - `badRequest(...)` / `400` — runtime ID не определяется;
-    - `badRequest(...)` / `400` — runtime ID не прошел проверку формата;
-  - после `resolveRuntimeId()` валидировать ID на сервере регулярным выражением `/^[a-z]{32}$/`; `resolveRuntimeId()` сам формат не валидирует;
-  - обернуть вызов `resolveRuntimeId()` в `try-catch`: ошибки входных данных возвращать как `badRequest(...)` / `400`, неожиданные filesystem/runtime ошибки — как `serverError(...)` / `500` без stack trace и секретов;
-  - не логировать токены, wallet password или proxy credentials.
+### Шаги
 
-- `src/api/browser.js` и `src/executor/index.js`
-  - не менять существующее использование `extIds[0]`;
-  - сохранить текущий API, security-поведение и передачу `ZERION_ID` в executor.
+1. **`gui/src/main/app-data-dir.js`** (обязательно) — хелпер, единый источник канонического пути:
+   экспортирует `canonicalUserData(app)` = `path.join(app.getPath('appData'), 'MultiManager')`.
+   Имя `MultiManager` живёт в одном месте GUI; ядро использует свой `APP_NAME` в `src/core/data-dir.js`,
+   чтобы два имени не расходились в будущем.
 
-- `tests/unit/internal-profiles.test.js` или отдельный unit-тест internal API
- - успешное разрешение ID;
-  - профиль не найден;
-  - расширение не назначено;
-  - невалидный JSON в `profile.extensions`;
-  - пустой массив `profile.extensions`;
-  - первый элемент `profile.extensions` не является строкой;
-  - runtime ID не определяется;
-  - регрессия: при каталоге `klghhnkeealcohjjanjjdaeeggmfmlpl` ответом является runtime ID из `Secure Preferences`/`manifest.key`, а не имя каталога;
-  - исключение `resolveRuntimeId()` и unexpected filesystem error;
-  - проверка формата ответа;
-  - мокать `profileQueries.getById()`;
-  - мокать `getExtensionsDir()`;
-  - мокать `getBrowserDataDir()`;
-  - мокать `resolveRuntimeId()`.
+2. **`gui/src/main/index.js`** — вызвать `app.setPath('userData', canonicalUserData(app))`
+   в самой верхушке файла, до подключения модулей, которые используют `app.getPath('userData')`.
+   Порядок критичен: `require('./core-manager')` (и `LOG_DIR` ниже) должны выполняться после `setPath`,
+   иначе `core-manager`/`tray`/`keyboard-hooks` захватят старый путь `%APPDATA%\multimanager-gui`.
 
-- `tests/unit/browser-start-await.test.js` и `tests/unit/executor.test.js`
-  - убедиться, что существующие потребители продолжают использовать первое назначенное расширение и не требуют нового helper.
+3. **`gui/src/main/core-manager.js`** — без изменения. Он по-прежнему передаёт
+   `app.getPath('userData')` в `forkEnv.MULTIMANAGER_DATA_DIR`; каноничность пути обеспечивается
+   `setPath` до его require. Менять его возврат на `appData/MultiManager` НЕ следует.
 
-- `docs/API.md`
-  - описать новый endpoint, параметры, ответ и основные ошибки.
+3. **`src/core/data-dir.js`** — проверить, что fallback на Windows/macOS/Linux в точности совпадает
+   с узлом `app.getPath('appData')` (т.е. путь == `%APPDATA%\MultiManager` и т.д.). Если `data-dir.js`
+   считал `home`, а не `appData`, — следить, чтобы значение было идентично: на win
+   `APPDATA`, на macOS `~/Library/Application Support`, на Linux `~/.config`. При несовпадении —
+   приводить к общему виду (однако на остальном платформах данные соответствуют; только подтвердить).
 
-- `docs/API.en.md` и `docs/API.zh.md`
-  - также описать новый endpoint, чтобы документация API была синхронизирована во всех существующих языковых версиях.
+4. **Тесты** — обновить ожидания, где они завязаны на конкретный каталог:
+   - unit-тесты resolver/DB/logger/profile-path/extensions/backup — ожидания должны содержать
+     `MultiManager` и не содержать `CloakManager`;
+   - статический тест `gui/src/main/index.js`: прочитать файл и убедиться, что вызов
+     `app.setPath('userData', canonicalUserData(app))` (или `path.join(...'MultiManager')`)
+     идёт раньше `require('./core-manager')` в тексте файла, и что канонический путь строится
+     через `path.join` и содержит `'MultiManager'`. Это проверка порядка, а не значения пути.
+   - `tests/unit/core-manager.test.js` — проверка контракта без ложных ожиданий:
+     forked core получает env `MULTIMANAGER_DATA_DIR = app.getPath('userData')` (core-manager
+     передаёт userData без изменений; его эквивалентность `appData/MultiManager` проверяется
+     на уровне index.js/`app-data-dir.js`, а не здесь);
+   - unit-тест `gui/src/main/app-data-dir.js` (если хелпер добавлен): `canonicalUserData(app)` =
+     `path.join(app.getPath('appData'), 'MultiManager')` при мокнутом `app`;
+   - добавить/поддержать проверку, что `MULTIMANAGER_DATA_DIR` — абсолютный, а невалидное значение
+     даёт информативный Error.
 
-### stAuto0
+### Затрагиваемые файлы
 
-`stAuto0` — внешний проект в `C:\Users\stalcker\AI\stAuto0`, отдельный git-репозиторий и не часть рабочего дерева MultiManager. Изменения в перечисленных ниже файлах выполняются разработчиком отдельно в этом репозитории; в MultiManager PR/ревью проверяется только API-контракт и серверная часть, а проверка Python-клиента требует доступа к внешнему репозиторию.
+- GUI:
+  - `gui/src/main/app-data-dir.js` — новый хелпер, единый источник канонического пути (обязательно);
+  - `gui/src/main/index.js` — вызов `app.setPath('userData', ...)` до require модулей, читающих userData;
+  - `gui/src/main/core-manager.js` — без изменения логики (по-прежнему `app.getPath('userData')`).
+- Core реализация уже выполнена и корректна: `src/core/data-dir.js`, `src/db/index.js`,
+  `src/logger/index.js`, `src/core/profile-path.js`, `src/api/extensions.js`, `src/backup/index.js`,
+  `src/crypto/index.js` — изменений не требует (кроме возможной сверки fallback).
+- Тесты:
+  - `tests/unit/data-dir.test.js`, `tests/unit/profile-path.test.js`, `tests/unit/logger.test.js`,
+    `tests/unit/extensions.test.js`, `tests/unit/backup.test.js`,
+    `tests/unit/keytar-service.test.js`, `tests/unit/core-manager.test.js`.
 
-- `C:\Users\stalcker\AI\stAuto0\Core\multimanager.py`
-  - добавить метод `get_zerion_extension_id(profile_id)` с Bearer-auth и `aiohttp.ClientTimeout(total=3)`;
-  - проверять HTTP-статус и формат JSON;
-  - не логировать token или содержимое учетных данных.
+## Что не делать
 
-- `C:\Users\stalcker\AI\stAuto0\scripts\init_wallet4browser.py`
-  - убрать формирование `WALLET_URL` на уровне модуля из статического `ZERION_ID`;
-  - получить runtime ID через `MultiManagerClient` для текущего `profile_id`;
-  - применить fallback при недоступности endpoint или невалидном ответе;
-  - формировать URL внутри `init_wallet()` перед `page.goto()`;
-  - сохранить текущую последовательность импорта mnemonic и закрытия браузера.
+- Не мигрировать, не копировать, не переименовывать, не объединять `%APPDATA%\CloakManager`.
+- Не искать master key записи keytar `CloakManager`.
+- Не менять схему SQLite и API-контракты.
+- Не трогать внешние абсолютные `profile_path`-профили.
+- Не использовать Electron API в `src/`.
+- Не менять версию, changelog, release.
+- Не добавлять зависимости.
 
-- `C:\Users\stalcker\AI\stAuto0\tests\test_multimanager.py`
-  - тест успешного запроса ID;
-  - тест HTTP-ошибки/невалидного ответа.
+## Требования к результату
 
-- тесты `C:\Users\stalcker\AI\stAuto0\scripts\init_wallet4browser.py` не обязательны: добавлять их только если запуск скрипта можно изолировать моками без реального браузера и MultiManager; при чрезмерно сложном мокировании достаточно unit-тестов `MultiManagerClient` и ручной проверки URL/fallback
-  - проверка использования ответа MM;
-  - проверка fallback при недоступности endpoint;
-  - проверка построенного URL.
+1. После запуска GUI (dev и packaged) `MULTIMANAGER_DATA_DIR` и `userData` == каноническому корню
+   `...\MultiManager` (Windows), без `multimanager-gui`.
+2. Ни GUI, ни core не создают новых файлов в `%APPDATA%\multimanager-gui` и `%APPDATA%\CloakManager`.
+3. Fallback-запуск core без env использует тот же канонический корень с именем `MultiManager`.
+4. DB, logs, profiles, extensions, backups — под одним корнем.
+5. Один и тот же путь в dev, packaged и standalone-режиме.
 
-## Совместимость и ограничения
+## Проверка
 
-- Endpoint добавляется аддитивно; существующие API-контракты не изменяются.
-- Bearer-auth остается обязательной: internal API уже защищен общим middleware приложения.
-- ID расширения не является секретом, но его не нужно включать в избыточные логи или смешивать с учетными данными.
-- Не менять схему БД: необходимые данные уже находятся в профиле, каталоге расширений и browser data directory.
-- Не менять версию проекта, `CHANGELOG.md` и release-файлы.
-- Не менять контракт и реализацию `POST /api/browser/:id/zerion-login` и автоматического executor-потока в рамках этой задачи: они уже используют первое назначенное расширение и должны сохранить это поведение.
-- Не удалять fallback из `Core/browser.py` в рамках этой задачи: он нужен для автономного режима и является согласованным резервным значением.
-- Не добавлять новую зависимость.
-
-## Тесты
-
-### Unit
-
-MultiManager:
+### Unit и статические
 
 ```text
 npm test
 npm run lint
 ```
 
-Проверить новый endpoint с моками profile queries и `resolveRuntimeId()`.
-
-stAuto0:
-
-```text
-pytest
-```
-
-Проверить `MultiManagerClient` с моками HTTP-сессии: success, timeout/connection error, non-2xx и invalid JSON/ID.
+Проверить минимум:
+- resolver использует env-путь и отклоняет относительный/невалидный `MULTIMANAGER_DATA_DIR`;
+- fallback содержит `MultiManager`, не содержит `CloakManager`, не содержит `multimanager-gui`;
+- `profile_path` с внешним абсолютным значением не переопределяется;
+- keytar использует `MultiManager`;
+- core-manager передаёт канонический корень в env для forked core.
 
 ### Ручная проверка
 
-1. Запустить MultiManager и Zerion-профиль с назначенным расширением.
-2. Вызвать `GET /api/internal/profiles/<profile_id>/zerion-extension` с Bearer token и проверить runtime ID.
-3. Запустить `python scripts/init_wallet4browser.py <account>` и убедиться, что переход выполняется на `chrome-extension://<полученный-id>/popup.8e8f209b.html?...`.
-4. Проверить запуск диапазона аккаунтов: для каждого профиля должен использоваться ID, полученный для этого профиля.
-5. Остановить MultiManager или заблокировать endpoint и убедиться, что скрипт не падает из-за запроса и использует встроенный fallback ID.
-6. Проверить, что в логах отсутствуют MM token, mnemonic, wallet password и proxy credentials.
-7. Убедиться, что существующий автоматический запуск и `zerion-login` продолжают работать.
+1. Запустить GUI в dev и в packaged.
+2. По логу `userData:` и строкам `CORE-MANAGER MULTIMANAGER_DATA_DIR` убедиться, что путь =
+   `%APPDATA%\MultiManager` (не `multimanager-gui`).
+3. Создать профиль, установить расширение, запустить браузер — убедиться, что файлы создаются
+   под `%APPDATA%\MultiManager\profiles\<id>\BrowserData` и т.д.
+4. Проверить, что backup и run-logs — под этим же корнем.
+5. Проверить отсутствие новых файлов в `%APPDATA%\CloakManager` и `%APPDATA%\multimanager-gui`
+   (обычно старые папки могут остаться от прежних запусков — но новых записей быть не должно).
+6. Запустить core напрямую без GUI: fallback = `%APPDATA%\MultiManager` (Windows).
+
+## Риски и ограничения
+
+- Старые данные (`CloakManager`, орфанная папка `multimanager-gui\profiles`) не мигрируются — по
+  решению; после перехода они перестают быть видны. Профили, чьи `BrowserData` остались в
+  CloakManager, для первого запуска в новом корне создадут новые (пустые) `BrowserData` под тем же UUID.
+- `app.setPath('userData')` должен стоять раньше всех, кто читает `getPath('userData')`. Пропуск этого
+  порядка приведёт к частичному использованию двух корней — проверять вручную (пункт 2).
+- Если не исправить — данные продолжают писаться в `multimanager-gui`, а цель `MultiManager` не достигается.
 
 ## Критерии готовности
 
-- Для доступного MultiManager `init_wallet4browser.py` использует ID, возвращенный endpoint конкретного профиля.
-- При недоступном endpoint используется `klghhnkeealcohjjanjjdaeeggmfmlpl`, и сценарий продолжает работу.
-- Неверный ответ endpoint не приводит к открытию URL с `None`, пустым значением или произвольной строкой.
-- Сервер валидирует runtime ID до отправки ответа клиенту регулярным выражением `/^[a-z]{32}$/`; клиент также проверяет формат перед использованием и применяет fallback при невалидном значении.
-- Новый endpoint требует Bearer-auth и не раскрывает секретные поля.
-- Unit-тесты и lint проходят в MultiManager, тесты stAuto0 проходят.
-- Изменения ограничены перечисленными файлами и не требуют миграции БД.
+- `gui/src/main/index.js` задаёт `app.setPath('userData', …MultiManager)` до чтения пути любым модулем.
+- Во всех режимах запуска фактический корень данных — `%APPDATA%\MultiManager` (и аналоги на macOS/Linux).
+- Core не создаёт новых данных ни в `CloakManager`, ни в `multimanager-gui`.
+- Keytar — service `MultiManager`.
+- Внешние абсолютные `profile_path` работают как раньше.
+- Миграция легаси не реализована (по решению на гейте №1).
+- `npm test` и `npm run lint` проходят.

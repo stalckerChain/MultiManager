@@ -256,9 +256,9 @@ requests.post(f"{BASE}/api/browser/{profile['id']}/stop", headers=HEADERS)
 
 | 平台 | 路径 |
 |------|------|
-| Windows | `%APPDATA%/CloakManager/` |
-| macOS | `~/Library/Application Support/CloakManager/` |
-| Linux | `~/.config/CloakManager/` |
+| Windows | `%APPDATA%/MultiManager/` |
+| macOS | `~/Library/Application Support/MultiManager/` |
+| Linux | `~/.config/MultiManager/` |
 
 ### 系统目录结构：
 

@@ -42,10 +42,10 @@
 - **Тип БД:** SQLite через нативную `better-sqlite3`. ✅ `src/db/index.js`
 - **Режим:** WAL + ACID (pragma `journal_mode=WAL`, `foreign_keys=ON`). ✅ `src/db/index.js:35-36`
 - **Директория приложения:**
-  - **Windows:** `%APPDATA%/CloakManager/` ✅ `src/db/index.js:14`
-  - **macOS:** `~/Library/Application Support/CloakManager/`
-  - **Linux:** `~/.config/CloakManager/`
-- **Канонический путь профилей:** `%APPDATA%/CloakManager/profiles/{UUID}/BrowserData/` ✅ `src/cookie/inject.js:6`, используется в `src/api/browser.js:286,476`
+  - **Windows:** `%APPDATA%/MultiManager/` ✅ `src/core/data-dir.js`
+  - **macOS:** `~/Library/Application Support/MultiManager/`
+  - **Linux:** `~/.config/MultiManager/`
+- **Канонический путь профилей:** `%APPDATA%/MultiManager/profiles/{UUID}/BrowserData/` ✅ `src/core/profile-path.js`, используется в `src/api/browser.js:286,476`
   > **Примечание:** документ TS_ADDON предлагал путь `profiles_data/{UUIDv4}`. Каноническим закреплён реально работающий путь `profiles/{UUID}` — переименование не требуется.
 
 ### 3.1. Существующая схема БД ✅ РЕАЛИЗОВАНО (`src/db/schema.js`)

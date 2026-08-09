@@ -4,20 +4,12 @@ const fs = require('fs');
 const { logger } = require('../logger');
 const { createTables, migrateTables } = require('./schema');
 const { createProfileQueries, createProxyQueries, createCookieQueries, createLogQueries, createTaskQueries, createSystemConfigQueries } = require('./queries');
+const { getDataDir } = require('../core/data-dir');
 
 let db = null;
 
 function getDbPath() {
-  const platform = process.platform;
-  const home = process.env.HOME || process.env.USERPROFILE;
-  
-  if (platform === 'win32') {
-    return path.join(process.env.APPDATA, 'CloakManager', 'app.db');
-  } else if (platform === 'darwin') {
-    return path.join(home, 'Library', 'Application Support', 'CloakManager', 'app.db');
-  } else {
-    return path.join(home, '.config', 'CloakManager', 'app.db');
-  }
+  return path.join(getDataDir(), 'app.db');
 }
 
 function initDatabase() {

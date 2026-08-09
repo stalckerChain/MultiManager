@@ -56,7 +56,7 @@ stAuto0 — Playwright-based фреймворк Web3-автоматизации 
 | `proxy` (host:port:user:pass) | вычисляется из `proxies` JOIN | `/api/internal` отдаёт готовую строку |
 | `timezone` | `timezone` | default 'Asia/Bishkek' |
 | `debugging_port` | динамический из MultiManager | **больше НЕ статический** (см. §6) |
-| `profile_directory` | вычисляется из `id` (UUID) | `CloakManager/profiles/{UUID}/BrowserData` |
+| `profile_directory` | вычисляется из `id` (UUID) | `MultiManager/profiles/{UUID}/BrowserData` |
 | `id` (auto_001) | `id` (UUIDv4) | новый формат после миграции |
 
 **Новые поля (Twitter/Discord):** `twitter_username`, `twitter_password` (дешифр.), `twitter_auth_token` (дешифр.), `twitter_email`, аналогично `discord_*`. Отдаются в `/api/internal/profiles` в cleartext (для Python).
@@ -341,10 +341,10 @@ async def close(self):
 
 ### 7.2. `scripts/migrate_profile_dirs.py` ✅
 - Читает `config/mapping.json` (вывод скрипта §7.1).
-- **Определение целевой директории:** `%APPDATA%/CloakManager/profiles/{UUID}/BrowserData/` (через `os.environ['APPDATA']` на Windows; для Linux/macOS — `~/.config/CloakManager/` / `~/Library/Application Support/CloakManager/`, см. TS.md §3).
+- **Определение целевой директории:** `%APPDATA%/MultiManager/profiles/{UUID}/BrowserData/` (через `os.environ['APPDATA']` на Windows; для Linux/macOS — `~/.config/MultiManager/` / `~/Library/Application Support/MultiManager/`, см. TS.md §3).
 - **Копирование:** `shutil.copytree(src, dst, dirs_exist_ok=True)` (Python 3.8+):
   - **Откуда:** `config/chrome_accounts/auto_001/`
-  - **Куда:** `%APPDATA%/CloakManager/profiles/{UUID}/BrowserData/`
+  - **Куда:** `%APPDATA%/MultiManager/profiles/{UUID}/BrowserData/`
 - Полностью сохраняет куки и авторизации кошельков (копирование на уровне файлов сессии Chromium).
 - **Безопасность:** проверка существования источника (warning + skip если нет); проверка что назначение пустое или флаг `--overwrite`.
 - Логирует успех/неудачу по каждому аккаунту (не прерывается при ошибке одного). Итоговая сводка: N успешно, M с ошибками.

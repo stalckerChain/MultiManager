@@ -66,9 +66,11 @@ function onTokenReceived(token) {
 
 function startCoreProcess() {
   const { fork } = require('child_process');
+  const userData = require('electron').app.getPath('userData');
   log('INFO', 'startCore: forking', isDev ? '(dev)' : '(packaged)', CORE_PATH);
+  log('INFO', 'MULTIMANAGER_DATA_DIR:', userData);
 
-  const forkEnv = { ...process.env, PORT: corePort };
+  const forkEnv = { ...process.env, PORT: corePort, MULTIMANAGER_DATA_DIR: userData };
 
   if (!isDev) {
     const asarNodeModules = path.join(

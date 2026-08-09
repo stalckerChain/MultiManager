@@ -6,12 +6,17 @@ import os from 'os';
 
 const { performBackup, cleanupOldBackups, getBackupDir } = await vi.importActual('../../src/backup/index.js');
 
-// We need to mock getAppDir to use a temp directory
-let tmpDir, db, appDir;
+// We need to point getAppDir at a temp directory
+let tmpDir, db, appDir, originalAppData, originalDataDir;
 
 function createTestEnv() {
   tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'backup-test-'));
-  appDir = path.join(tmpDir, 'CloakManager');
+  originalAppData = process.env.APPDATA;
+  originalDataDir = process.env.MULTIMANAGER_DATA_DIR;
+  const dataDir = path.join(tmpDir, 'MultiManager');
+  process.env.MULTIMANAGER_DATA_DIR = dataDir;
+  process.env.APPDATA = tmpDir;
+  appDir = dataDir;
   fs.mkdirSync(appDir, { recursive: true });
 
   const dbPath = path.join(appDir, 'app.db');
@@ -34,6 +39,8 @@ describe('Backup Module', () => {
     if (db) {
       try { db.close(); } catch {}
     }
+    process.env.MULTIMANAGER_DATA_DIR = originalDataDir;
+    process.env.APPDATA = originalAppData;
     if (tmpDir) {
       fs.rmSync(tmpDir, { recursive: true, force: true });
     }
