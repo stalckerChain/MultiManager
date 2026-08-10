@@ -14,7 +14,7 @@
 - **Main / Renderer IPC：** 通过 `contextBridge` 实现安全的进程间通信，完全隔离（`contextIsolation: true`、`nodeIntegration: false`）。
 - **动态端口分配：** 后端自动启动，自动扫描并预留 `3000–3100` 范围内的空闲端口，处理端口冲突（`EADDRINUSE` 错误）。
 - **系统托盘：** 拦截窗口关闭事件，将界面隐藏到 Windows/macOS/Linux 系统托盘，确保 AI 代理在后台不间断运行。
-- **自动更新：** 通过 `electron-updater` 实现应用后台更新，支持 `autoDownload` 和通知。
+- **无 Electron 自动更新：** MultiManager 仅支持手动更新。应用不会检查更新服务器、不会下载或自动安装更新。CloakBrowser 通过 `npx cloakbrowser update` 单独更新。
 - **国际化（i18n）：** 通过 `i18next` 实现完整的热切换语言支持（English、Русский、简体中文）。
 - **主题切换：** 通过 CSS 变量动态切换主题（深色/浅色/跟随系统）。
 - **自动化矩阵：** 项目×配置文件矩阵，带复选框。分组运行，颜色状态指示器。并行执行限制。运行历史懒加载。设置中的项目管理（启用/禁用复选框，删除）。
@@ -77,7 +77,9 @@ MultiManager/
 │       │   ├── index.js      # 窗口创建、IPC 处理、生命周期
 │       │   ├── tray.js       # 系统托盘（上下文菜单）
 │       │   ├── core-manager.js # Core 引擎 fork、动态端口分配
-│       │   └── updater.js    # 通过 electron-updater 自动更新
+│       │   ├── browser-manager.js # CloakBrowser 检查/安装
+│       │   ├── keyboard-hooks.js # 操作系统级键盘钩子
+│       │   └── pty.js        # PTY 终端（IPC tail -f）
 │       ├── preload/          # 隔离的 IPC 上下文桥
 │       │   └── index.js      # 暴露 electronAPI（getPort、getToken、quitApp、事件）
 │       ├── shared/
@@ -155,7 +157,7 @@ API_TOKEN=YOUR_SECRET_TOKEN PORT=3005 npm start
 
 ## AI 代理集成（API 指南）
 
-所有对本地服务器的请求必须包含授权头 `Authorization: Bearer <TOKEN>`。令牌在 Electron 启动时自动生成，可在 GUI 状态栏中复制。
+所有对本地服务器的请求必须包含授权头 `Authorization: Bearer <TOKEN>`。令牌在首次启动时生成并永久保存在 SQLite（`system_config.api_token`），重启后复用，可在设置中重新生成，并可在 GUI 状态栏中复制。手动启动可通过 `API_TOKEN` 环境变量覆盖。
 
 ### 1. 为 AI 启动浏览器配置文件
 

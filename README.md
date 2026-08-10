@@ -1,151 +1,58 @@
-# MultiManager v1.4.2 ✅
+# MultiManager
 
-AI-Driven Web Automation Platform — кроссплатформенный антидетект-браузер с интеграцией Python-фреймворка автоматизации, графическим интерфейсом и локальным REST API / WebSocket для автономных ИИ-агентов (аналог AdsPower) на базе C++ ядра CloakBrowser.
+AI-Driven Web Automation Platform — кроссплатформенный антидетект-браузер с графическим интерфейсом и локальным REST API / WebSocket для автономных ИИ-агентов (аналог AdsPower) на базе C++ ядра CloakBrowser.
 
-> **Полная спецификация:** [TS.md](./TS.md) (MultiManager v2.0.0) + [TS_INTEGRATION.md](./TS_INTEGRATION.md) (stAuto0 интеграция).
-> **Фазы Roadmap:** Ф1–Ф4 ✅, Ф5 ✅, Ф6 ✅, **Ф7 ✅ (Automation Matrix)** — подробный план [TASK.md](./TASK.md).
+> **Полная спецификация:** [TS.md](./TS.md) · [TS_INTEGRATION.md](./TS_INTEGRATION.md) (интеграция stAuto0)
+> **Текущая задача и план:** [TASK.md](./TASK.md)
 
-## Что нового в v1.4.2
+## Что нового
 
-- **[FIX] Отображение прокси в формате `host:port` одной строкой.** Порт больше не скрывается при наличии локации: в колонке «Прокси» главной страницы IP и порт выводятся одной строкой (`text-xs font-mono`), локация — второй строкой только при наличии; в колонке «Connection» страницы прокси `host:port` также в одну строку. ✅ `gui/src/renderer/views/Profiles.vue`, `gui/src/renderer/views/Proxies.vue`
-- **[FEAT] Единый каталог данных `%APPDATA%/MultiManager`.** GUI и core используют один канонический корень данных во всех режимах (dev, packaged, standalone-core), независимо от имени приложения `multimanager-gui`. Реализовано через `app.setPath('userData', …MultiManager)` до загрузки модулей GUI (✅ `gui/src/main/app-data-dir.js`, `gui/src/main/index.js`) и единый resolver `src/core/data-dir.js`. Легаси-каталог `CloakManager` и орфанная `multimanager-gui` не используются и не мигрируются. ✅ `gui/src/main/app-data-dir.js`, `gui/src/main/index.js`, `tests/unit/app-data-dir.test.js`, `tests/unit/data-dir.test.js`
-- **[FEAT] Динамический runtime ID Zerion для `init_wallet4browser.py`.** Ручной скрипт инициализации кошелька получает актуальный runtime ID расширения Zerion через новый endpoint `GET /api/internal/profiles/:id/zerion-extension` и строит URL импорта с этим ID — вместо устаревшей статической константы. При недоступности MultiManager или невалидном ответе используется встроенный fallback. Общее поведение `zerion-login` и executor не изменено; профилю назначается ровно одно расширение (`profile.extensions[0]`). ✅ `src/api/internal.js`, `tests/unit/internal-profiles.test.js`, docs/API*.md; stAuto0: `Core/multimanager.py`, `scripts/init_wallet4browser.py`
-- **[FIX] Согласование fingerprint с CloakBrowser.** Устранён конфликт Firefox/Chromium, который видел BrowserScan: генератор больше не выбирает Firefox/Safari UA (в `UA_TEMPLATES` остались только Chrome-шаблоны), а запуск браузера использует документированный флаг `--fingerprint=<seed>` вместо несуществующего `--fingerprint-seed=<uuid>`. Ручной `--user-agent` из профиля больше не передаётся в CloakBrowser — отпечаток формирует сам движок. ✅ `src/fingerprint/index.js`, `src/api/browser.js`, `tests/unit/fingerprint.test.js`, `tests/unit/fingerprint-edge.test.js`, `tests/unit/browser-start-await.test.js`
-- **[FIX] Жизненный цикл Electron: single instance, активация окна и tray.** Повторный запуск больше не создаёт второй GUI/backend процесс: `app.requestSingleInstanceLock()` завершает второй экземпляр, а `second-instance` активирует существующее окно (восстанавливает из свёрнутого состояния, показывает и фокусирует). Обычный клик по tray-иконке открывает окно так же, как «Открыть панель» и двойной клик. Исправлен path tray-иконки в packaged-режиме (резолвится из `app.asar/resources`), с диагностическим логом при отсутствии файла или пустом `nativeImage`. ✅ `gui/src/main/index.js`, `gui/src/main/tray.js`, `gui/src/main/tray-paths.js`, `gui/src/main/main-window-utils.js`
-- **[FEAT] Постоянный API-токен автоматизации.** Токен больше не ротируется при каждом старте: генерируется один раз при первом запуске, сохраняется в `system_config.api_token` и переиспользуется при перезапусках. В Settings добавлена кнопка **Regenerate API Token** с подтверждением — ротация действует немедленно, инвалидирует старый токен, закрывает активные WebSocket-соединения и переподключает renderer с новым токеном. CLI-аргумент `--api-token=` и env `API_TOKEN` сохраняют приоритет для ручного запуска и не перезаписывают постоянное значение. ✅ `src/index.js`, `src/api/settings.js`, `gui/src/main/core-manager.js`, `gui/src/renderer/views/Settings.vue`
-- **[FEAT] Multi-Control: клавиатура синхронизируется через нативный hook (один источник).** Устранён double dispatch — ранее клавиша при вводе в DOM-элементе уходила в slave дважды (CDP-скрипт + OS hook). CDP-клавиатура из `SYNC_EVENT_SCRIPT` удалена; единственный источник — `WH_KEYBOARD_LL` → `/api/multi-control/os-keyboard`. Текст передаётся через `ToUnicodeEx` с учётом раскладки, Shift, CapsLock и AltGr (dead keys композируются), а не через эмуляцию keydown. Ctrl+W/T/N обрабатывает глобальный hook (Ctrl+T — браузер открывает таб нативно + автосинхронизация, Ctrl+W — закрытие slave-табов через CDP). Повторные start/stop multi-control больше не накапливают обработчики ввода. ✅ `src/multi-control/cdp-manager.js`, `src/api/multi-control.js`, `src/multi-control/index.js`, `src/os-input/native-hooks/hooks.cc`, `src/os-input/native-hooks/index.js`, `src/os-input/input-capture.js`, `gui/src/main/keyboard-hooks.js`, `gui/src/main/keyboard-hooks-payload.js`
-- **[SEC] Устранены уязвимости зависимостей.** Backend: `adm-zip`, `ip-address`, `body-parser`, `brace-expansion`, `esbuild`. GUI/Electron: `electron` 34→43, `electron-builder` 25→26, `better-sqlite3` 11→13, `cloakbrowser`, `postcss`, `js-yaml`, `concurrently`, `tar` (forced 7.5.22). Production audit: 0 vulns. ✅ `package.json`, `gui/package.json`
-- **[SEC] Защита ZIP/CRX.** Path traversal, лимиты размера/файлов, атомарное перемещение, безопасные ошибки, CRX boundary checks. ✅ `src/api/extensions.js`
-- **[SEC] Защита proxy от SSRF.** `isPrivateAddress()` для всех специальных диапазонов, валидация redirect, TLS `rejectUnauthorized: true`. ✅ `src/proxy/index.js`
-- **[SEC] Electron boundary.** IPC allowlist (13 каналов), навигационные ограничения, защита updater. ✅ `gui/src/preload/index.js`, `gui/src/main/index.js`
-- **[FIX] Save в настройках больше не пересинхронизирует проекты.** Ранее `PUT /api/settings/automation` автоматически синхронизировал проекты из ФС, что приводило к восстановлению удалённых проектов после нажатия Save. Теперь Save только сохраняет пути, синхронизация — только через кнопку Sync Projects. ✅ `src/api/settings.js`
-- **[FIX] FOREIGN KEY constraint failed при удалении профилей.** `run_tasks.profile_id` теперь с `ON DELETE CASCADE`. Профили удаляются даже после участия в авто-ране. ✅ `src/db/schema.js`, `src/api/profiles.js`, GUI store/view
-- **[FEAT] Внешние пути к профилям браузера.** Добавлено поле `profile_path` для профилей — позволяет использовать браузерные профили из внешних проектов (например, stAuto0) без копирования файлов. MM запускает браузер с внешним `user-data-dir`, расширения подгружаются из профиля. ✅ `src/db/schema.js`, `src/core/profile-path.js`, `src/api/browser.js`, `src/api/validate.js`, `src/api/profiles.js`, `src/db/queries.js`, GUI
-- **[FIX] Автоматизация: исправлен запуск из GUI.** Кнопка запуска теперь только для `pending`-ранов (не для `partial`). Старт требует `Authorization: Bearer <token>` — 401 без токена. ✅ `gui/src/renderer/views/AutomationRuns.vue`, `src/api/runs.js`, `tests/unit/runs-api.test.js`
-- **[FIX] Автоматизация: исправлена передача токена и диапазона в stAuto0.** Токен теперь передаётся явным CLI-аргументом `--token=` (совместимо с `MM_TOKEN` в env). Диапазон `--range` строится из числового суффикса имени профиля (`auto_002` → `002-002`), а не из DB-порядка `number`. ✅ `src/executor/index.js`, `tests/unit/executor.test.js`
-- **[FIX] Валидация `profile_path` ужесточена.** Все схемы (create, batch, update) единообразно проверяют nullable/пустой/абсолютный путь, отклоняя относительные. ✅ `src/api/validate.js`
-- **[FIX] Pre-flight проверка внешнего профиля.** До запуска браузера проверяется существование user-data-dir для профилей с `profile_path`. При отсутствии — понятная ошибка `PROFILE_DIR_NOT_FOUND`. ✅ `src/api/browser.js`
-- **[FIX] Runtime ID расширения Zerion.** Имя каталога расширения и его runtime ID Chromium теперь корректно различаются. ID вычисляется из `manifest.key` (SHA-256 → `a`–`p`) или читается из `Secure Preferences` профиля — вместо использования имени папки как `chrome-extension://` ID, что приводило к `ERR_BLOCKED_BY_CLIENT`. ✅ `src/api/extensions.js`, `src/api/browser.js`, `src/executor/index.js`
+История изменений по версиям — в [CHANGELOG.md](./CHANGELOG.md).
 
-- **[FIX] Zerion auto-login в MM-mode полностью переработан.** Исправлены: CDP connect 404 (discoverWsUrl с UUID), Zerion extension ID из Secure Preferences, поиск по имени расширения, Runtime.callFunctionOn → Runtime.evaluate, overlay removal (рекурсивный), tab matching (только #/login), unlock button (клик вместо Enter).
+## Обновление
 
-- **[FIX] Zerion extension ID исправлен.** ID захардкожен неправильно (`klghhnkeealcohjjanjjdaeeggmfmlpl`). Теперь читается из `profile.extensions` — правильный ID `kdlpoccbjdfjbmpiengmbhjdbkfkkkoj`.
-- **[FIX] Error message в run tasks.** Добавлена колонка `error_message` в `run_tasks`. Python передаёт текст ошибки при `report_task_status()`. Отображается тултипом на красных ячейках в интерфейсе.
-- **[FIX] Executor close-handler.** Перед пометкой задач как `failed` перечитывает статус из БД — не перезаписывает `success` если Python уже отчитался.
-- **[LOG] Плотное логирование.** Zerion-login, report_task_status, CDP-подключение — все ключевые шаги залогированы в Python и Node.js.
+- **MultiManager** обновляется **только вручную** пользователем: скачайте новый установщик/портативную сборку и запустите её. Приложение не проверяет update-серверы, не скачивает и не устанавливает обновления автоматически.
+- **CloakBrowser** обновляется отдельно — `npx cloakbrowser update` (см. раздел «CloakBrowser» ниже).
 
-- **[SEC] Динамический User-Agent по версии CloakBrowser.** UA теперь генерируется на основе реальной версии CloakBrowser (авто-определение из `~/.cloakbrowser/` → ручная настройка в Settings → дефолт). При обновлении CloakBrowser UA автоматически обновляется.
-- **[SEC] GeoIP timezone при запуске браузера.** Timezone определяется автоматически по IP прокси через `ip-api.com`, guaranteет соответствие timezone геолокации прокси.
-- **[API] Настройка версии CloakBrowser.** Новые эндпоинты `GET/PUT /api/settings/cloakbrowser-version` для ручного задания версии.
-- **[FIX] User-Agent обновлён с Chrome 131 на Chrome 146.** BrowserScan детектировал несоответствие: UA говорил Chrome 131, а реальный браузер CloakBrowser — Chrome 146. Это была мгновенная детекция.
-- **[SEC] Антидетект: timezone через `--fingerprint-timezone`.** Timezone теперь передаётся на уровне движка CloakBrowser через бинарный флаг `--fingerprint-timezone`, а НЕ через обнаруживаемую CDP-эмуляцию `Emulation.setTimezoneOverride`. Это исключает детектирование мультиаккаунтинга по timezone.
-- **[SEC] Антидетект: дополнительные флаги.** Добавлены `--lang=en-US`, `--no-first-run`, `--no-default-browser-check` — отключают первичные диалоги и стандартные проверки браузера.
-- **[FIX] Retry-логика при запуске браузера.** При ошибке `ERR_ADDRESS_IN_USE` автоматически повторяет запуск до 3 раз с задержкой 2 секунды.
+## Архитектура и технологический стек
 
-## Что нового в v1.4.1
+Монорепозиторий (Full-Stack Desktop Application):
 
-- **[UX] Чекбоксы на странице прокси** — множественный выбор прокси через чекбоксы в каждой строке + чекбокс "выбрать все" в шапке таблицы.
-- **[UX] Кнопка "Check Selected"** — массовая проверка выделенных прокси (последовательный вызов check для каждого).
-- **[UX] Кнопка "Delete Selected"** — массовое удаление выделенных прокси.
-- **[UX] Пагинация с выбором размера страницы** — dropdown 10/20/50/100 на странице прокси (аналогично странице профилей).
-- **[FEATURE] Поле Location для прокси** — автоматически определяется при проверке прокси (check) через ip-api.com. Формат: `DE(Germany)`. Отображается: главная страница (столбец Proxy), страница прокси (столбец Location), модал редактирования прокси (рядом с Host), dropdown прокси в редактировании аккаунта (`protocol://IP - Location(count)`).
-- **Столбец Proxy:** отображает `host` и `port` в две строки. Клик по колонке открывает диалог редактирования прокси.
-- **Столбец Connection:** на странице прокси `host` и `port` в две строки.
-- **Столбец Accounts:** на странице прокси — имена профилей, кликабельны → редактирование профиля.
-- **Единый ProxyModal:** переиспользуемый компонент для редактирования прокси (статус + Check + форма).
-- **Кнопка Check:** доступна в 3 местах (главная, страница прокси, модал редактирования).
-
-## Что нового в v1.4.0 (Security Hardening)
-
-Масштабная ревизия безопасности по результатам code review. 12 критических и 12 warning-замечаний исправлены.
-
-### Безопасность
-
-- **WebSocket Authentication:** `/ws` теперь требует `?token=` — без токена соединение отклоняется
-- **Recovery Key One-Time:** recovery key показывается только при установке/смене пароля и удаляется из БД
-- **Master Key Gate:** mutating endpoints (`/api/profiles`, `/api/proxies`, `/api/cookies`) блокируются (503) до инициализации master key
-- **Internal API Secrets Removed:** `/api/internal/profiles` больше не возвращает пароли, auth-токены и proxy credentials
-- **Proxy Credentials Encrypted:** `username` и `password` прокси теперь шифруются AES-256-GCM в SQLite
-- **CDP Injection Fixed:** password и selectors больше не конкатенируются в JS-строки — используются `Runtime.callFunctionOn`
-- **Extension Manifest Validation:** расширения проверяются по `manifest.json` перед установкой
-- **CRX Parser Hardened:** отвергает невалидные magic bytes и неизвестные CRX-версии
-- **Cookie Temp File Cleanup:** temp-файл всегда удаляется в `finally` block
-- **Proxy Rotation SSRF Protected:** валидация scheme + блокировка private/local адресов
-- **PTY Path Validation:** log tail валидирует что путь в allowed directories
-- **Core Token Rotation:** токен ротируется при каждом старте приложения
-- **Browser Manager Cross-Platform:** ищет `chrome`/`chrome.exe` по платформе
-- **Plaintext Master Key Removed:** keytar fallback не хранит ключ открытым текстом
-
-## Архитектура и Технологический Стек
-
-Проект построен по принципу монорепозитория (Full-Stack Desktop Application):
-
-- **Core-движок (Бэкенд):** Node.js, Express, SQLite (`better-sqlite3`, WAL+ACID), Pino, WebSocket (`ws`). Работает в фоновом режиме, управляет БД, отпечатками, процессами CloakBrowser и задачами автоматизации.
-- **GUI (Фронтенд):** Electron.js, Vue 3 (Composition API), Ant Design Vue, Tailwind CSS, Pinia, Vue Router, i18next.
+- **Core (бэкенд):** Node.js, Express, SQLite (`better-sqlite3`, WAL+ACID), Pino, WebSocket (`ws`). Работает в фоновом режиме, управляет БД, отпечатками, процессами CloakBrowser и задачами автоматизации.
+- **GUI (фронтенд):** Electron, Vue 3 (Composition API), Ant Design Vue, Tailwind CSS, Pinia, Vue Router, i18next.
 - **Python-фреймворк (stAuto0):** Playwright + cloakbrowser. Чистая Web3-автоматизация (квесты, дроп-охота, мультиаккаунтинг). Отдельный проект, данные через API. См. [TS_INTEGRATION.md](./TS_INTEGRATION.md).
 
-### Кроссплатформенная системная интеграция:
+### Системная интеграция
 
-- **Main / Renderer IPC:** Безопасное межпроцессное взаимодействие через `contextBridge` с полной изоляцией (`contextIsolation: true`, `nodeIntegration: false`).
-- **Dynamic Port Allocation:** Автозапуск бэкенда с автоматическим сканированием свободных портов в диапазоне `3000–3100`. Порт передаётся через **env `PORT=N`**.
-- **System Tray:** Перехват закрытия окна → скрытие в трей. Полное завершение только через трей.
-- **Auto-Update:** `electron-updater` + GitHub Releases (latest.yml).
-- **Localization (i18n):** English, Русский, 简体中文. Ключи `t('...')`.
-- **Theme Switcher:** Тёмная / Светлая / Системная. CSS-переменные + `prefers-color-scheme` + `nativeTheme`.
-- **Automation Matrix (v2.0.0):** Матрица Проекты×Профили с чекбоксами. Групповые запуски (runs) с цветной индикацией статусов (зелёный/красный/синий). Параллельное выполнение с ограничением. История запусков с ленивой подгрузкой. Управление проектами в Settings (чекбоксы вкл/выкл, удаление). Матрица читает проекты из БД (is_active флаг), Executor автоматически финализирует статус run.
-- **Built-in Terminal:** xterm.js + IPC-мост для tail -f логов запусков (powershell Get-Content / tail). Привязан к `log_file_path` в `run_tasks` — кнопка "View Log" в GUI.
-> **PowerShell invocation:** все вызовы PowerShell (`Get-RunningWindows`, `Move-Window`, `Set-WindowFocus`, `FocusByPID`, `FindWindowByPid`) используют `spawn('powershell', ['-EncodedCommand', ...])` — Base64 UTF‑16LE кодирование через прямой вызов PowerShell (без `cmd.exe` / temp-файлов / stdin), что bypassит Execution Policy, ASR-правила и лимит длины командной строки (~8191 символов). `getScreenSize` также переведён на `spawn` + `-EncodedCommand` вместо `execAsync(powershell -Command)`.
-- **WebSocket:** Реалтайм-статусы профилей. Exponential backoff (1→2→4→8 сек). Автоматический re-fetch при переподключении. Периодический опрос статуса (10 сек) как страховка от потери broadcast'ов. **Аутентификация** через `?token=` (v1.4.0).
-
----
+- **Main / Renderer IPC:** безопасное межпроцессное взаимодействие через `contextBridge` с полной изоляцией (`contextIsolation: true`, `nodeIntegration: false`).
+- **Dynamic Port Allocation:** автозапуск бэкенда с автоматическим сканированием свободных портов в диапазоне `3000–3100`.
+- **System Tray:** закрытие окна скрывает приложение в трей; полное завершение — только через трей.
+- **Automation Matrix (v2.0.0):** матрица Проекты×Профили с чекбоксами, групповые запуски (runs), история.
+- **WebSocket:** реалтайм-статусы профилей, аутентификация через `?token=`.
+- **Автообновление Electron отсутствует** — обновление MultiManager выполняется вручную.
 
 ## Структура проекта
 
 ```
 MultiManager/
-├── TS.md                     # ТЕХНИЧЕСКОЕ ЗАДАНИЕ (MultiManager v1.4.0)
+├── TS.md                     # ТЕХНИЧЕСКОЕ ЗАДАНИЕ
 ├── TS_INTEGRATION.md         # ТЗ интеграции stAuto0 с MultiManager
-├── TS_ADDON.txt              # Источник: контекст Web3 Automation Platform
+├── CHANGELOG.md              # История изменений по версиям
 ├── ToDo.md                   # Реестр нереализованного функционала
 ├── TASK.md                   # Текущая задача разработки
 ├── package.json              # Зависимости бэкенда и скрипты
 ├── vitest.config.js          # Vitest
 ├── src/                      # БЭКЕНД (Core-движок)
-│   ├── index.js              # Точка входа (fork; постоянный API-токен из system_config)
-│   ├── core/
-│   │   ├── app.js            # Express + маршруты API
-│   │   └── websocket.js      # WebSocket для реалтайм-событий
-│   ├── api/                  # REST API эндпоинты
-│   │   ├── auth.js           # Bearer-токен авторизация
-│   │   ├── profiles.js       # CRUD профилей
-│   │   ├── proxies.js        # CRUD прокси + проверка
-│   │   ├── cookies.js        # Импорт/экспорт куки
-│   │   ├── browser.js        # Запуск/остановка CloakBrowser + CDP
-│   │   ├── multi-control.js  # Синхронизация окон (CDP + native hooks)
-│   │   ├── window-arranger.js # Управление окнами (Grid, Cascade)
-│   │   ├── extensions.js     # Расширения Chrome
-│   │   ├── fingerprint.js    # Генератор отпечатков
-│   │   ├── logs.js           # Логи профилей и системы
-│   │   ├── internal.js       # Internal API (профили по диапазону)
-│   │   ├── internal-runs.js  # Internal API (колбэки от stAuto0)
-│   │   ├── projects.js       # API проектов (sync, CRUD)
-│   │   ├── matrix.js         # API матрицы (чекбоксы Проекты×Профили)
-│   │   ├── runs.js           # API запусков (create, start, cancel, history)
-│   │   └── settings.js       # Настройки (крипто-модуль, автоматизация)
-│   ├── executor/             # 🆕 Исполнитель задач (spawn, parallel limit)
-│   │   └── index.js          # RunExecutor — семафор, spawn, callbacks
-│   ├── db/                   # SQLite (WAL, схемы, CRUD)
-│   │   ├── index.js          # Инициализация БД, путь к app.db
-│   │   ├── schema.js         # Таблицы, индексы, триггеры
-│   │   └── queries.js        # CRUD операции
-│   ├── fingerprint/          # Валидатор отпечатков
+│   ├── index.js              # Точка входа (постоянный API-токен из system_config)
+│   ├── core/                 # Express app, WebSocket
+│   ├── api/                  # REST API (auth, profiles, proxies, cookies, browser, ...)
+│   ├── executor/             # RunExecutor (spawn, parallel limit)
+│   ├── db/                   # SQLite (WAL, schema, queries)
+│   ├── fingerprint/          # Генератор отпечатков
 │   ├── proxy/                # Парсинг, чекер, ротация прокси
 │   ├── cookie/               # Инжекция/экспорт сессий
 │   ├── typing/               # Human-like Typing (CDP)
-│   ├── multi-control/        # Синхронизатор окон
-│   │   ├── index.js
-│   │   ├── cdp-manager.js
-│   │   └── mouse-smoothing.js
+│   ├── multi-control/        # Синхронизация окон
 │   ├── os-input/             # Захват ввода (CDP + C++ WH_KEYBOARD_LL)
 │   ├── crypto/               # AES-256-GCM шифрование (keytar/PBKDF2)
 │   ├── logger/               # Pino (core.log + profile_[ID].log)
@@ -161,39 +68,16 @@ MultiManager/
 │       │   ├── core-manager.js # Fork Core, динамические порты
 │       │   ├── browser-manager.js # CloakBrowser check/install
 │       │   ├── keyboard-hooks.js # OS-level keyboard hooks
-│       │   ├── updater.js    # electron-updater
 │       │   └── pty.js        # PTY-терминал (IPC tail -f)
 │       ├── preload/          # Контекстный мост IPC
 │       ├── shared/errors.js  # Коды ошибок
-│       └── renderer/         # Vue 3 App
-│           ├── main.js
-│           ├── App.vue
-│           ├── router.js
-│           ├── style.css
-│           ├── i18n/         # en.json, ru.json, zh.json
-│           ├── stores/       # Pinia (app, profiles, proxies, browser, sync, automation)
-│           ├── views/        # Экраны
-│           │   ├── Profiles.vue
-│           │   ├── Proxies.vue
-│           │   ├── WindowArranger.vue
-│   │   ├── Extensions.vue
-│   │   ├── AutomationMatrix.vue       # 🆕 Матрица Проекты×Профили
-│   │   ├── AutomationRuns.vue         # 🆕 Запуски (цветная матрица)
-│   │   ├── AutomationHistory.vue      # 🆕 История запусков
-│   │   ├── Settings.vue
-│           │   ├── ProfileModal.vue
-│           │   └── CookieImportModal.vue
-│           ├── components/   # Layout, StatusBar, LogPanel, Terminal, BrowserDownload, AccountsTab, WalletsTab
-│           ├── composables/  # useTheme, useWebSocket
-│           └── api/          # HTTP-клиент к Core
-└── tests/                    # Vitest (763 тестов, 49 файлов)
-    ├── unit/                 # 36 файла: auth, proxy, fingerprint, typing, crypto, pty, extensions, automation, matrix-selection, websocket-reconnect, hooks-node-path, etc.
-    └── integration/          # 8 файлов: SQLite WAL, API, lifecycle, proxy, websocket, automation-full-cycle
+│       └── renderer/         # Vue 3 App (views, components, stores, i18n)
+└── tests/                    # Vitest
+    ├── unit/                 # Unit-тесты
+    └── integration/          # Интеграционные тесты
 ```
 
----
-
-## Быстрый старт (Разработка)
+## Быстрый старт (разработка)
 
 ```bash
 # Установка зависимостей
@@ -210,14 +94,32 @@ npm run dev
 npm test
 ```
 
-### Параметры ручного запуска Core (без GUI)
+## API-токен
+
+API-токен хранится постоянно:
+
+1. Приоритет источников: `--api-token=...` → env `API_TOKEN` → сохранённый `system_config.api_token` → генерация нового (только при отсутствии сохранённого).
+2. В обычном режиме токен генерируется один раз при первом запуске, сохраняется в БД и переиспользуется при перезапусках.
+3. Ручной standalone-запуск с override:
 
 ```bash
 API_TOKEN=YOUR_SECRET_TOKEN node src/index.js
-# Или с явным портом: API_TOKEN=YOUR_SECRET_TOKEN PORT=3005 node src/index.js
+# или с портом: API_TOKEN=YOUR_SECRET_TOKEN PORT=3005 node src/index.js
 ```
 
-### Сборка Windows Installer / Portable
+Токен копируется из статус-бара GUI; ротация доступна в Settings → **Regenerate API Token**.
+
+## CloakBrowser
+
+```bash
+npx cloakbrowser install   # Установка
+npx cloakbrowser info      # Версия и путь
+npx cloakbrowser update    # Обновление (отдельно от MultiManager)
+```
+
+GUI автоматически проверяет наличие CloakBrowser при первом запуске.
+
+## Сборка Windows Installer / Portable
 
 ```bash
 # Предварительно собрать нативный addon
@@ -230,17 +132,9 @@ cd gui && npm install && npm run build
 #   MultiManager 1.x.x.exe        — Portable (single file)
 ```
 
-### CloakBrowser
+Production-сборка выполняется без публикации: `npm run build -- --publish never`. Публикация release-артефактов — только вручную, по инструкциям [docs/DEPLOY.md](./docs/DEPLOY.md) и [docs/CICD.md](./docs/CICD.md).
 
-```bash
-npx cloakbrowser install   # Установка
-npx cloakbrowser info       # Версия и путь
-npx cloakbrowser update     # Обновление
-```
-
-GUI автоматически проверяет наличие CloakBrowser при первом запуске.
-
-### Скрипты
+## Скрипты
 
 | Скрипт | Описание |
 |--------|----------|
@@ -250,13 +144,12 @@ GUI автоматически проверяет наличие CloakBrowser п
 | `npm run test:api` | Интеграционный API-тест |
 | `npm run test:all` | Vitest + API-тест |
 | `npm run build:native` | Сборка hooks.node (node-gyp rebuild) |
+| `npm run lint` | ESLint для src/ |
 | `npm run typecheck` | TypeScript-проверка |
-
----
 
 ## Интеграция с ИИ-Агентами (API Руководство)
 
-Все запросы содержат `Authorization: Bearer <TOKEN>`. Токен генерируется при старте, копируется из статус-бара GUI.
+Все запросы содержат `Authorization: Bearer <TOKEN>`.
 
 ### 1. Запуск профиля
 
@@ -275,7 +168,7 @@ POST http://127.0.0.1:{PORT}/api/browser/{profile_id}/start
 }
 ```
 
-> **Примечание:** `ws_endpoint` содержит **реальный CDP-порт** CloakBrowser (динамический, из stderr discovery). Python подключается через `connect_over_cdp(ws_endpoint)`. Ответ также включает поле `cdp_port` для прямого доступа.
+> **Примечание:** `ws_endpoint` содержит реальный CDP-порт CloakBrowser (динамический). Статус профиля переходит в `running` только после обнаружения CDP-порта.
 
 ### 2. Подключение (Python / Playwright)
 
@@ -300,7 +193,6 @@ asyncio.run(run_ai_agent())
 
 ### 3. Human-like Typing (CDP)
 
-Через API (рекомендуемый способ):
 ```
 POST http://127.0.0.1:{PORT}/api/browser/{profile_id}/type
 Content-Type: application/json
@@ -308,12 +200,6 @@ Content-Type: application/json
 ```
 
 **Ответ:** `{ "status": "success" }`
-
-Через код:
-```js
-const { humanType } = require('./typing');
-await humanType(cdpSession, 'MySecretPassword123');  // 50-150ms, 3% опечаток
-```
 
 ### 4. Multi-Control API
 
@@ -342,21 +228,6 @@ Content-Type: application/json
 ```
 
 **Ответ (201):** Массив созданных профилей (одна транзакция, автооткат при ошибке).
-
-### 6. Определение таймзоны по прокси
-
-```
-GET http://127.0.0.1:{PORT}/api/proxies/{proxy_id}/timezone
-```
-
-**Ответ (200):**
-```json
-{ "timezone": "Europe/Berlin" }
-```
-
-> **Примечание:** Требуется предварительная проверка прокси (`POST /api/proxies/:id/check`), чтобы определить IP-адрес. Таймзона определяется через `ip-api.com`.
-
----
 
 ### 6. Полный цикл
 
@@ -390,8 +261,6 @@ asyncio.run(work())
 requests.post(f"{BASE}/api/browser/{profile['id']}/stop", headers=HEADERS)
 ```
 
----
-
 ## Директории хранения данных
 
 | Платформа | Путь |
@@ -402,14 +271,11 @@ requests.post(f"{BASE}/api/browser/{profile['id']}/stop", headers=HEADERS)
 
 ### Структура:
 
-- `app.db` — SQLite (WAL). Профили (30 колонок, AES-256-GCM), прокси, куки, **projects**, **project_profile_config**, **runs**, **run_tasks** (v2.0.0), system_config.
-- `profiles/{UUID}/BrowserData/` — Сессии Chromium (Cookies, LocalStorage, Cache).
-- `extensions/` — Установленные расширения Chrome.
-- `logs/core.log` — Системные логи.
-- `logs/profile_[ID].log` — Логи сессий.
-- `backups/` — Бэкапы app.db (Rolling 7 дней).
-
----
+- `app.db` — SQLite (WAL). Профили (AES-256-GCM), прокси, куки, projects, runs, run_tasks, system_config.
+- `profiles/{UUID}/BrowserData/` — сессии Chromium.
+- `extensions/` — установленные расширения Chrome.
+- `logs/core.log`, `logs/profile_[ID].log` — логи.
+- `backups/` — бэкапы app.db (rolling 7 дней).
 
 ## Коды ошибок API
 
@@ -417,7 +283,6 @@ requests.post(f"{BASE}/api/browser/{profile['id']}/stop", headers=HEADERS)
 |-----|----------|
 | 200 | Успешный запрос |
 | 201 | Ресурс создан |
-| 204 | Успешное удаление |
 | 400 | Неверный запрос (валидация) |
 | 401 | Не авторизован |
 | 404 | Ресурс не найден |
@@ -426,25 +291,22 @@ requests.post(f"{BASE}/api/browser/{profile['id']}/stop", headers=HEADERS)
 | 500 | Внутренняя ошибка сервера |
 | 502 | Ошибка ротации прокси / CDP порт не найден |
 
----
-
 ## Документация
 
 | Файл | Описание |
 |------|----------|
-| [TS.md](./TS.md) | Полное ТЗ MultiManager v1.1.0 (12 разделов, Roadmap) |
-| [TS_INTEGRATION.md](./TS_INTEGRATION.md) | ТЗ интеграции stAuto0 (маппинг полей, рефакторинг, миграция) |
-| [TS_ADDON.txt](./TS_ADDON.txt) | Источник: контекст Web3 Automation Platform |
-| [ToDo.md](./ToDo.md) | Реестр нереализованного функционала (19 задач) |
+| [TS.md](./TS.md) | Полное ТЗ MultiManager |
+| [TS_INTEGRATION.md](./TS_INTEGRATION.md) | ТЗ интеграции stAuto0 |
+| [ToDo.md](./ToDo.md) | Реестр нереализованного функционала |
 | [TASK.md](./TASK.md) | Текущая задача разработки |
+| [CHANGELOG.md](./CHANGELOG.md) | История изменений |
 | [docs/DATABASE.md](./docs/DATABASE.md) | Схема БД (таблицы, индексы, триггеры, шифрование) |
-| [docs/API.md](./docs/API.md) | REST API Reference (все эндпоинты)
-| [docs/API.en.md](./docs/API.en.md) | REST API Reference (English)
-| [docs/API.zh.md](./docs/API.zh.md) | REST API Reference (中文)
-| [docs/DEPLOY.md](./docs/DEPLOY.md) | Инструкция по развёртыванию
+| [docs/API.md](./docs/API.md) | REST API Reference |
+| [docs/API.en.md](./docs/API.en.md) | REST API Reference (English) |
+| [docs/API.zh.md](./docs/API.zh.md) | REST API Reference (中文) |
+| [docs/DEPLOY.md](./docs/DEPLOY.md) | Сборка и развёртывание |
+| [docs/CICD.md](./docs/CICD.md) | CI/CD пайплайн |
 | [docs/MULTI-CONTROL.md](./docs/MULTI-CONTROL.md) | Архитектура синхронизации окон |
-
----
 
 ## Лицензия
 

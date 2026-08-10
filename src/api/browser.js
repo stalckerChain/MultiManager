@@ -89,6 +89,7 @@ const profileWindows = new Map();
 const cdpPorts = new Map();
 const SHUTDOWN_TIMEOUT_MS = 8000;
 const HEALTH_CHECK_INTERVAL_MS = 5000;
+const CDP_READY_TIMEOUT_MS = 15000;
 let healthCheckTimer = null;
 
 function isProcessAlive(pid) {
@@ -190,6 +191,133 @@ function waitForCdpPort(profileId, timeout = 15000) {
       setTimeout(check, 100);
     };
     check();
+  });
+}
+
+// Жизненный цикл запуска: spawn → процесс жив → CDP ready → (resolve).
+// Retry на ERR_ADDRESS_IN_USE обрабатывает как синхронный throw от spawn(),
+// так и асинхронный child.on('error'). Профиль не считается запущенным до
+// обнаружения CDP-порта в накопленном stderr-буфере.
+async function spawnBrowserWithCdp({
+  browserPath,
+  args,
+  profileId,
+  profileLogger,
+  logQueries,
+  maxRetries,
+  retryDelayMs,
+  cdpReadyTimeoutMs,
+}) {
+  let attempt = 0;
+  let child = null;
+  let cdpTimeoutTimer = null;
+  let settled = false;
+
+  const removeLifecycleListeners = (c) => {
+    if (!c) return;
+    c.removeAllListeners('error');
+    c.removeAllListeners('exit');
+  };
+
+  const cleanupFailedChild = () => {
+    if (cdpTimeoutTimer) {
+      clearTimeout(cdpTimeoutTimer);
+      cdpTimeoutTimer = null;
+    }
+    const failedChild = child;
+    child = null;
+    removeLifecycleListeners(failedChild);
+    if (failedChild && failedChild.pid) {
+      try {
+        kill(failedChild.pid, 'SIGKILL', () => {});
+      } catch {
+        // процесс уже завершился
+      }
+    }
+    runningProfiles.delete(profileId);
+  };
+
+  const logRetry = () => {
+    profileLogger.warn({ profileId, attempt, maxRetries }, 'ERR_ADDRESS_IN_USE, retrying...');
+    logQueries.add(profileId, 'warn', `ERR_ADDRESS_IN_USE, попытка ${attempt}/${maxRetries}`);
+  };
+
+  return new Promise((resolve, reject) => {
+    const fail = (err) => {
+      if (settled) return;
+      settled = true;
+      cleanupFailedChild();
+      reject(err);
+    };
+
+    const succeed = () => {
+      if (settled) return;
+      settled = true;
+      if (cdpTimeoutTimer) {
+        clearTimeout(cdpTimeoutTimer);
+        cdpTimeoutTimer = null;
+      }
+      removeLifecycleListeners(child);
+      resolve({ child, cdpPort: cdpPorts.get(profileId) });
+    };
+
+    const onChildError = (err) => {
+      if (settled) return;
+      const isAddressInUse = err && err.message && err.message.includes('ERR_ADDRESS_IN_USE');
+      if (isAddressInUse && attempt < maxRetries) {
+        attempt++;
+        logRetry();
+        cleanupFailedChild();
+        setTimeout(spawnAttempt, retryDelayMs);
+        return;
+      }
+      fail(new Error(`Ошибка запуска браузера: ${err.message}`));
+    };
+
+    const onChildExit = (code, signal) => {
+      if (settled) return;
+      const exitInfo = code !== null ? `code=${code}` : `signal=${signal}`;
+      fail(new Error(`Браузер завершился до готовности CDP (${exitInfo})`));
+    };
+
+    const onStderrData = (currentChild) => (data) => {
+      // Данные могут прийти от уже сброшенной попытки (после retry/timeout) — игнорируем.
+      if (currentChild !== child) return;
+      const chunk = data.toString();
+      currentChild._mmStderrOutput = (currentChild._mmStderrOutput || '') + chunk;
+      const match = currentChild._mmStderrOutput.match(/DevTools listening on ws:\/\/127\.0\.0\.1:(\d+)/);
+      if (match) {
+        cdpPorts.set(profileId, parseInt(match[1], 10));
+        succeed();
+      }
+    };
+
+    const spawnAttempt = () => {
+      if (settled) return;
+      try {
+        child = spawn(browserPath, args, { detached: true, stdio: ['ignore', 'pipe', 'pipe'] });
+      } catch (err) {
+        const isAddressInUse = err.message && err.message.includes('ERR_ADDRESS_IN_USE');
+        if (isAddressInUse && attempt < maxRetries) {
+          attempt++;
+          logRetry();
+          setTimeout(spawnAttempt, retryDelayMs);
+          return;
+        }
+        fail(new Error(`Ошибка запуска браузера: ${err.message}`));
+        return;
+      }
+
+      child.on('error', onChildError);
+      child.on('exit', onChildExit);
+      child.stderr.on('data', onStderrData(child));
+
+      cdpTimeoutTimer = setTimeout(() => {
+        fail(new Error('CDP port timeout'));
+      }, cdpReadyTimeoutMs);
+    };
+
+    spawnAttempt();
   });
 }
 
@@ -421,46 +549,31 @@ router.post('/:id/start', asyncHandler(async (req, res) => {
 
   const SPAWN_RETRIES = 3;
   const SPAWN_RETRY_DELAY_MS = 2000;
-  let child = null;
-  let lastSpawnError = null;
 
-  for (let attempt = 1; attempt <= SPAWN_RETRIES; attempt++) {
-    try {
-      child = spawn(browserPath, args, {
-        detached: true,
-        stdio: ['ignore', 'pipe', 'pipe'],
-      });
-      break;
-    } catch (err) {
-      lastSpawnError = err;
-      const isAddressInUse = err.message && err.message.includes('ERR_ADDRESS_IN_USE');
-      if (isAddressInUse && attempt < SPAWN_RETRIES) {
-        profileLogger.warn({ profileId: req.params.id, attempt, error: err.message }, 'ERR_ADDRESS_IN_USE, retrying...');
-        logQueries.add(req.params.id, 'warn', `ERR_ADDRESS_IN_USE, попытка ${attempt}/${SPAWN_RETRIES}`);
-        await new Promise(r => setTimeout(r, SPAWN_RETRY_DELAY_MS));
-        continue;
-      }
-      throw err;
-    }
-  }
-
-  if (!child) {
+  let cdpLaunch = null;
+  try {
+    cdpLaunch = await spawnBrowserWithCdp({
+      browserPath,
+      args,
+      profileId: req.params.id,
+      profileLogger,
+      logQueries,
+      maxRetries: SPAWN_RETRIES,
+      retryDelayMs: SPAWN_RETRY_DELAY_MS,
+      cdpReadyTimeoutMs: CDP_READY_TIMEOUT_MS,
+    });
+  } catch (err) {
     profileQueries.updateStatus(req.params.id, 'stopped');
     broadcastStatus(req.params.id, 'stopped');
-    logQueries.add(req.params.id, 'error', `Ошибка запуска после ${SPAWN_RETRIES} попыток: ${lastSpawnError?.message}`);
-    profileLogger.error({ profileId: req.params.id, error: lastSpawnError?.message }, `Ошибка запуска после ${SPAWN_RETRIES} попыток`);
-    return res.status(500).json({ error: 'Ошибка запуска браузера', code: 'SPAWN_FAILED' });
+    profileQueries.updatePid(req.params.id, null);
+    runningProfiles.delete(req.params.id);
+    logQueries.add(req.params.id, 'error', err.message);
+    profileLogger.error({ profileId: req.params.id, error: err.message }, 'Ошибка запуска браузера');
+    return res.status(500).json({ error: 'Ошибка запуска браузера', code: 'SPAWN_FAILED', message: err.message });
   }
 
-  let stderrOutput = '';
-  child.stderr.on('data', (data) => {
-    const chunk = data.toString();
-    stderrOutput += chunk;
-    const match = chunk.match(/DevTools listening on ws:\/\/127\.0\.0\.1:(\d+)/);
-    if (match) {
-      cdpPorts.set(req.params.id, parseInt(match[1], 10));
-    }
-  });
+  const child = cdpLaunch.child;
+  const cdpPort = cdpLaunch.cdpPort;
 
   child.unref();
 
@@ -471,8 +584,8 @@ router.post('/:id/start', asyncHandler(async (req, res) => {
   profileQueries.updatePid(req.params.id, child.pid);
   profileQueries.updateStatus(req.params.id, 'running');
   broadcastStatus(req.params.id, 'running', child.pid);
-  logQueries.add(req.params.id, 'info', `Браузер запущен, PID: ${child.pid}`);
-  profileLogger.info({ profileId: req.params.id, pid: child.pid }, 'Браузер запущен');
+  logQueries.add(req.params.id, 'info', `Браузер запущен, PID: ${child.pid}, CDP порт: ${cdpPort}`);
+  profileLogger.info({ profileId: req.params.id, pid: child.pid, cdpPort }, 'Браузер запущен');
 
   if (process.platform === 'win32') {
     setTimeout(() => {
@@ -498,19 +611,15 @@ router.post('/:id/start', asyncHandler(async (req, res) => {
     }
   }
 
-  let cdpPort = null;
-  try {
-    cdpPort = await waitForCdpPort(req.params.id);
-  } catch (err) {
-    logQueries.add(req.params.id, 'warn', `CDP port not detected: ${err.message}`);
-  }
-
   child.on('error', (err) => {
     profileQueries.updateStatus(req.params.id, 'stopped');
     broadcastStatus(req.params.id, 'stopped');
+    profileQueries.updatePid(req.params.id, null);
     logQueries.add(req.params.id, 'error', 'Ошибка запуска', { error: err.message });
     profileLogger.error({ profileId: req.params.id, error: err.message }, 'Ошибка запуска');
     runningProfiles.delete(req.params.id);
+    profileWindows.delete(req.params.id);
+    cdpPorts.delete(req.params.id);
   });
 
   child.on('exit', (code, signal) => {
@@ -520,6 +629,8 @@ router.post('/:id/start', asyncHandler(async (req, res) => {
 
     const exitInfo = code !== null ? `код ${code}` : `сигнал ${signal}`;
     const logMsg = `Браузер завершен (${exitInfo})`;
+
+    const stderrOutput = child._mmStderrOutput || '';
 
     if (stderrOutput) {
       profileLogger.error({ profileId: req.params.id, stderr: stderrOutput }, logMsg);
@@ -539,7 +650,7 @@ router.post('/:id/start', asyncHandler(async (req, res) => {
     profile_id: req.params.id,
     pid: child.pid,
     cdp_port: cdpPort,
-    ws_endpoint: cdpPort ? `http://127.0.0.1:${cdpPort}` : null,
+    ws_endpoint: `http://127.0.0.1:${cdpPort}`,
   });
 }));
 

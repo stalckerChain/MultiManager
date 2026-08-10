@@ -400,7 +400,9 @@ Python: `connect_over_cdp("http://127.0.0.1:9331")`.
 ### 10.4. Single Instance и системный трей ✅ РЕАЛИЗОВАНО (`gui/src/main/tray.js`, `gui/src/main/index.js`)
 - **Single instance:** `app.requestSingleInstanceLock()` останавливает второй экземпляр до старта backend/окна; событие `second-instance` показывает, восстанавливает (если минимизировано) и фокусирует существующее окно. ✅ `gui/src/main/index.js`, `gui/src/main/main-window-utils.js`
 - **Tray:** обычный и двойной клик по иконке восстанавливают окно (единый `activateMainWindow`, без повторного запуска backend); контекстное меню «Выход» полностью завершает GUI и backend. Иконка резолвится относительно `__dirname` внутри `app.asar` (dev+packaged), выбор ICO/PNG и fallback с диагностическим логом. ✅ `gui/src/main/tray.js`, `gui/src/main/tray-paths.js`
-### 10.5. Автообновление ✅ РЕАЛИЗОВАНО (`gui/src/main/updater.js` — electron-updater + GitHub Releases)
+### 10.5. Автообновление ❌ ОТСУТСТВУЕТ (обновление только вручную)
+
+Автоматическое обновление Electron не является частью production-функциональности: приложение запускается без updater-модуля, не проверяет update-серверы, не скачивает и не устанавливает новые версии. Обновление MultiManager выполняется только вручную пользователем. `electron-updater` удалён из GUI runtime dependencies; `gui/src/main/updater.js` больше не существует. Механизм установки/обновления CloakBrowser не изменён.
 
 ### 10.6. Settings — расширение ✅ РЕАЛИЗОВАНО (Roadmap Ф5)
 - Раздел «Безопасность»: toggle мастер-пароль, поле ввода/смены пароля, отображение recovery-key, статус OS Keyring. ✅ `gui/src/renderer/views/Settings.vue`, `src/api/settings.js`

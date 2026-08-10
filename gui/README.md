@@ -11,7 +11,6 @@ gui/
 │   │   ├── index.js       # Окно, IPC, graceful shutdown
 │   │   ├── core-manager.js # Fork бэкенда, динамические порты
 │   │   ├── tray.js        # Системный трей
-│   │   ├── updater.js     # electron-updater
 │   │   ├── pty.js         # PTY-терминал
 │   │   └── keyboard-hooks.js
 │   ├── preload/       # IPC контекстный мост

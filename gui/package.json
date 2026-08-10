@@ -19,7 +19,6 @@
     "axios": "^1.7.9",
     "better-sqlite3": "^13.0.3",
     "cloakbrowser": "^0.5.4",
-    "electron-updater": "^6.3.9",
     "express": "^4.21.0",
     "express-rate-limit": "^7.5.0",
     "ghost-cursor": "^1.4.2",

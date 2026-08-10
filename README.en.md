@@ -14,7 +14,7 @@ The project is built as a monorepo (Full-Stack Desktop Application):
 - **Main / Renderer IPC:** Secure inter-process communication via `contextBridge` with full isolation (`contextIsolation: true`, `nodeIntegration: false`).
 - **Dynamic Port Allocation:** Auto-start of the backend with automatic scanning and reservation of free ports in the range `3000–3100` on conflicts (`EADDRINUSE` error).
 - **System Tray:** Window close event interception, hiding the UI to the system tray on Windows/macOS/Linux for uninterrupted AI agent operation in the background.
-- **Auto-Update:** Background application updates via `electron-updater` with `autoDownload` and notifications support.
+- **No Electron Auto-Update:** MultiManager updates are manual only. The app does not check update servers, download, or install updates automatically. CloakBrowser is updated separately via `npx cloakbrowser update`.
 - **Localization (i18n):** Full on-the-fly language switching via `i18next` (English, Русский, 简体中文).
 - **Theme Switcher:** Dynamic theme switching (Dark / Light / System) via CSS variables.
 - **Automation Matrix:** Projects×Profiles matrix with checkboxes. Group runs with color status indicators. Parallel execution with limits. Run history with lazy loading. Project management in Settings (enable/disable checkboxes, delete).
@@ -79,7 +79,6 @@ MultiManager/
 │       │   ├── core-manager.js # Core engine fork, dynamic port allocation
 │       │   ├── browser-manager.js # CloakBrowser check/install
 │       │   ├── keyboard-hooks.js # OS-level keyboard hooks
-│       │   ├── updater.js    # Auto-updates via electron-updater
 │       │   └── pty.js        # PTY terminal (IPC tail -f)
 │       ├── preload/          # Isolated IPC context bridge
 │       │   └── index.js      # Exposes electronAPI (getPort, getToken, quitApp, events)

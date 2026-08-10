@@ -6,7 +6,6 @@ const fs = require('fs');
 const http = require('http');
 const { startCore, stopCore, getCorePort, getCoreToken, onTokenChange } = require('./core-manager');
 const { createTray } = require('./tray');
-const { setupUpdater } = require('./updater');
 const { setupBrowserManager } = require('./browser-manager');
 const { activateMainWindow } = require('./main-window-utils');
 const keyboardHooks = require('./keyboard-hooks');
@@ -254,7 +253,6 @@ if (process.platform === 'win32') {
     app.quit();
   });
 
-  setupUpdater(mainWindow);
   setupBrowserManager(mainWindow);
   pty.init(mainWindow);
 }

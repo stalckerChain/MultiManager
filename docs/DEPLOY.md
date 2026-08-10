@@ -314,39 +314,33 @@ gui/release/
 
 ---
 
-## 8. Автоматические обновления (electron-updater)
+## 8. Обновление приложения
 
-Проект интегрирует `electron-updater` (v6.3.9). Модуль `gui/src/main/updater.js` проверяет `latest.yml` на GitHub Releases.
+MultiManager **не имеет автоматического обновления**: приложение не проверяет update-серверы, не скачивает и не устанавливает обновления при старте или при выходе. Обновление выполняется **только вручную** пользователем.
 
-### Workflow обновлений
+### Workflow ручного обновления
 
-1. Создайте git tag с версией:
-   ```bash
-   git tag v0.4.2
-   git push origin v0.4.2
-   ```
-
-2. Соберите с публикацией:
+1. Соберите новую версию без публикации:
    ```bash
    cd gui
-   npm run build -- --publish always
+   npm run build -- --publish never
    ```
 
-3. electron-builder загрузит в GitHub Releases:
-   - `MultiManager Setup 0.4.2.exe` — полный установщик
-   - `MultiManager Setup 0.4.2.exe.blockmap` — дельта-обновление
-   - `latest.yml` — метаданные для electron-updater
+2. Опубликуйте артефакты вручную (если требуется): `gui/release/` → GitHub Releases / ваш канал распространения.
 
-4. Приложение проверит `latest.yml` при старте и предложит обновление.
+3. Пользователь скачивает новый установщик и устанавливает поверх старой версии (установщик сам завершит запущенное приложение).
 
-### Без GitHub (локальное обновление)
+### Публикация release-артефактов — это не auto-update
 
-Для внутреннего обновления без GitHub, `latest.yml` можно разместить на любом HTTP-сервере:
+Публикация артефактов (`--publish always`) и ручная сборка не трактуются как runtime auto-update. Production-приложение работает без updater-модуля и не обращается к update-серверу: сборка выполняется с `--publish never`, а при запуске не создаётся никаких сетевых запросов к `latest.yml` / update provider.
+
+### Обновление CloakBrowser (отдельный механизм)
+
+Механизм установки/обновления CloakBrowser не изменён и не зависит от обновления MultiManager:
 
 ```bash
-# В updater.js: изменить feed URL на кастомный
-const feedUrl = 'http://your-server.com/updates/latest.yml';
-autoUpdater.setFeedURL(feedUrl);
+npx cloakbrowser install   # Установка
+npx cloakbrowser update    # Обновление
 ```
 
 ---

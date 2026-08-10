@@ -31,8 +31,6 @@ contextBridge.exposeInMainWorld('electronAPI', {
     ipcRenderer.on('api-token-changed', handler);
     return () => ipcRenderer.removeListener('api-token-changed', handler);
   },
-  onUpdateAvailable: (callback) => ipcRenderer.on('update-available', (event, info) => callback(info)),
-  onUpdateDownloaded: (callback) => ipcRenderer.on('update-downloaded', (event, info) => callback(info)),
   invoke: (channel, ...args) => {
     if (!ALLOWED_INVOKE.has(channel)) {
       console.warn(`[Preload] Blocked invoke for unlisted channel: ${channel}`);

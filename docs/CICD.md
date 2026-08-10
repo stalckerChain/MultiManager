@@ -8,20 +8,19 @@ Project does not use automated CI/CD. Build and publishing are done manually.
 
 1. Update version in package.json, gui/package.json, CHANGELOG.md, README.md
 2. Run tests: npm test, npm run lint, npm run typecheck
-3. Build GUI: cd gui && npm run build
+3. Build GUI without publishing: cd gui && npm run build -- --publish never
 4. Verify: launch installer, check Core, profiles, browser, WebSocket
-5. Publish: cd gui && npm run build -- --publish always
+5. Publish artifacts manually: cd gui && npm run build -- --publish always
 6. Create GitHub Release with tag vX.Y.Z
 
----
+## Updates (Manual Only)
 
-## Auto-Updater
+MultiManager has no runtime auto-updater: the app does not check update servers,
+download, or install updates at startup or on quit. Updating is always performed
+manually by the user by installing a new build.
 
-electron-updater (v6.3.9) checks latest.yml on GitHub Releases at startup.
-If new version available, downloads and prompts restart.
-
-### Configuration
-
-- gui/src/main/updater.js - check and download logic
-- electron-builder generates latest.yml with --publish always
-- Publishing goes to GitHub Releases tag vX.Y.Z
+- `gui/src/main/updater.js` no longer exists.
+- The `electron-updater` dependency was removed from `gui/package.json` and `gui/package-lock.json`.
+- Production builds are made with `--publish never`; publishing release artifacts
+  is a manual step and is not treated as runtime auto-update.
+- CloakBrowser has its own separate install/update mechanism (`npx cloakbrowser update`).

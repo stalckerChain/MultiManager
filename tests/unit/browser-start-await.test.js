@@ -304,3 +304,281 @@ describe('Browser — zerion-login resolves runtime ID from profile.extensions',
     expect(content).toMatch(/Не удалось определить runtime ID расширения Zerion/);
   });
 });
+
+// --- Source-level tests: async spawn retry + CDP-ready lifecycle ---
+
+describe('Browser — async spawn retry and CDP-ready transition (source-level)', () => {
+  const content = readFileSync(BROWSER_JS, 'utf-8');
+
+  it('spawnBrowserWithCdp is declared as async function', () => {
+    expect(content).toMatch(/async\s+function\s+spawnBrowserWithCdp\s*\(/);
+  });
+
+  it('handles async spawn error via child.on("error")', () => {
+    expect(content).toMatch(/child\.on\('error',\s*onChildError\)/);
+  });
+
+  it('retries ERR_ADDRESS_IN_USE from the async child error handler', () => {
+    expect(content).toMatch(/err\.message\.includes\('ERR_ADDRESS_IN_USE'\)/);
+    expect(content).toMatch(/setTimeout\(spawnAttempt,\s*retryDelayMs\)/);
+  });
+
+  it('parses CDP marker from accumulated stderr buffer, not from raw chunk', () => {
+    expect(content).toMatch(/currentChild\._mmStderrOutput\s*=\s*\(currentChild\._mmStderrOutput\s*\|\|\s*''\)\s*\+\s*chunk/);
+    expect(content).toMatch(/currentChild\._mmStderrOutput\.match\(/);
+    expect(content).not.toMatch(/const\s+match\s*=\s*chunk\.match\(/);
+  });
+
+  it('publishes running only after CDP-ready (spawnBrowserWithCdp resolves first)', () => {
+    const spawnIdx = content.indexOf('cdpLaunch = await spawnBrowserWithCdp(');
+    const runningIdx = content.indexOf("profileQueries.updateStatus(req.params.id, 'running')");
+    expect(spawnIdx).toBeGreaterThan(-1);
+    expect(runningIdx).toBeGreaterThan(-1);
+    expect(runningIdx).toBeGreaterThan(spawnIdx);
+  });
+
+  it('broadcasts running after the CDP port has been captured', () => {
+    const cdpSetIdx = content.indexOf('cdpPorts.set(profileId, parseInt(match[1], 10))');
+    const runningBroadcastIdx = content.indexOf("broadcastStatus(req.params.id, 'running', child.pid)");
+    expect(cdpSetIdx).toBeGreaterThan(-1);
+    expect(runningBroadcastIdx).toBeGreaterThan(cdpSetIdx);
+  });
+
+  it('returns profile to stopped on launch failure (spawn error/exit/CDP timeout)', () => {
+    const failIdx = content.indexOf('Ошибка запуска браузера');
+    const stoppedIdx = content.indexOf("profileQueries.updateStatus(req.params.id, 'stopped')");
+    expect(failIdx).toBeGreaterThan(-1);
+    expect(stoppedIdx).toBeGreaterThan(-1);
+  });
+
+  it('removes lifecycle listeners on success and cleanup (no double-cleanup)', () => {
+    expect(content).toMatch(/c\.removeAllListeners\('error'\)/);
+    expect(content).toMatch(/c\.removeAllListeners\('exit'\)/);
+  });
+
+  it('guards against double cleanup on error/exit sequence (settled flag)', () => {
+    expect(content).toMatch(/let settled = false;/);
+    expect(content).toMatch(/if \(settled\) return;/);
+  });
+
+  it('ws_endpoint always uses the captured CDP port (no longer null on success)', () => {
+    expect(content).toMatch(/ws_endpoint: `http:\/\/127\.0\.0\.1:\$\{cdpPort\}`/);
+  });
+});
+
+// --- Functional harness: spawn retry state machine ---
+
+function createHarnessChild(pid) {
+  const listeners = {};
+  const stderrCbs = [];
+  const child = {
+    pid,
+    _mmStderrOutput: '',
+    stderr: {
+      on: (type, cb) => { if (type === 'data') stderrCbs.push(cb); },
+    },
+    on: vi.fn((type, cb) => {
+      if (!listeners[type]) listeners[type] = [];
+      listeners[type].push(cb);
+    }),
+    removeAllListeners: vi.fn((type) => { delete listeners[type]; }),
+    emit(type, ...args) { (listeners[type] || []).forEach(cb => cb(...args)); },
+    emitStderr(text) { stderrCbs.forEach(cb => cb(text)); },
+  };
+  return child;
+}
+
+function runSpawnHarness({ spawnFn, cdpPorts = new Map(), profileId = 'p1', maxRetries = 3, retryDelayMs = 1, cdpReadyTimeoutMs = 100 }) {
+  let attempt = 0;
+  let child = null;
+  let cdpTimeoutTimer = null;
+  let settled = false;
+  const killCalls = [];
+
+  const removeLifecycleListeners = (c) => {
+    if (!c) return;
+    c.removeAllListeners('error');
+    c.removeAllListeners('exit');
+  };
+
+  const cleanupFailedChild = () => {
+    if (cdpTimeoutTimer) { clearTimeout(cdpTimeoutTimer); cdpTimeoutTimer = null; }
+    const failedChild = child;
+    child = null;
+    removeLifecycleListeners(failedChild);
+    if (failedChild && failedChild.pid) killCalls.push(failedChild.pid);
+  };
+
+  const promise = new Promise((resolve, reject) => {
+    const fail = (err) => {
+      if (settled) return;
+      settled = true;
+      cleanupFailedChild();
+      reject(err);
+    };
+
+    const succeed = () => {
+      if (settled) return;
+      settled = true;
+      if (cdpTimeoutTimer) { clearTimeout(cdpTimeoutTimer); cdpTimeoutTimer = null; }
+      removeLifecycleListeners(child);
+      resolve({ child, cdpPort: cdpPorts.get(profileId) });
+    };
+
+    const onChildError = (err) => {
+      if (settled) return;
+      const isAddressInUse = err && err.message && err.message.includes('ERR_ADDRESS_IN_USE');
+      if (isAddressInUse && attempt < maxRetries) {
+        attempt++;
+        cleanupFailedChild();
+        setTimeout(spawnAttempt, retryDelayMs);
+        return;
+      }
+      fail(new Error(`Ошибка запуска браузера: ${err.message}`));
+    };
+
+    const onChildExit = (code, signal) => {
+      if (settled) return;
+      const exitInfo = code !== null ? `code=${code}` : `signal=${signal}`;
+      fail(new Error(`Браузер завершился до готовности CDP (${exitInfo})`));
+    };
+
+    const onStderrData = (currentChild) => (data) => {
+      if (currentChild !== child) return;
+      const chunk = data.toString();
+      currentChild._mmStderrOutput = (currentChild._mmStderrOutput || '') + chunk;
+      const match = currentChild._mmStderrOutput.match(/DevTools listening on ws:\/\/127\.0\.0\.1:(\d+)/);
+      if (match) {
+        cdpPorts.set(profileId, parseInt(match[1], 10));
+        succeed();
+      }
+    };
+
+    const spawnAttempt = () => {
+      if (settled) return;
+      try {
+        child = spawnFn();
+      } catch (err) {
+        const isAddressInUse = err.message && err.message.includes('ERR_ADDRESS_IN_USE');
+        if (isAddressInUse && attempt < maxRetries) {
+          attempt++;
+          setTimeout(spawnAttempt, retryDelayMs);
+          return;
+        }
+        fail(new Error(`Ошибка запуска браузера: ${err.message}`));
+        return;
+      }
+      child.on('error', onChildError);
+      child.on('exit', onChildExit);
+      child.stderr.on('data', onStderrData(child));
+      cdpTimeoutTimer = setTimeout(() => fail(new Error('CDP port timeout')), cdpReadyTimeoutMs);
+    };
+
+    spawnAttempt();
+  });
+  promise.killCalls = killCalls;
+  return promise;
+}
+
+describe('Browser — async spawn error and retry (harness)', () => {
+  it('retries async ERR_ADDRESS_IN_USE from child.on("error") and succeeds on CDP-ready', async () => {
+    const children = [createHarnessChild(1), createHarnessChild(2), createHarnessChild(3)];
+    const spawned = [];
+    const spawnFn = vi.fn(() => {
+      const c = children[spawned.length];
+      spawned.push(c);
+      return c;
+    });
+    const cdpPorts = new Map();
+    const promise = runSpawnHarness({ spawnFn, cdpPorts, maxRetries: 3, retryDelayMs: 1, cdpReadyTimeoutMs: 100 });
+
+    // Первая попытка — асинхронный error (child.on('error')) с EADDRINUSE
+    children[0].emit('error', new Error('spawn ERR_ADDRESS_IN_USE EADDRINUSE'));
+    await new Promise(r => setTimeout(r, 10));
+    expect(spawned.length).toBe(2);
+
+    // Вторая попытка — снова EADDRINUSE
+    children[1].emit('error', new Error('spawn ERR_ADDRESS_IN_USE EADDRINUSE'));
+    await new Promise(r => setTimeout(r, 10));
+    expect(spawned.length).toBe(3);
+
+    // Третья попытка успешна — CDP-ready из накопленного stderr
+    children[2].emitStderr('DevTools listening on ws://127.0.0.1:9876/devtools/browser/id');
+
+    const { child, cdpPort } = await promise;
+    expect(child.pid).toBe(3);
+    expect(cdpPort).toBe(9876);
+    expect(cdpPorts.get('p1')).toBe(9876);
+  });
+
+  it('does not register running until CDP-ready and cleans up failed attempts', async () => {
+    const children = [createHarnessChild(1), createHarnessChild(2)];
+    const spawned = [];
+    const spawnFn = vi.fn(() => {
+      const c = children[spawned.length];
+      spawned.push(c);
+      return c;
+    });
+    const cdpPorts = new Map();
+
+    const promise = runSpawnHarness({ spawnFn, cdpPorts, maxRetries: 2, retryDelayMs: 1, cdpReadyTimeoutMs: 50 });
+
+    children[0].emit('error', new Error('spawn ERR_ADDRESS_IN_USE'));
+    await new Promise(r => setTimeout(r, 10));
+    expect(cdpPorts.has('p1')).toBe(false);
+
+    children[1].emitStderr('DevTools listening on ws://127.0.0.1:4242/devtools/browser/id');
+    const { cdpPort } = await promise;
+    expect(cdpPort).toBe(4242);
+    expect(cdpPorts.get('p1')).toBe(4242);
+  });
+
+  it('fails immediately on non-address-in-use async error (no retry)', async () => {
+    const child = createHarnessChild(1);
+    const spawnFn = vi.fn(() => child);
+    const promise = runSpawnHarness({ spawnFn, maxRetries: 3, retryDelayMs: 1, cdpReadyTimeoutMs: 100 });
+
+    child.emit('error', new Error('ENOENT: no such file'));
+
+    await expect(promise).rejects.toThrow(/Ошибка запуска браузера/);
+    expect(spawnFn).toHaveBeenCalledTimes(1);
+  });
+
+  it('fails when child exits before CDP ready (no retry, no running state)', async () => {
+    const child = createHarnessChild(1);
+    const spawnFn = vi.fn(() => child);
+    const cdpPorts = new Map();
+    const promise = runSpawnHarness({ spawnFn, cdpPorts, maxRetries: 3, retryDelayMs: 1, cdpReadyTimeoutMs: 100 });
+
+    child.emit('exit', 1, null);
+
+    await expect(promise).rejects.toThrow(/до готовности CDP/);
+    expect(spawnFn).toHaveBeenCalledTimes(1);
+    expect(cdpPorts.has('p1')).toBe(false);
+  });
+
+  it('fails on CDP timeout and kills the spawned child', async () => {
+    const child = createHarnessChild(42);
+    const spawnFn = vi.fn(() => child);
+    const result = runSpawnHarness({ spawnFn, maxRetries: 3, retryDelayMs: 1, cdpReadyTimeoutMs: 20 });
+
+    await expect(result).rejects.toThrow('CDP port timeout');
+    expect(result.killCalls).toContain(42);
+  });
+
+  it('removes lifecycle listeners after success (no lingering error/exit handlers)', async () => {
+    const child = createHarnessChild(5);
+    const spawnFn = vi.fn(() => child);
+    const result = runSpawnHarness({ spawnFn, maxRetries: 3, retryDelayMs: 1, cdpReadyTimeoutMs: 100 });
+
+    child.emitStderr('DevTools listening on ws://127.0.0.1:1234/devtools/browser/id');
+    const { cdpPort } = await result;
+    expect(cdpPort).toBe(1234);
+    expect(child.removeAllListeners).toHaveBeenCalledWith('error');
+    expect(child.removeAllListeners).toHaveBeenCalledWith('exit');
+
+    // After resolve the listeners are removed: late error/exit must not fail anything.
+    child.emit('error', new Error('late error'));
+    child.emit('exit', 0, null);
+  });
+});
