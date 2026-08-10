@@ -7,6 +7,8 @@ AI-Driven Web Automation Platform — кроссплатформенный ан�
 
 ## Что нового
 
+- **[Интеграция]** `GET /api/internal/profile-storage` — MultiManager отдаёт фактический каталог профилей (с учётом `MULTIMANAGER_DATA_DIR`); миграция stAuto0 (`migrate_profile_dirs.py`) копирует профили в `<profiles_dir>/<UUID>/BrowserData` вместо устаревшего `CloakManager/profiles`.
+
 История изменений по версиям — в [CHANGELOG.md](./CHANGELOG.md).
 
 ## Обновление

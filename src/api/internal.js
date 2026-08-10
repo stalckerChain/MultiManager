@@ -6,6 +6,7 @@ const path = require('path');
 const { getExtensionsDir, resolveRuntimeId } = require('./extensions');
 const { getBrowserDataDir } = require('../core/profile-path');
 const { asyncHandler, notFound, badRequest, serverError, ApiError } = require('./errors');
+const { getDataDir } = require('../core/data-dir');
 
 const router = express.Router();
 
@@ -121,5 +122,11 @@ router.get('/profiles/:id/zerion-extension', asyncHandler(async (req, res) => {
   logger.info({ profileId: req.params.id }, '[INTERNAL] /api/internal/profiles/:id/zerion-extension resolved');
   return res.json({ id: runtimeId });
 }));
+
+router.get('/profile-storage', (req, res) => {
+  const profilesDir = path.join(getDataDir(), 'profiles');
+  logger.info({ profiles_dir: profilesDir }, '[INTERNAL] /api/internal/profile-storage');
+  res.json({ profiles_dir: profilesDir });
+});
 
 module.exports = { router, parseRange };

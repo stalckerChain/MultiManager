@@ -2,6 +2,13 @@
 
 ## v1.4.2
 
+### Интеграция / Automation
+
+- **[FEAT] Каталог профилей MultiManager через API для миграции stAuto0.**
+  Добавлен внутренний endpoint `GET /api/internal/profile-storage`: возвращает фактический каталог профилей `{ "profiles_dir": "<abs>" }`, вычисляемый через `getDataDir()` (`path.join(getDataDir(), 'profiles')`). Учитывает `MULTIMANAGER_DATA_DIR`; не принимает параметры, не изменяет состояние и не обращается к БД; авторизация — через общий Bearer `authMiddleware` (401 при невалидном токене, 500 при некорректном `MULTIMANAGER_DATA_DIR` — без stack trace и без логирования токена).
+  - stAuto0: `Core/multimanager.py.get_profile_storage_dir()` (Bearer auth, `ClientTimeout(total=3)`, проверка статуса/JSON/поля/абсолютности пути, без токена в сообщениях) и `scripts/migrate_profile_dirs.py` — каталог назначения запрашивается у MM; fallback и путь `CloakManager/profiles` удалены, при недоступном MM миграция завершается с ошибкой до начала копирования; схема target `<profiles_dir>/<UUID>/BrowserData`, `Default/Extensions` по-прежнему исключается.
+  ✅ `src/api/internal.js`, `tests/unit/internal-profiles.test.js`, `docs/API.md`, `docs/API.en.md`, `docs/API.zh.md`; stAuto0: `Core/multimanager.py`, `scripts/migrate_profile_dirs.py`, `tests/test_migration.py`, `docs/scripts.md`
+
 ### UI
 
 - **[UX] Отображение прокси в формате `host:port` одной строкой.** Ранее `host` и `port` показывались в две строки, а на главной порт вообще пропадал при наличии `location` (`location || port`).

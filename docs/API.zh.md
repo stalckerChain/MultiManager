@@ -753,6 +753,29 @@ Authorization: Bearer <token>
 
 ---
 
+### GET /api/internal/profile-storage
+
+返回 MultiManager 存储标准配置文件的实际目录。`stAuto0` 迁移脚本（`migrate_profile_dirs.py`）用它来将配置文件数据复制到正确的目录。该路径会考虑 `MULTIMANAGER_DATA_DIR` 环境变量。
+
+需要 `Authorization: Bearer <token>` 请求头。
+
+**参数：** 无
+
+**响应 (200)：**
+```json
+{
+  "profiles_dir": "C:\\Users\\stalcker\\AppData\\Roaming\\MultiManager\\profiles"
+}
+```
+
+该端点不接受参数，不改变状态，也不访问数据库。不会创建目录，也不会检查目录是否存在。
+
+**错误 (401)：** Bearer 令牌缺失或无效。
+
+**错误 (500)：** 配置错误（例如 `MULTIMANAGER_DATA_DIR` 无效）。
+
+---
+
 ## 扩展
 
 ### GET /api/extensions

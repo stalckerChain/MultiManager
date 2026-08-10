@@ -764,6 +764,29 @@ Return the runtime ID of the Zerion extension for a specific profile. Used by th
 
 ---
 
+### GET /api/internal/profile-storage
+
+Return the actual directory where MultiManager stores its standard profiles. Used by the `stAuto0` migration script (`migrate_profile_dirs.py`) to copy profile data into the correct directory. The path honors the `MULTIMANAGER_DATA_DIR` environment variable.
+
+Requires the `Authorization: Bearer <token>` header.
+
+**Parameters:** none
+
+**Response (200):**
+```json
+{
+  "profiles_dir": "C:\\Users\\stalcker\\AppData\\Roaming\\MultiManager\\profiles"
+}
+```
+
+The endpoint accepts no parameters, changes no state, and does not touch the database. The directory is neither created nor checked for existence.
+
+**Error (401):** missing or invalid Bearer token.
+
+**Error (500):** configuration error (for example, an invalid `MULTIMANAGER_DATA_DIR`).
+
+---
+
 ## Extensions
 
 ### GET /api/extensions

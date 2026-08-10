@@ -247,3 +247,80 @@ describe('Internal Profiles - GET /profiles/:id/zerion-extension', () => {
     expect(res.body).not.toHaveProperty('stack');
   });
 });
+
+describe('Internal Profiles - GET /profile-storage', () => {
+  let tmpDir;
+  let app;
+  let originalAppData;
+  let originalDataDir;
+
+  beforeEach(() => {
+    originalAppData = process.env.APPDATA;
+    originalDataDir = process.env.MULTIMANAGER_DATA_DIR;
+    tmpDir = path.join(os.tmpdir(), 'internal-profile-storage-test-' + Date.now());
+    process.env.APPDATA = tmpDir;
+    fs.mkdirSync(tmpDir, { recursive: true });
+
+    dbMod.initDatabase();
+
+    app = express();
+    app.use('/api/internal', internalRouter);
+    app.use((err, req, res, next) => {
+      const status = err.status || 500;
+      res.status(status).json(err.status ? { error: err.message, code: err.code } : { error: err.message });
+    });
+  });
+
+  afterEach(() => {
+    dbMod.closeDatabase();
+    process.env.APPDATA = originalAppData;
+    if (originalDataDir === undefined) {
+      delete process.env.MULTIMANAGER_DATA_DIR;
+    } else {
+      process.env.MULTIMANAGER_DATA_DIR = originalDataDir;
+    }
+    if (tmpDir) {
+      try { fs.rmSync(tmpDir, { recursive: true, force: true }); } catch {}
+    }
+  });
+
+  it('returns <APPDATA>/MultiManager/profiles without MULTIMANAGER_DATA_DIR', async () => {
+    delete process.env.MULTIMANAGER_DATA_DIR;
+
+    const res = await request(app).get('/api/internal/profile-storage');
+
+    expect(res.status).toBe(200);
+    expect(res.body.profiles_dir).toBe(path.join(tmpDir, 'MultiManager', 'profiles'));
+  });
+
+  it('returns <MULTIMANAGER_DATA_DIR>/profiles instead of the APPDATA path', async () => {
+    const customDir = path.join(tmpDir, 'custom-data');
+    process.env.MULTIMANAGER_DATA_DIR = customDir;
+
+    const res = await request(app).get('/api/internal/profile-storage');
+
+    expect(res.status).toBe(200);
+    expect(res.body.profiles_dir).toBe(path.join(customDir, 'profiles'));
+    expect(res.body.profiles_dir).not.toBe(path.join(tmpDir, 'MultiManager', 'profiles'));
+  });
+
+  it('responds with only the agreed profiles_dir field and an absolute path', async () => {
+    delete process.env.MULTIMANAGER_DATA_DIR;
+
+    const res = await request(app).get('/api/internal/profile-storage');
+
+    expect(res.status).toBe(200);
+    expect(Object.keys(res.body)).toEqual(['profiles_dir']);
+    expect(path.isAbsolute(res.body.profiles_dir)).toBe(true);
+  });
+
+  it('returns a server error with a clear message for a relative MULTIMANAGER_DATA_DIR and no stack trace', async () => {
+    process.env.MULTIMANAGER_DATA_DIR = 'relative/data-dir';
+
+    const res = await request(app).get('/api/internal/profile-storage');
+
+    expect(res.status).toBe(500);
+    expect(res.body.error).toMatch(/absolute path/);
+    expect(res.body).not.toHaveProperty('stack');
+  });
+});
