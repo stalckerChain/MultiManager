@@ -262,10 +262,17 @@ async function handleSave(values) {
 }
 
 async function startProfile(id) {
+  const profile = profilesStore.profiles.find(p => p.id === id);
+  const profileName = profile?.name || id;
   try {
     await browserStore.start(id);
   } catch (err) {
     console.error('[Profiles] start failed:', err.message || err);
+    if (err.code === 'PRECONDITION_FAILED') {
+      message.error(`Профиль «${profileName}» не запущен: прокси недоступен.`);
+    } else {
+      message.error(`Профиль «${profileName}» не запущен: ${err.message || err}`);
+    }
   } finally {
     await profilesStore.fetchAll();
   }

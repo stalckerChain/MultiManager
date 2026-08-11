@@ -7,6 +7,8 @@ AI-Driven Web Automation Platform — кроссплатформенный ан�
 
 ## Что нового
 
+- **[UX]** При запуске профиля с нерабочим прокси показывается видимое уведомление с именем профиля — «Профиль «{имя}» не запущен: прокси недоступен.» (ранее ошибка писалась только в консоль DevTools).
+
 - **[Интеграция]** Первый запуск `init_wallet4browser.py` для мигрированных профилей: runtime ID Zerion запрашивается **после** запуска браузера (retry ≤5 попыток, интервал 500 мс, общий deadline 3 c); fallback по имени каталога (`klghhnkeealcohjjanjjdaeeggmfmlpl`) удалён; при недоступности ID скрипт завершается с ошибкой и закрывает браузер; HTTP-сессии MM в `BaseBrowser` закрываются (`_launch_via_multimanager()`, `close()`, `login_zerion()`).
 
 - **[Интеграция]** `GET /api/internal/profile-storage` — MultiManager отдаёт фактический каталог профилей (с учётом `MULTIMANAGER_DATA_DIR`); миграция stAuto0 (`migrate_profile_dirs.py`) копирует профили в `<profiles_dir>/<UUID>/BrowserData` вместо устаревшего `CloakManager/profiles`.
