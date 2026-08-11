@@ -29,7 +29,7 @@ stAuto0 — Playwright-based фреймворк Web3-автоматизации 
 
 > **🛑 Аудит 2026-07-10 (пост-ФД):** `Core/multimanager.py` **СОЗДАН** ✅. `main.py` и `Core/browser.py` **ИЗМЕНЕНЫ** ✅ — содержат авто-детект Core и MM-режим. `scripts/migrate_to_sqlite.py`, `scripts/migrate_profile_dirs.py` **СОЗДАНЫ** ✅ — smoke-тесты пройдены (10 аккаунтов, --force, directory copy, MM GUI). `scripts/create_wallets.py`, `scripts/init_wallet4browser.py`, `scripts/fill_emails.py` **ПЕРЕПИСАНЫ** ✅ — используют MultiManager API вместо `config/accounts.py`. `mcp_server/server.py` **ПЕРЕПИСАН** ✅ — MM-детект, резолв, Recorder, Vision. `mcp_server/client.py` **ИЗМЕНЕН** ✅ — MM-поддержка. `mcp_server/recorder.py`, `mcp_server/vision.py` **СОЗДАНЫ** ✅. Тесты: 131/131 pass.
 
-**Zerion ID:** `klghhnkeealcohjjanjjdaeeggmfmlpl`. URL онбординга: `chrome-extension://{ZERION_ID}/popup.8e8f209b.html?windowType=tab&appMode=onboarding#/onboarding/import/mnemonic`.
+**Zerion ID:** имя каталога расширения (`klghhnkeealcohjjanjjdaeeggmfmlpl`) не является runtime ID Chromium. `init_wallet4browser.py` сначала запускает браузер через `POST /api/browser/:id/start`, затем получает актуальный runtime ID через `GET /api/internal/profiles/:id/zerion-extension` (retry ≤5 попыток, интервал 500 мс, deadline 3 с) и только после этого строит URL онбординга: `chrome-extension://{runtime_id}/popup.8e8f209b.html?windowType=tab&appMode=onboarding#/onboarding/import/mnemonic`. Fallback по имени каталога не используется.
 
 -------------------------------
 ## 2. Целевая архитектура

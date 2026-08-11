@@ -20,6 +20,9 @@
 
 ### Интеграция / Automation
 
+- **[FIX] Первый запуск `init_wallet4browser.py` для мигрированных профилей.** Runtime ID Zerion теперь запрашивается **после** запуска браузера (`POST /api/browser/:id/start`), когда запись о загруженном расширении появляется в `Default/Secure Preferences` по точному пути `MultiManager/extensions`, а не до запуска. Fallback `klghhnkeealcohjjanjjdaeeggmfmlpl` (имя каталога, не runtime ID) удалён: при недоступности ID скрипт завершается с понятной ошибкой и закрывает браузер. Retry: до 5 попыток, интервал 500 мс, общий deadline 3 с, timeout каждой попытки ограничен оставшимся временем. HTTP-сессии `MultiManagerClient` в `BaseBrowser` (`_launch_via_multimanager()`, `close()`, `login_zerion()`) закрываются через `async with` — устранены `Unclosed client session`/`Unclosed connector`.
+  ✅ stAuto0: `scripts/init_wallet4browser.py`, `Core/multimanager.py`, `Core/browser.py`, `tests/test_init_wallet4browser.py` (новый), `tests/test_multimanager.py`, `tests/test_browser.py`, `docs/init_browser.md`, `docs/scripts.md`, `docs/browser.md`
+
 - **[FEAT] Динамический runtime ID Zerion для `init_wallet4browser.py`.** Ручной скрипт инициализации кошелька строит URL импорта с актуальным runtime ID расширения Zerion, полученным из MultiManager для конкретного профиля, а не с устаревшей статической константой.
   - `src/api/internal.js` — новый endpoint `GET /api/internal/profiles/:id/zerion-extension`: берёт первое назначенное расширение (`profile.extensions[0]`), вызывает `resolveRuntimeId()` (приоритет `Secure Preferences` по точному пути, затем `manifest.key`) и возвращает `{ id }`; сервер валидирует `^[a-z]{32}$`. Ошибки: 404 (профиль не найден), 400 (невалидный список/нет расширения/не определён runtime ID/неверный формат), 500 (неожиданная fs-ошибка) без стектрейса и секретов.
   - Поведение `POST /api/browser/:id/zerion-login` и executor не изменено — оба продолжают использовать первое назначенное расширение.
