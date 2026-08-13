@@ -21,7 +21,10 @@
       row-key="id" size="small" :scroll="{ y: 'calc(100vh - 200px)' }"
       :pagination="pagination" @change="handleTableChange"
       :row-selection="rowSelection">
-      <template #bodyCell="{ column, record }">
+      <template #bodyCell="{ column, record, index }">
+        <template v-if="column.key === 'number'">
+          {{ (current - 1) * pageSize + index + 1 }}
+        </template>
         <template v-if="column.key === 'status'">
           <a-badge :status="record.is_active ? 'success' : 'error'"
             :text="record.is_active ? 'Active' : 'Inactive'" />
@@ -167,6 +170,7 @@ async function handleSaveProfile(values) {
 }
 
 const columns = [
+  { title: '#', key: 'number', width: 60 },
   { title: t('proxies.columns.status'), key: 'status', width: 100 },
   { title: t('proxies.columns.type'), key: 'type', width: 80 },
   { title: t('proxies.columns.connection'), key: 'connection', width: 200 },

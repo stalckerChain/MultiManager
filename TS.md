@@ -151,6 +151,7 @@ GUI передаёт порт бэкенду через **env-переменну
 - Автоопределение типа (HTTP→SOCKS5 fallback). ✅ `src/proxy/index.js:163-175`
 - Флаг браузера `--proxy-server={type}://{user}:{pass}@{host}:{port}`. ✅ `src/api/browser.js:307`
 - **GUI (v1.4.1):** единый `ProxyModal.vue` для создания/редактирования прокси. Столбец Connection (host:port одной строкой). Столбец Accounts (имена привязанных профилей, кликабельны → редактирование). Кнопка Check доступна в 3 местах (главная, страница прокси, модал). Чекбоксы для множественного выбора + кнопки "Check Selected" / "Delete Selected". Пагинация с dropdown размера страницы (10/20/50/100).
+- **GUI:** колонка `#` на странице прокси — последовательная нумерация строк в порядке отображения (UI-индекс, продолжается между страницами с учётом `pageSize`, не хранится в БД и не передаётся в API).
 
 ### 4.3. Управление куки (Cookie Import/Export) ✅ РЕАЛИЗОВАНО (частично — GUI)
 - `GET|POST|DELETE /api/cookies/:profileId`, экспорт в JSON/Netscape. ✅ `src/api/cookies.js`, `src/cookie/inject.js`
