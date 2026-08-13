@@ -11,6 +11,10 @@
 
 ### UI
 
+- **[UX] Сохранение выбранного размера страницы в таблицах профилей и прокси.**
+  Выбор количества записей на странице (10/20/50/100) больше не сбрасывается на фиксированные 20 при обновлении таблицы: пагинация переведена на реактивное состояние компонента (`current`, `pageSize`, `showSizeChanger`, `pageSizeOptions`), обработчик `@change` обновляет состояние и при смене размера всегда сбрасывает `current` на 1. Выбранный размер сохраняется в `localStorage` отдельными ключами `multimanager.profiles.pageSize` / `multimanager.proxies.pageSize` и восстанавливается при перезапуске; настройки профилей и прокси независимы. Новая utility `createPageSizeStore()` (`gui/src/renderer/utils/page-size.js`) принимает ключ, допустимые значения и fallback, валидирует значение только против 10/20/50/100, оборачивает каждый вызов `localStorage.getItem`/`setItem` в `try/catch` и использует fallback 50 при отсутствии, повреждении, неподдерживаемом значении или исключении чтения.
+  ✅ `gui/src/renderer/views/Profiles.vue`, `gui/src/renderer/views/Proxies.vue`, `gui/src/renderer/utils/page-size.js` (новый)
+
 - **[UX] Уведомление о нерабочем прокси при запуске профиля.** При `Start` с недоступным прокси профиль не запускается, и раньше ошибка `412 PRECONDITION_FAILED` попадала только в DevTools Console. Теперь GUI показывает `message.error` с именем профиля: `Профиль «{имя}» не запущен: прокси недоступен.` (имя берётся из `profilesStore`, fallback — id профиля). Прочие ошибки запуска тоже показываются уведомлением с именем профиля без маскирования исходного текста ошибки. `console.error` и `finally` с обновлением списка профилей сохранены. Работает и для массового запуска (`bulkStart` вызывает `startProfile`).
   ✅ `gui/src/renderer/views/Profiles.vue`
 
@@ -161,9 +165,10 @@
 - `tests/unit/runs-api.test.js` — новый тест: `'rejects starting without Authorization header'` (401 без токена).
 - `tests/unit/executor.test.js` — обновлён: проверка `--token=tok_xxx` вместо `not.toContain('--token=')`.
 - Удалена ссылка на несуществующий `tests/unit/inject.test.js` из CHANGELOG.
+- Добавлен `tests/unit/gui-page-size.test.js` (8 тестов): fallback 50 при отсутствии значения, сохранение/восстановление размера, поддержка 10/20/50/100, повреждённые и неподдерживаемые значения → 50, независимые ключи профилей и прокси, исключения `localStorage` при чтении/записи.
 - Добавлен `tests/unit/keyboard-hooks-payload.test.js` (11 тестов): vkToKey/vkToCode/buildKeyEvent/shouldSendCharInput (Ctrl/Meta/AltGr/dead keys/пустой text).
 - Обновлены: `tests/unit/os-input.test.js` (native hook: text/altGr/dead key; negative: CDP keyDown/charInput), `tests/unit/cdp-manager.test.js` (SYNC_EVENT_SCRIPT не перехватывает клавиатуру), `tests/unit/multi-control.test.js` (Ctrl+W/T/N не форвардятся, Ctrl+1 форвардится), `tests/unit/multi-control-api.test.js` (lifecycle wire/unwire, POST /os-keyboard маршрутизация).
-- Всего: **915 тестов** (53 файла), все проходят ✅
+- Всего: **1074 тестов** (66 файлов), все проходят ✅
 
 ## v1.4.1
 

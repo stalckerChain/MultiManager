@@ -19,7 +19,7 @@
 
     <a-table :columns="columns" :data-source="proxiesStore.proxies" :loading="proxiesStore.loading"
       row-key="id" size="small" :scroll="{ y: 'calc(100vh - 200px)' }"
-      :pagination="{ pageSize: 20, showSizeChanger: true }"
+      :pagination="pagination" @change="handleTableChange"
       :row-selection="rowSelection">
       <template #bodyCell="{ column, record }">
         <template v-if="column.key === 'status'">
@@ -100,6 +100,7 @@ import { useProfilesStore } from '../stores/profiles.js';
 import { useAppStore } from '../stores/app.js';
 import ProxyModal from './ProxyModal.vue';
 import ProfileModal from './ProfileModal.vue';
+import { createPageSizeStore } from '../utils/page-size.js';
 
 const { t } = useTranslation();
 const proxiesStore = useProxiesStore();
@@ -119,6 +120,26 @@ const proxyModalOpen = ref(false);
 const editingProxy = ref(null);
 const checkLoading = ref(null);
 const bulkCheckLoading = ref(false);
+
+const proxiesPageSize = createPageSizeStore('multimanager.proxies.pageSize');
+const current = ref(1);
+const pageSize = ref(proxiesPageSize.get());
+const pagination = computed(() => ({
+  current: current.value,
+  pageSize: pageSize.value,
+  showSizeChanger: true,
+  pageSizeOptions: ['10', '20', '50', '100'],
+}));
+
+function handleTableChange(p) {
+  if (p.pageSize !== pageSize.value) {
+    pageSize.value = p.pageSize;
+    proxiesPageSize.set(p.pageSize);
+    current.value = 1;
+  } else {
+    current.value = p.current;
+  }
+}
 
 const selectedRowKeys = ref([]);
 const rowSelection = {

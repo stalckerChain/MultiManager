@@ -54,7 +54,7 @@
     </div>
 
     <a-table :columns="columns" :data-source="filteredProfiles" :loading="profilesStore.loading"
-      row-key="id" :pagination="{ pageSize: 20, showSizeChanger: true }" :row-selection="rowSelection"
+      row-key="id" :pagination="pagination" @change="handleTableChange" :row-selection="rowSelection"
       size="small" :scroll="{ y: 'calc(100vh - 260px)' }">
       <template #bodyCell="{ column, record }">
         <template v-if="column.key === 'name'">
@@ -144,6 +144,7 @@ import client from '../api/client.js';
 import ProfileModal from './ProfileModal.vue';
 import ProxyModal from './ProxyModal.vue';
 import CookieImportModal from './CookieImportModal.vue';
+import { createPageSizeStore } from '../utils/page-size.js';
 
 const { t } = useTranslation();
 const profilesStore = useProfilesStore();
@@ -163,6 +164,26 @@ const cookieImportProfileId = ref(null);
 const proxyModalOpen = ref(false);
 const editingProxy = ref(null);
 const checkLoading = ref(null);
+
+const profilesPageSize = createPageSizeStore('multimanager.profiles.pageSize');
+const current = ref(1);
+const pageSize = ref(profilesPageSize.get());
+const pagination = computed(() => ({
+  current: current.value,
+  pageSize: pageSize.value,
+  showSizeChanger: true,
+  pageSizeOptions: ['10', '20', '50', '100'],
+}));
+
+function handleTableChange(p) {
+  if (p.pageSize !== pageSize.value) {
+    pageSize.value = p.pageSize;
+    profilesPageSize.set(p.pageSize);
+    current.value = 1;
+  } else {
+    current.value = p.current;
+  }
+}
 
 const columns = [
   { title: '#', dataIndex: 'number', key: 'number', width: 60 },
