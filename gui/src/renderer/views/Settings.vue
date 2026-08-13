@@ -140,6 +140,10 @@
       <a-input-password v-model:value="newPwd" :placeholder="t('settings.newPassword')" class="mb-3" />
       <a-input-password v-model:value="confirmPwd" :placeholder="t('settings.confirmPassword')" />
     </a-modal>
+
+    <ConfirmDeleteModal v-model:open="deleteProjectOpen" :title="t('settings.deleteProjectConfirmTitle')"
+      :message="t('confirmDelete.warning')" :loading="deleteProjectLoading"
+      @confirm="handleConfirmDeleteProject" />
   </div>
 </template>
 
@@ -151,6 +155,7 @@ import { useAppStore } from '../stores/app.js';
 import { useAutomationStore } from '../stores/automation.js';
 import client from '../api/client.js';
 import { message, Modal } from 'ant-design-vue';
+import ConfirmDeleteModal from '../components/ConfirmDeleteModal.vue';
 
 const { t } = useTranslation();
 const appStore = useAppStore();
@@ -180,6 +185,10 @@ const automation = ref({
 const savingAutomation = ref(false);
 const syncingProjects = ref(false);
 const projectList = ref([]);
+
+const deleteProjectOpen = ref(false);
+const pendingDeleteProject = ref(null);
+const deleteProjectLoading = ref(false);
 
 function handleThemeChange() {
   appStore.setTheme(theme.value);
@@ -357,14 +366,27 @@ async function toggleProjectActive(proj) {
   }
 }
 
-async function confirmDeleteProject(proj) {
+function confirmDeleteProject(proj) {
+  pendingDeleteProject.value = proj;
+  deleteProjectOpen.value = true;
+}
+
+async function handleConfirmDeleteProject() {
+  const target = pendingDeleteProject.value;
+  if (!target) return;
+  deleteProjectLoading.value = true;
   try {
     const autoStore = useAutomationStore();
-    await autoStore.deleteProject(proj.name);
+    await autoStore.deleteProject(target.name);
     await fetchProjectList();
+    deleteProjectOpen.value = false;
     message.success(t('settings.projectDeleted'));
   } catch (err) {
     message.error(err.message || t('common.error'));
+    deleteProjectOpen.value = false;
+  } finally {
+    deleteProjectLoading.value = false;
+    pendingDeleteProject.value = null;
   }
 }
 

@@ -34,6 +34,9 @@
       <p class="text-sm text-slate-400 mt-1">Assign it to all existing profiles, or manage manually per-profile later?</p>
     </a-modal>
 
+    <ConfirmDeleteModal v-model:open="deleteOpen" :title="t('extensions.deleteConfirmTitle')"
+      :message="t('extensions.deleteWarning')" :loading="deleteLoading" @confirm="confirmDeleteExtension" />
+
     <div v-if="loading" class="text-center py-20">
       <a-spin />
     </div>
@@ -69,11 +72,9 @@
                 {{ t('extensions.assignAll') }}
               </a-button>
             </a-popconfirm>
-            <a-popconfirm title="Remove this extension?" @confirm="removeExtension(ext)">
-              <a-button size="small" type="text" danger>
-                <DeleteOutlined />
-              </a-button>
-            </a-popconfirm>
+            <a-button size="small" type="text" danger @click="openDelete(ext)">
+              <DeleteOutlined />
+            </a-button>
           </div>
         </div>
       </div>
@@ -88,6 +89,7 @@ import { PlusOutlined, DownOutlined, FolderOpenOutlined, FileZipOutlined, Global
 import { message } from 'ant-design-vue';
 import client from '../api/client.js';
 import { useAppStore } from '../stores/app.js';
+import ConfirmDeleteModal from '../components/ConfirmDeleteModal.vue';
 
 const { t } = useTranslation();
 const appStore = useAppStore();
@@ -100,6 +102,33 @@ const storeInstalling = ref(false);
 const assignDialogVisible = ref(false);
 const assignLoading = ref(false);
 const lastInstalledId = ref('');
+
+const deleteOpen = ref(false);
+const pendingDeleteExtension = ref(null);
+const deleteLoading = ref(false);
+
+function openDelete(ext) {
+  pendingDeleteExtension.value = ext;
+  deleteOpen.value = true;
+}
+
+async function confirmDeleteExtension() {
+  const target = pendingDeleteExtension.value;
+  if (!target) return;
+  deleteLoading.value = true;
+  try {
+    await client.delete(`/api/extensions/${target.id}`);
+    extensions.value = extensions.value.filter(e => e.id !== target.id);
+    deleteOpen.value = false;
+    message.success(t('extensions.deleteSuccess'));
+  } catch (err) {
+    message.error(err.message);
+    deleteOpen.value = false;
+  } finally {
+    deleteLoading.value = false;
+    pendingDeleteExtension.value = null;
+  }
+}
 
 function showAssignDialog(extId) {
   lastInstalledId.value = extId;
@@ -213,16 +242,6 @@ async function assignExtension(ext) {
   } catch (err) {
     hide();
     message.error(err.message || 'Failed to assign');
-  }
-}
-
-async function removeExtension(ext) {
-  try {
-    await client.delete(`/api/extensions/${ext.id}`);
-    extensions.value = extensions.value.filter(e => e.id !== ext.id);
-    message.success('Extension removed');
-  } catch (err) {
-    message.error(err.message);
   }
 }
 

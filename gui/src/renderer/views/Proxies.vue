@@ -12,7 +12,7 @@
     <div v-if="selectedRowKeys.length" class="mb-3 flex items-center gap-2">
       <a-space>
         <a-button size="small" :loading="bulkCheckLoading" @click="bulkCheckSelected">Check Selected</a-button>
-        <a-button size="small" danger @click="bulkDeleteSelected">Delete Selected</a-button>
+        <a-button size="small" danger @click="openBulkDelete">Delete Selected</a-button>
       </a-space>
       <span class="text-xs text-slate-400">Selected: {{ selectedRowKeys.length }}</span>
     </div>
@@ -50,7 +50,7 @@
           <a-space>
             <a-button size="small" :loading="checkLoading === record.id" @click="handleCheckProxy(record.id)">Check</a-button>
             <a-button size="small" @click="showEditModal(record)">Edit</a-button>
-            <a-button size="small" danger @click="proxiesStore.remove(record.id)">Delete</a-button>
+            <a-button size="small" danger @click="openSingleDelete(record)">Delete</a-button>
           </a-space>
         </template>
       </template>
@@ -91,6 +91,13 @@
 
     <ProxyModal v-model:open="proxyModalOpen" :proxy="editingProxy" @save="onProxySaved" />
     <ProfileModal v-model:open="profileModalOpen" :profile="editingProfile" @save="handleSaveProfile" />
+
+    <ConfirmDeleteModal v-model:open="singleDeleteOpen" :title="t('proxies.deleteConfirmTitle')"
+      :message="t('confirmDelete.warning')" :loading="singleDeleteLoading" @confirm="confirmSingleDelete" />
+
+    <ConfirmDeleteModal v-model:open="bulkDeleteOpen" :title="t('proxies.deleteBulkConfirmTitle')"
+      :message="t('confirmDelete.warning')" :count="bulkDeleteCount" :loading="bulkDeleteLoading"
+      @confirm="confirmBulkDelete" />
   </div>
 </template>
 
@@ -103,6 +110,7 @@ import { useProfilesStore } from '../stores/profiles.js';
 import { useAppStore } from '../stores/app.js';
 import ProxyModal from './ProxyModal.vue';
 import ProfileModal from './ProfileModal.vue';
+import ConfirmDeleteModal from '../components/ConfirmDeleteModal.vue';
 import { createPageSizeStore } from '../utils/page-size.js';
 
 const { t } = useTranslation();
@@ -123,6 +131,14 @@ const proxyModalOpen = ref(false);
 const editingProxy = ref(null);
 const checkLoading = ref(null);
 const bulkCheckLoading = ref(false);
+
+const singleDeleteOpen = ref(false);
+const pendingDeleteProxy = ref(null);
+const singleDeleteLoading = ref(false);
+
+const bulkDeleteOpen = ref(false);
+const bulkDeleteCount = ref(0);
+const bulkDeleteLoading = ref(false);
 
 const proxiesPageSize = createPageSizeStore('multimanager.proxies.pageSize');
 const current = ref(1);
@@ -259,11 +275,48 @@ async function bulkCheckSelected() {
   }
 }
 
-function bulkDeleteSelected() {
-  for (const id of selectedRowKeys.value) {
-    proxiesStore.remove(id);
+function openSingleDelete(record) {
+  pendingDeleteProxy.value = record;
+  singleDeleteOpen.value = true;
+}
+
+async function confirmSingleDelete() {
+  const target = pendingDeleteProxy.value;
+  if (!target) return;
+  singleDeleteLoading.value = true;
+  try {
+    await proxiesStore.remove(target.id);
+    singleDeleteOpen.value = false;
+  } catch (err) {
+    message.error(err.message || 'Ошибка удаления прокси');
+    singleDeleteOpen.value = false;
+  } finally {
+    singleDeleteLoading.value = false;
+    pendingDeleteProxy.value = null;
   }
+}
+
+function openBulkDelete() {
+  bulkDeleteCount.value = selectedRowKeys.value.length;
+  bulkDeleteOpen.value = true;
+}
+
+async function confirmBulkDelete() {
+  bulkDeleteLoading.value = true;
+  let deleted = 0;
+  let failed = 0;
+  for (const id of selectedRowKeys.value) {
+    try {
+      await proxiesStore.remove(id);
+      deleted++;
+    } catch {
+      failed++;
+    }
+  }
+  bulkDeleteLoading.value = false;
+  bulkDeleteOpen.value = false;
   selectedRowKeys.value = [];
+  message.success(t('confirmDelete.bulkResult', { deleted, skipped: failed }));
 }
 
 function deleteUnused() {

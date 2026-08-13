@@ -47,7 +47,7 @@
       <a-space>
         <a-button size="small" @click="bulkStart">{{ t('profiles.bulkStart') }}</a-button>
         <a-button size="small" @click="bulkStop">{{ t('profiles.bulkStop') }}</a-button>
-        <a-button size="small" danger @click="bulkDelete">{{ t('profiles.bulkDelete') }}</a-button>
+        <a-button size="small" danger @click="openBulkDelete">{{ t('profiles.bulkDelete') }}</a-button>
         <a-button size="small" @click="bulkClean">{{ t('profiles.bulkClean') }}</a-button>
       </a-space>
       <span class="text-xs text-slate-400">Selected: {{ selectedRowKeys.length }}</span>
@@ -126,6 +126,21 @@
     <CookieImportModal v-model:open="cookieImportOpen" :profile-id="cookieImportProfileId"
       @imported="profilesStore.fetchAll()" />
     <ProxyModal v-model:open="proxyModalOpen" :proxy="editingProxy" @save="profilesStore.fetchAll()" />
+
+    <ConfirmDeleteModal v-model:open="singleDeleteOpen" :title="t('profiles.deleteConfirmTitle')"
+      :message="t('confirmDelete.warning')" :loading="singleDeleteLoading" @confirm="confirmSingleDelete" />
+
+    <ConfirmDeleteModal v-model:open="bulkDeleteOpen" :title="t('profiles.deleteBulkConfirmTitle')"
+      :message="t('confirmDelete.warning')" :count="bulkDeleteCount" :loading="bulkDeleteLoading"
+      @confirm="confirmBulkDelete">
+      <div v-if="bulkRunningProfiles.length">
+        <p class="text-sm font-medium mt-3">{{ t('confirmDelete.runningProfilesTitle') }}</p>
+        <ul class="text-sm text-slate-400 mt-1 space-y-0.5">
+          <li v-for="p in bulkRunningProfiles" :key="p.id">{{ p.name }}</li>
+        </ul>
+        <p class="text-sm text-orange-400 mt-1">{{ t('confirmDelete.runningProfilesReason') }}</p>
+      </div>
+    </ConfirmDeleteModal>
   </div>
 </template>
 
@@ -144,6 +159,7 @@ import client from '../api/client.js';
 import ProfileModal from './ProfileModal.vue';
 import ProxyModal from './ProxyModal.vue';
 import CookieImportModal from './CookieImportModal.vue';
+import ConfirmDeleteModal from '../components/ConfirmDeleteModal.vue';
 import { createPageSizeStore } from '../utils/page-size.js';
 
 const { t } = useTranslation();
@@ -164,6 +180,15 @@ const cookieImportProfileId = ref(null);
 const proxyModalOpen = ref(false);
 const editingProxy = ref(null);
 const checkLoading = ref(null);
+
+const singleDeleteOpen = ref(false);
+const pendingDeleteProfile = ref(null);
+const singleDeleteLoading = ref(false);
+
+const bulkDeleteOpen = ref(false);
+const bulkRunningProfiles = ref([]);
+const bulkDeleteCount = ref(0);
+const bulkDeleteLoading = ref(false);
 
 const profilesPageSize = createPageSizeStore('multimanager.profiles.pageSize');
 const current = ref(1);
@@ -320,9 +345,59 @@ function handleContext({ key }, record) {
       break;
     case 'exportCookies': exportCookies(record); break;
     case 'delete':
-      profilesStore.remove(record.id).catch(() => {});
+      pendingDeleteProfile.value = record;
+      singleDeleteOpen.value = true;
       break;
   }
+}
+
+async function confirmSingleDelete() {
+  const target = pendingDeleteProfile.value;
+  if (!target) return;
+  singleDeleteLoading.value = true;
+  try {
+    await profilesStore.remove(target.id);
+    singleDeleteOpen.value = false;
+  } catch {
+    singleDeleteOpen.value = false;
+  } finally {
+    singleDeleteLoading.value = false;
+    pendingDeleteProfile.value = null;
+  }
+}
+
+function openBulkDelete() {
+  const selected = profilesStore.profiles.filter(p => selectedRowKeys.value.includes(p.id));
+  bulkRunningProfiles.value = selected.filter(p => p.status !== 'stopped');
+  bulkDeleteCount.value = selected.filter(p => p.status === 'stopped').length;
+  bulkDeleteOpen.value = true;
+}
+
+async function confirmBulkDelete() {
+  if (bulkDeleteCount.value === 0) {
+    bulkDeleteOpen.value = false;
+    message.warning(t('confirmDelete.allRunning'));
+    selectedRowKeys.value = [];
+    return;
+  }
+  bulkDeleteLoading.value = true;
+  let deleted = 0;
+  let failed = 0;
+  for (const id of selectedRowKeys.value) {
+    const profile = profilesStore.profiles.find(p => p.id === id);
+    if (!profile || profile.status !== 'stopped') continue;
+    try {
+      await profilesStore.remove(id);
+      deleted++;
+    } catch {
+      failed++;
+    }
+  }
+  bulkDeleteLoading.value = false;
+  bulkDeleteOpen.value = false;
+  const skipped = bulkRunningProfiles.value.length + failed;
+  message.success(t('confirmDelete.bulkResult', { deleted, skipped }));
+  selectedRowKeys.value = [];
 }
 
 async function exportCookies(record) {
@@ -351,15 +426,6 @@ async function bulkStart() {
 async function bulkStop() {
   for (const id of selectedRowKeys.value) {
     await stopProfile(id);
-  }
-  selectedRowKeys.value = [];
-}
-
-async function bulkDelete() {
-  for (const id of selectedRowKeys.value) {
-    try {
-      await profilesStore.remove(id);
-    } catch {}
   }
   selectedRowKeys.value = [];
 }

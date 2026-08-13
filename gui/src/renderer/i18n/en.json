@@ -31,6 +31,8 @@
       "starting": "Starting...",
       "running": "Running"
     },
+    "deleteConfirmTitle": "Delete Profile",
+    "deleteBulkConfirmTitle": "Delete Selected Profiles",
     "modal": {
       "basic": "Basic",
       "proxy": "Proxy",
@@ -74,6 +76,8 @@
     "checkSelected": "Check Selected",
     "deleteUnused": "Delete Unused",
     "bulkImport": "Bulk Import",
+    "deleteConfirmTitle": "Delete Proxy",
+    "deleteBulkConfirmTitle": "Delete Selected Proxies",
     "columns": {
       "status": "Status",
       "geo": "GEO",
@@ -95,7 +99,10 @@
     "empty": "No extensions installed",
     "assignAll": "Assign to all profiles",
     "assignAllSuccess": "Assigned to {{count}} profile(s)",
-    "assignAllConfirm": "Assign this extension to all profiles?"
+    "assignAllConfirm": "Assign this extension to all profiles?",
+    "deleteConfirmTitle": "Delete Extension",
+    "deleteWarning": "The extension folder will be permanently removed. This action cannot be undone.",
+    "deleteSuccess": "Extension removed"
   },
   "settings": {
     "title": "Settings",
@@ -147,7 +154,8 @@
     "parallelLimitHelp": "Max number of profiles running simultaneously",
     "projectList": "Projects",
     "projectUpdated": "Project updated",
-    "projectDeleted": "Project deleted"
+    "projectDeleted": "Project deleted",
+    "deleteProjectConfirmTitle": "Delete Project"
   },
   "automation": {
     "title": "Automation",
@@ -194,6 +202,17 @@
     "historyTitle": "History",
     "historyEmpty": "No completed runs yet.",
     "loadMore": "Load More"
+  },
+  "confirmDelete": {
+    "ok": "OK",
+    "warning": "This action cannot be undone. Deleted data is permanently lost.",
+    "checkbox": "I understand that deletion is irreversible",
+    "countSingle": "1 item will be deleted",
+    "countMultiple": "{{count}} items will be deleted",
+    "runningProfilesTitle": "The following profiles cannot be deleted:",
+    "runningProfilesReason": "These profiles are running. Stop them before deleting.",
+    "bulkResult": "Deleted: {{deleted}}, skipped: {{skipped}}",
+    "allRunning": "None of the selected profiles can be deleted because they are all running. Stop them first."
   },
   "common": {
     "start": "Start",

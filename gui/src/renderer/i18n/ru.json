@@ -18,6 +18,8 @@
     "bulkStop": "Остановить выбранные",
     "bulkDelete": "Удалить выбранные",
     "bulkClean": "Очистить кэш",
+    "deleteConfirmTitle": "Удалить профиль",
+    "deleteBulkConfirmTitle": "Удалить выбранные профили",
     "columns": {
       "number": "№",
       "name": "Название",
@@ -74,6 +76,8 @@
     "checkSelected": "Проверить выбранные",
     "deleteUnused": "Удалить неиспользуемые",
     "bulkImport": "Массовый импорт",
+    "deleteConfirmTitle": "Удалить прокси",
+    "deleteBulkConfirmTitle": "Удалить выбранные прокси",
     "columns": {
       "status": "Статус",
       "geo": "ГЕО",
@@ -95,7 +99,10 @@
     "empty": "Расширения не установлены",
     "assignAll": "Назначить всем профилям",
     "assignAllSuccess": "Назначено {{count}} профилям",
-    "assignAllConfirm": "Назначить это расширение всем профилям?"
+    "assignAllConfirm": "Назначить это расширение всем профилям?",
+    "deleteConfirmTitle": "Удалить расширение",
+    "deleteWarning": "Папка расширения будет удалена безвозвратно. Это действие необратимо.",
+    "deleteSuccess": "Расширение удалено"
   },
   "settings": {
     "title": "Настройки",
@@ -147,7 +154,8 @@
     "parallelLimitHelp": "Макс. количество одновременно запущенных профилей",
     "projectList": "Проекты",
     "projectUpdated": "Проект обновлён",
-    "projectDeleted": "Проект удалён"
+    "projectDeleted": "Проект удалён",
+    "deleteProjectConfirmTitle": "Удалить проект"
   },
   "automation": {
     "title": "Автоматизация",
@@ -194,6 +202,17 @@
     "historyTitle": "История",
     "historyEmpty": "Завершённых задач пока нет.",
     "loadMore": "Загрузить ещё"
+  },
+  "confirmDelete": {
+    "ok": "OK",
+    "warning": "Это действие необратимо. Удалённые данные будут потеряны навсегда.",
+    "checkbox": "Я понимаю, что удаление необратимо",
+    "countSingle": "Будет удалён 1 объект",
+    "countMultiple": "Будет удалено объектов: {{count}}",
+    "runningProfilesTitle": "Следующие профили нельзя удалить:",
+    "runningProfilesReason": "Эти профили запущены. Остановите их перед удалением.",
+    "bulkResult": "Удалено: {{deleted}}, пропущено: {{skipped}}",
+    "allRunning": "Ни один из выбранных профилей нельзя удалить: все они запущены. Сначала остановите их."
   },
   "common": {
     "start": "Старт",
