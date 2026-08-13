@@ -11,7 +11,6 @@ const { logger, createProfileLogger, appendRunStage, resolveRunLogPath } = requi
 const { broadcastStatus } = require('../core/websocket');
 const { getExtensionsDir, getManifest, resolveMSG, resolveRuntimeId } = require('./extensions');
 const { humanType } = require('../typing');
-const { hasMasterKey, getMasterKey } = require('../crypto');
 const { validate, browserTypeSchema } = require('./validate');
 const { notFound, conflict, preconditionFailed, badRequest, badGateway, serverError, asyncHandler } = require('./errors');
 const cdp = require('../cdp/client');

@@ -1,5 +1,13 @@
 # Changelog
 
+## v1.5.0
+
+### Security / Storage
+
+- **[SEC] Удалено шифрование секретов (master key / master password / keytar).**
+  Секретные поля профилей (`email_password`, `twitter_password`, `twitter_auth_token`, `discord_password`, `discord_token`, `wallet_password`) и прокси (`username`, `password`) теперь хранятся и читаются как обычные `TEXT`-значения (plaintext) без runtime master key. Удалены: модуль `src/crypto/`, инициализация master key при старте (`initMasterKey`), runtime-gate `requireMasterKey` для mutating-запросов, crypto-эндпоинты (`/api/settings/crypto-status`, `set-master-password`, `change-master-password`, `recovery-key`), раздел «Безопасность» в Settings GUI и связанные i18n-ключи, зависимость `keytar` из `package.json`/lock-файлов. Перезапуск или переустановка приложения больше не блокируют редактирование профилей и прокси. Значения, ранее сохранённые в формате `aes-256-gcm:...`, автоматически не мигрируются и не преобразуются — их восстановление выполняется отдельным внешним скриптом. Легаси-default `asdfj*KK` для `wallet_password` удалён: незаполненное значение хранится как пустое/`NULL`. Версия приложения — **1.5.0**.
+  ✅ `src/crypto/index.js` (удалён), `src/index.js`, `src/core/app.js`, `src/api/settings.js`, `src/api/browser.js`, `src/db/queries.js`, `package.json`, `package-lock.json`, `gui/src/renderer/views/Settings.vue`, `gui/src/renderer/i18n/*.json`, `tests/unit/crypto.test.js` (удалён), `tests/unit/keytar-service.test.js` (удалён), `tests/integration/api-real.test.js`, `tests/unit/settings-token.test.js`, `docs/API.md`, `docs/API.en.md`, `docs/API.zh.md`, `docs/DATABASE.md`, `docs/DATABASE.en.md`, `docs/DATABASE.zh.md`, `docs/DEPLOY.md`, `docs/AGENTS_COMMON.md`, `TS.md`, `TS_INTEGRATION.md`, `README.md`, `README.en.md`, `README.zh.md`
+
 ## v1.4.2
 
 ### Интеграция / Automation

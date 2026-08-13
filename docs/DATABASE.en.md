@@ -38,7 +38,7 @@ Stores anti-detect browser profiles.
 | `discord_email` | TEXT | Discord email |
 | `wallet_evm_address` | TEXT | EVM wallet address |
 | `wallet_sol_address` | TEXT | Solana wallet address |
-| `wallet_password` | TEXT | Wallet password (default 'asdfj*KK') |
+| `wallet_password` | TEXT | Wallet password (may be empty/NULL) |
 | `created_at` | DATETIME | Creation date |
 | `updated_at` | DATETIME | Update date |
 
@@ -52,7 +52,7 @@ Stores anti-detect browser profiles.
 **Migration (v1.0.0 → v1.1.0):**
 On DB initialization, `migrateTables()` checks for new columns via `PRAGMA table_info` and adds missing ones via `ALTER TABLE ADD COLUMN`. Migrated columns: `timezone`, `email`, `email_password`, `twitter_username`, `twitter_password`, `twitter_auth_token`, `twitter_email`, `discord_username`, `discord_password`, `discord_token`, `discord_email`, `wallet_evm_address`, `wallet_sol_address`, `wallet_password`.
 
-**Encryption (v1.2.0):** Fields `email_password`, `twitter_password`, `twitter_auth_token`, `discord_password`, `discord_token`, `wallet_password` are automatically encrypted with AES-256-GCM when the crypto module is enabled. Format: `aes-256-gcm:<iv>:<ciphertext>:<tag>`. Master key is stored in the OS keychain (keytar) with fallback to `system_config`.
+**Secret storage:** Profile fields (`email_password`, `twitter_password`, `twitter_auth_token`, `discord_password`, `discord_token`, `wallet_password`) and proxy fields (`username`, `password`) are stored and read as plain `TEXT` values without encryption. Values previously stored in the `aes-256-gcm:...` format are not automatically migrated or converted — the query layer returns them as-is until external recovery.
 
 ---
 

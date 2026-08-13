@@ -46,7 +46,7 @@ MultiManager/
 │   │   ├── extensions.js     # Chrome extensions management
 │   │   ├── logs.js           # Profile and system log access
 │   │   ├── internal.js       # Internal API (profiles by range)
-│   │   ├── settings.js       # Settings (crypto module, automation)
+│   │   ├── settings.js       # Settings (API token, automation)
 │   │   └── tasks.js          # Scheduler tasks
 │   ├── db/                   # SQLite (WAL-mode initialization, table schemas, CRUD)
 │   │   ├── index.js
@@ -63,7 +63,6 @@ MultiManager/
 │   │   └── index.js
 │   ├── multi-control/        # Window synchronizer (mouse/keyboard broadcast via CDP)
 │   │   └── index.js
-│   ├── crypto/               # AES-256-GCM encryption (keytar/PBKDF2)
 │   ├── logger/               # High-performance Pino logger (core.log + profile_[ID].log)
 │   │   └── index.js
 │   └── utils/
@@ -118,7 +117,7 @@ MultiManager/
 │           ├── composables/  # useTheme, useWebSocket
 │           └── api/          # HTTP client for Core requests
 └── tests/                    # Vitest (558 tests)
-    ├── unit/                 # 24 files: auth, proxy, fingerprint, typing, crypto, tasks, etc.
+    ├── unit/                 # 24 files: auth, proxy, fingerprint, typing, tasks, etc.
     └── integration/          # 5 files: SQLite WAL, API, lifecycle, proxy, extensions
 ```
 
@@ -301,7 +300,6 @@ The project includes 30 test files (558 tests) based on **Vitest**:
 | `wal-stress.test.js` | Integration | WAL-mode stress test |
 | `api-real.test.js` | Integration | Full REST API cycle |
 | `profile-launch.test.js` | Integration | CloakBrowser launch and PID capture |
-| `crypto.test.js` | Unit | AES-256-GCM encrypt/decrypt, keytar, PBKDF2, recovery key |
 | `internal-profiles.test.js` | Unit | Internal API profiles range endpoint |
 | `tasks.test.js` | Unit | Tasks CRUD and execution API |
 

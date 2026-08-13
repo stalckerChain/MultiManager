@@ -62,13 +62,13 @@ describe('POST /api/settings/api-token/regenerate', () => {
     const newToken = res.body.token;
 
     const oldRes = await request(app)
-      .get('/api/settings/crypto-status')
+      .get('/api/settings/automation')
       .set('Authorization', `Bearer ${INITIAL}`);
 
     expect(oldRes.status).toBe(401);
 
     const goodRes = await request(app)
-      .get('/api/settings/crypto-status')
+      .get('/api/settings/automation')
       .set('Authorization', `Bearer ${newToken}`);
 
     expect(goodRes.status).toBe(200);

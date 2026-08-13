@@ -63,7 +63,6 @@ MultiManager/
 │   │   └── index.js
 │   ├── multi-control/        # 窗口同步器（通过 CDP 广播鼠标/键盘）
 │   │   └── index.js
-│   ├── crypto/               # AES-256-GCM 加密（keytar/PBKDF2）
 │   ├── logger/               # 高性能 Pino 日志器（core.log + profile_[ID].log）
 │   │   └── index.js
 │   └── utils/
@@ -299,7 +298,6 @@ requests.post(f"{BASE}/api/browser/{profile['id']}/stop", headers=HEADERS)
 | `wal-stress.test.js` | 集成 | WAL 模式压力测试 |
 | `api-real.test.js` | 集成 | 完整 REST API 周期 |
 | `profile-launch.test.js` | 集成 | CloakBrowser 启动和 PID 捕获 |
-| `crypto.test.js` | 单元 | AES-256-GCM 加密/解密，keytar，PBKDF2，恢复密钥 |
 | `internal-profiles.test.js` | 单元 | Internal API 配置文件范围端点 |
 | `tasks.test.js` | 单元 | 任务 CRUD 和执行 API |
 

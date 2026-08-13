@@ -38,7 +38,7 @@ SQLite база данных с WAL-журналированием и ACID-тр�
 | `discord_email` | TEXT | Email Discord |
 | `wallet_evm_address` | TEXT | EVM-адрес кошелька |
 | `wallet_sol_address` | TEXT | Solana-адрес кошелька |
-| `wallet_password` | TEXT | Пароль кошелька (default 'asdfj*KK') |
+| `wallet_password` | TEXT | Пароль кошелька (может быть пустым/NULL) |
 | `profile_path` | TEXT | Абсолютный путь к user-data-dir внешнего браузерного профиля (NULL = стандартный путь MM) |
 | `created_at` | DATETIME | Дата создания |
 | `updated_at` | DATETIME | Дата обновления |
@@ -53,9 +53,7 @@ SQLite база данных с WAL-журналированием и ACID-тр�
 **Миграция (v1.0.0 → v1.1.0):**
 При инициализации БД выполняется `migrateTables()`: проверка наличия новых колонок через `PRAGMA table_info` и добавление недостающих через `ALTER TABLE ADD COLUMN`. Список мигрируемых колонок: `timezone`, `email`, `email_password`, `twitter_username`, `twitter_password`, `twitter_auth_token`, `twitter_email`, `discord_username`, `discord_password`, `discord_token`, `discord_email`, `wallet_evm_address`, `wallet_sol_address`, `wallet_password`, `profile_path`.
 
-**Шифрование (v1.2.0):** Поля `email_password`, `twitter_password`, `twitter_auth_token`, `discord_password`, `discord_token`, `wallet_password` автоматически шифруются AES-256-GCM при включённом крипто-модуле. Формат: `aes-256-gcm:<iv>:<ciphertext>:<tag>`. Мастер-ключ хранится в системной связке ключей (keytar) с фоллбэком на `system_config`.
-
-**Шифрование прокси (v1.4.0):** Поля `username` и `password` в таблице `proxies` также шифруются AES-256-GCM тем же мастер-ключом. При чтении расшифровываются прозрачно через `decryptProxyRow()`.
+**Хранение секретов:** Поля профилей (`email_password`, `twitter_password`, `twitter_auth_token`, `discord_password`, `discord_token`, `wallet_password`) и прокси (`username`, `password`) хранятся и читаются как обычные `TEXT`-значения без шифрования. Значения, ранее сохранённые в формате `aes-256-gcm:...`, автоматически не мигрируются и не преобразуются — query-слой отдаёт их как есть до внешнего восстановления.
 
 ---
 

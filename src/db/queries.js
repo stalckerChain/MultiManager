@@ -1,5 +1,4 @@
 const { v4: uuidv4 } = require('uuid');
-const { encrypt, decrypt, decryptRow, decryptRows, SECRET_FIELDS, hasMasterKey, getMasterKey } = require('../crypto');
 
 function createProfileQueries(db) {
   const insert = db.prepare(`
@@ -46,78 +45,53 @@ function createProfileQueries(db) {
     WHERE id = ?
   `);
 
-  const mk = () => hasMasterKey() ? getMasterKey() : null;
-
-  function encryptFields(data) {
-    const key = mk();
-    if (!key) return data;
-    const out = { ...data };
-    for (const field of SECRET_FIELDS) {
-      if (out[field] !== undefined && out[field] !== null) {
-        out[field] = encrypt(String(out[field]), key);
-      }
-    }
-    return out;
-  }
-
-  function decryptRowSafe(row) {
-    if (!hasMasterKey() || !row) return row;
-    return decryptRow(row);
-  }
-
-  function decryptRowsSafe(rows) {
-    if (!hasMasterKey() || !rows) return rows;
-    return rows.map(r => decryptRow(r));
-  }
-
   return {
     create(data) {
       const id = uuidv4();
       const num = count.get().count + 1;
-      const enc = encryptFields(data);
       insert.run(
         id,
         num,
-        enc.name,
-        enc.proxy_id || null,
-        enc.fingerprint_seed,
-        enc.platform,
-        enc.user_agent,
-        enc.screen_resolution,
-        enc.hardware_cores,
-        enc.hardware_memory,
-        JSON.stringify(enc.extensions || []),
-        JSON.stringify(enc.tags || []),
-        enc.notes || '',
-        enc.timezone || null,
-        enc.email || null,
-        enc.email_password || null,
-        enc.twitter_username || null,
-        enc.twitter_password || null,
-        enc.twitter_auth_token || null,
-        enc.twitter_email || null,
-        enc.discord_username || null,
-        enc.discord_password || null,
-        enc.discord_token || null,
-        enc.discord_email || null,
-        enc.wallet_evm_address || null,
-        enc.wallet_sol_address || null,
-        enc.wallet_password || null,
-        enc.profile_path || null
+        data.name,
+        data.proxy_id || null,
+        data.fingerprint_seed,
+        data.platform,
+        data.user_agent,
+        data.screen_resolution,
+        data.hardware_cores,
+        data.hardware_memory,
+        JSON.stringify(data.extensions || []),
+        JSON.stringify(data.tags || []),
+        data.notes || '',
+        data.timezone || null,
+        data.email || null,
+        data.email_password || null,
+        data.twitter_username || null,
+        data.twitter_password || null,
+        data.twitter_auth_token || null,
+        data.twitter_email || null,
+        data.discord_username || null,
+        data.discord_password || null,
+        data.discord_token || null,
+        data.discord_email || null,
+        data.wallet_evm_address || null,
+        data.wallet_sol_address || null,
+        data.wallet_password || null,
+        data.profile_path || null
       );
-      return decryptRowSafe(getById.get(id));
+      return getById.get(id);
     },
 
     getById(id) {
-      return decryptRowSafe(getById.get(id));
+      return getById.get(id);
     },
 
     getAll() {
-      return decryptRowsSafe(getAll.all());
+      return getAll.all();
     },
 
     getByStatus(status) {
-      return decryptRowsSafe(getByStatus.all(status));
+      return getByStatus.all(status);
     },
 
     updateStatus(id, status) {
@@ -135,37 +109,36 @@ function createProfileQueries(db) {
     },
 
     update(id, data) {
-      const enc = encryptFields(data);
       update.run(
-        enc.name || null,
-        enc.proxy_id !== undefined ? enc.proxy_id : null,
-        enc.platform || null,
-        enc.user_agent || null,
-        enc.screen_resolution || null,
-        enc.hardware_cores || null,
-        enc.hardware_memory || null,
-        enc.fingerprint_seed || null,
-        enc.extensions ? JSON.stringify(enc.extensions) : null,
-        enc.tags ? JSON.stringify(enc.tags) : null,
-        enc.notes || null,
-        enc.timezone || null,
-        enc.email !== undefined ? enc.email : null,
-        enc.email_password !== undefined ? enc.email_password : null,
-        enc.twitter_username !== undefined ? enc.twitter_username : null,
-        enc.twitter_password !== undefined ? enc.twitter_password : null,
-        enc.twitter_auth_token !== undefined ? enc.twitter_auth_token : null,
-        enc.twitter_email !== undefined ? enc.twitter_email : null,
-        enc.discord_username !== undefined ? enc.discord_username : null,
-        enc.discord_password !== undefined ? enc.discord_password : null,
-        enc.discord_token !== undefined ? enc.discord_token : null,
-        enc.discord_email !== undefined ? enc.discord_email : null,
-        enc.wallet_evm_address !== undefined ? enc.wallet_evm_address : null,
-        enc.wallet_sol_address !== undefined ? enc.wallet_sol_address : null,
-        enc.wallet_password !== undefined ? enc.wallet_password : null,
-        enc.profile_path !== undefined ? enc.profile_path : null,
+        data.name || null,
+        data.proxy_id !== undefined ? data.proxy_id : null,
+        data.platform || null,
+        data.user_agent || null,
+        data.screen_resolution || null,
+        data.hardware_cores || null,
+        data.hardware_memory || null,
+        data.fingerprint_seed || null,
+        data.extensions ? JSON.stringify(data.extensions) : null,
+        data.tags ? JSON.stringify(data.tags) : null,
+        data.notes || null,
+        data.timezone || null,
+        data.email !== undefined ? data.email : null,
+        data.email_password !== undefined ? data.email_password : null,
+        data.twitter_username !== undefined ? data.twitter_username : null,
+        data.twitter_password !== undefined ? data.twitter_password : null,
+        data.twitter_auth_token !== undefined ? data.twitter_auth_token : null,
+        data.twitter_email !== undefined ? data.twitter_email : null,
+        data.discord_username !== undefined ? data.discord_username : null,
+        data.discord_password !== undefined ? data.discord_password : null,
+        data.discord_token !== undefined ? data.discord_token : null,
+        data.discord_email !== undefined ? data.discord_email : null,
+        data.wallet_evm_address !== undefined ? data.wallet_evm_address : null,
+        data.wallet_sol_address !== undefined ? data.wallet_sol_address : null,
+        data.wallet_password !== undefined ? data.wallet_password : null,
+        data.profile_path !== undefined ? data.profile_path : null,
         id
       );
-      return decryptRowSafe(getById.get(id));
+      return getById.get(id);
     },
   };
 }
@@ -183,59 +156,26 @@ function createProxyQueries(db) {
   const deleteById = db.prepare('DELETE FROM proxies WHERE id = ?');
   const findByHostPort = db.prepare('SELECT * FROM proxies WHERE host = ? AND port = ?');
 
-  const PROXY_SECRET_FIELDS = ['username', 'password'];
-
-  function encryptProxyFields(data) {
-    const key = hasMasterKey() ? getMasterKey() : null;
-    if (!key) return data;
-    const out = { ...data };
-    for (const field of PROXY_SECRET_FIELDS) {
-      if (out[field] !== undefined && out[field] !== null) {
-        out[field] = encrypt(String(out[field]), key);
-      }
-    }
-    return out;
-  }
-
-  function decryptProxyRow(row) {
-    if (!hasMasterKey() || !row) return row;
-    const key = getMasterKey();
-    const out = { ...row };
-    for (const field of PROXY_SECRET_FIELDS) {
-      if (out[field]) {
-        const decrypted = decrypt(out[field], key);
-        if (decrypted !== null) out[field] = decrypted;
-      }
-    }
-    return out;
-  }
-
-  function decryptProxyRows(rows) {
-    if (!hasMasterKey() || !rows) return rows;
-    return rows.map(r => decryptProxyRow(r));
-  }
-
   return {
     create(data) {
-      const enc = encryptProxyFields(data);
       const result = insert.run(
-        enc.type,
-        enc.host,
-        enc.port,
-        enc.username || null,
-        enc.password || null,
-        enc.proxy_rotation_url || null,
-        enc.location || null
+        data.type,
+        data.host,
+        data.port,
+        data.username || null,
+        data.password || null,
+        data.proxy_rotation_url || null,
+        data.location || null
       );
-      return decryptProxyRow(getById.get(result.lastInsertRowid));
+      return getById.get(result.lastInsertRowid);
     },
 
     getById(id) {
-      return decryptProxyRow(getById.get(id));
+      return getById.get(id);
     },
 
     getAll() {
-      return decryptProxyRows(getAll.all());
+      return getAll.all();
     },
 
     getAllSafe() {
@@ -257,17 +197,17 @@ function createProxyQueries(db) {
 
     updateLastIp(id, ip) {
       updateLastIp.run(ip, id);
-      return decryptProxyRow(getById.get(id));
+      return getById.get(id);
     },
 
     updateActive(id, isActive) {
       updateActive.run(isActive ? 1 : 0, id);
-      return decryptProxyRow(getById.get(id));
+      return getById.get(id);
     },
 
     updateLocation(id, location) {
       db.prepare('UPDATE proxies SET location = ? WHERE id = ?').run(location, id);
-      return decryptProxyRow(getById.get(id));
+      return getById.get(id);
     },
 
     delete(id) {
@@ -275,11 +215,10 @@ function createProxyQueries(db) {
     },
 
     findByHostPort(host, port) {
-      return decryptProxyRow(findByHostPort.get(host, port));
+      return findByHostPort.get(host, port);
     },
 
     update(id, data) {
-      const enc = encryptProxyFields(data);
       db.prepare(`
         UPDATE proxies
         SET type = COALESCE(?, type),
@@ -292,17 +231,17 @@ function createProxyQueries(db) {
             location = COALESCE(?, location)
         WHERE id = ?
       `).run(
-        enc.type || null,
-        enc.host || null,
-        enc.port || null,
-        enc.username !== undefined ? enc.username : null,
-        enc.password !== undefined ? enc.password : null,
-        enc.proxy_rotation_url !== undefined ? enc.proxy_rotation_url : null,
-        enc.is_active !== undefined ? (enc.is_active ? 1 : 0) : null,
-        enc.location !== undefined ? enc.location : null,
+        data.type || null,
+        data.host || null,
+        data.port || null,
+        data.username !== undefined ? data.username : null,
+        data.password !== undefined ? data.password : null,
+        data.proxy_rotation_url !== undefined ? data.proxy_rotation_url : null,
+        data.is_active !== undefined ? (data.is_active ? 1 : 0) : null,
+        data.location !== undefined ? data.location : null,
         id
       );
-      return decryptProxyRow(getById.get(id));
+      return getById.get(id);
     },
   };
 }

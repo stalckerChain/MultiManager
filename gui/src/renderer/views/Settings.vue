@@ -39,40 +39,6 @@
       </a-radio-group>
     </a-card>
 
-    <a-card :title="t('settings.security')" class="mb-4 max-w-lg">
-      <a-descriptions :column="1" bordered size="small">
-        <a-descriptions-item :label="t('settings.keyStorage')">
-          <a-tag :color="cryptoStatus.source === 'keytar' ? 'green' : 'orange'">
-            {{ cryptoStatus.source === 'keytar' ? t('settings.keyStorageKeytar') : t('settings.keyStorageConfig') }}
-          </a-tag>
-        </a-descriptions-item>
-        <a-descriptions-item :label="t('settings.masterPassword')">
-          <div class="flex items-center gap-2">
-            <a-tag :color="cryptoStatus.hasPassword ? 'green' : 'default'">
-              {{ cryptoStatus.hasPassword ? t('settings.masterPasswordEnabled') : t('settings.masterPasswordDisabled') }}
-            </a-tag>
-          </div>
-        </a-descriptions-item>
-      </a-descriptions>
-
-      <div class="mt-4 flex flex-wrap gap-2">
-        <a-button v-if="!cryptoStatus.hasPassword" type="primary" @click="showSetPassword = true">
-          {{ t('settings.setPassword') }}
-        </a-button>
-        <a-button v-else @click="showChangePassword = true">
-          {{ t('settings.changePassword') }}
-        </a-button>
-        <a-button @click="showRecoveryKey = !showRecoveryKey">
-          {{ t('settings.recoveryKeyShow') }}
-        </a-button>
-      </div>
-
-      <div v-if="showRecoveryKey && recoveryKeyValue" class="mt-3 p-3 bg-yellow-50 dark:bg-yellow-900/20 rounded text-sm">
-        <p class="text-yellow-700 dark:text-yellow-300 mb-2 font-semibold">⚠ {{ t('settings.recoveryKeyWarning') }}</p>
-        <code class="block p-2 bg-white dark:bg-gray-800 rounded font-mono text-xs break-all select-all">{{ recoveryKeyValue }}</code>
-      </div>
-    </a-card>
-
     <a-card :title="t('settings.automation')" class="mb-4 max-w-lg">
       <a-form layout="vertical">
         <a-form-item :label="t('settings.stAuto0Path')">
@@ -130,18 +96,7 @@
       </a-form>
     </a-card>
 
-    <a-modal v-model:open="showSetPassword" :title="t('settings.setPassword')" @ok="setPassword" :confirm-loading="settingPassword">
-      <a-input-password v-model:value="newPwd" :placeholder="t('settings.newPassword')" class="mb-3" />
-      <a-input-password v-model:value="confirmPwd" :placeholder="t('settings.confirmPassword')" />
-    </a-modal>
-
-    <a-modal v-model:open="showChangePassword" :title="t('settings.changePassword')" @ok="changePassword" :confirm-loading="changingPassword">
-      <a-input-password v-model:value="currentPwd" :placeholder="t('settings.currentPassword')" class="mb-3" />
-      <a-input-password v-model:value="newPwd" :placeholder="t('settings.newPassword')" class="mb-3" />
-      <a-input-password v-model:value="confirmPwd" :placeholder="t('settings.confirmPassword')" />
-    </a-modal>
-
-    <ConfirmDeleteModal v-model:open="deleteProjectOpen" :title="t('settings.deleteProjectConfirmTitle')"
+    <a-modal v-model:open="deleteProjectOpen" :title="t('settings.deleteProjectConfirmTitle')"
       :message="t('confirmDelete.warning')" :loading="deleteProjectLoading"
       @confirm="handleConfirmDeleteProject" />
   </div>
@@ -163,18 +118,6 @@ const appStore = useAppStore();
 const showToken = ref(false);
 const theme = ref(appStore.theme);
 const language = ref(appStore.language);
-
-const cryptoStatus = ref({ source: 'system_config', hasPassword: false });
-const recoveryKeyValue = ref('');
-const showRecoveryKey = ref(false);
-
-const showSetPassword = ref(false);
-const showChangePassword = ref(false);
-const newPwd = ref('');
-const confirmPwd = ref('');
-const currentPwd = ref('');
-const settingPassword = ref(false);
-const changingPassword = ref(false);
 
 const automation = ref({
   stAuto0Path: '',
@@ -228,73 +171,11 @@ async function regenerateToken() {
   }
 }
 
-async function fetchCryptoStatus() {
-  try {
-    const { data } = await client.get('/api/settings/crypto-status');
-    cryptoStatus.value = data;
-  } catch {
-    cryptoStatus.value = { source: 'system_config', hasPassword: false };
-  }
-}
-
-async function fetchRecoveryKey() {
-  try {
-    const { data } = await client.post('/api/settings/recovery-key');
-    recoveryKeyValue.value = data.recovery_key || '';
-  } catch {
-    recoveryKeyValue.value = '';
-  }
-}
-
 async function fetchAutomation() {
   try {
     const { data } = await client.get('/api/settings/automation');
     automation.value = data;
   } catch {
-  }
-}
-
-async function setPassword() {
-  if (newPwd.value !== confirmPwd.value) {
-    message.error(t('settings.passwordMismatch'));
-    return;
-  }
-  settingPassword.value = true;
-  try {
-    await client.post('/api/settings/set-master-password', { password: newPwd.value });
-    message.success(t('settings.passwordSetSuccess'));
-    showSetPassword.value = false;
-    newPwd.value = '';
-    confirmPwd.value = '';
-    await fetchCryptoStatus();
-  } catch (err) {
-    message.error(err.message);
-  } finally {
-    settingPassword.value = false;
-  }
-}
-
-async function changePassword() {
-  if (newPwd.value !== confirmPwd.value) {
-    message.error(t('settings.passwordMismatch'));
-    return;
-  }
-  changingPassword.value = true;
-  try {
-    await client.post('/api/settings/change-master-password', {
-      currentPassword: currentPwd.value,
-      newPassword: newPwd.value,
-    });
-    message.success(t('settings.passwordSetSuccess'));
-    showChangePassword.value = false;
-    currentPwd.value = '';
-    newPwd.value = '';
-    confirmPwd.value = '';
-    await fetchCryptoStatus();
-  } catch (err) {
-    message.error(err.message);
-  } finally {
-    changingPassword.value = false;
   }
 }
 
@@ -391,8 +272,6 @@ async function handleConfirmDeleteProject() {
 }
 
 onMounted(() => {
-  fetchCryptoStatus();
-  fetchRecoveryKey();
   fetchAutomation();
   fetchProjectList();
 });

@@ -35,7 +35,7 @@ stAuto0 — Playwright-based фреймворк Web3-автоматизации 
 ## 2. Целевая архитектура
 
 ### 2.1. Принцип разделения ответственности
-- **MultiManager (Node.js)** полностью инкапсулирует: сеть (прокси, ротация, checker), запуск браузера (CloakBrowser + fingerprint + расширения), авто-логин Zerion, шифрование секретов, планировщик, БД.
+- **MultiManager (Node.js)** полностью инкапсулирует: сеть (прокси, ротация, checker), запуск браузера (CloakBrowser + fingerprint + расширения), авто-логин Zerion, планировщик, БД.
 - **stAuto0 (Python)** = чистая Web3-автоматизация: квесты, клики, заполнение форм, обработка попапов кошелька.
 
 ### 2.2. Топология (решения #7, #9, #10)
@@ -50,7 +50,7 @@ stAuto0 — Playwright-based фреймворк Web3-автоматизации 
 |-------------------------------|----------------------------|-----------|
 | `name` (auto_001) | `name` + `number` (1) | `name` сохраняется как `auto_{number:03d}` |
 | `email` | `email` | |
-| `wallet_password` | `wallet_password` (AES, дешифр.) | default 'asdfj*KK' |
+| `wallet_password` | `wallet_password` | может быть пустым/NULL |
 | `evm` | `wallet_evm_address` | |
 | `solana` | `wallet_sol_address` | |
 | `proxy` (host:port:user:pass) | вычисляется из `proxies` JOIN | `/api/internal` отдаёт готовую строку |
@@ -59,14 +59,14 @@ stAuto0 — Playwright-based фреймворк Web3-автоматизации 
 | `profile_directory` | вычисляется из `id` (UUID) | `MultiManager/profiles/{UUID}/BrowserData` |
 | `id` (auto_001) | `id` (UUIDv4) | новый формат после миграции |
 
-**Новые поля (Twitter/Discord):** `twitter_username`, `twitter_password` (дешифр.), `twitter_auth_token` (дешифр.), `twitter_email`, аналогично `discord_*`. Отдаются в `/api/internal/profiles` в cleartext (для Python).
+**Новые поля (Twitter/Discord):** `twitter_username`, `twitter_password`, `twitter_auth_token`, `twitter_email`, аналогично `discord_*`. Отдаются в `/api/internal/profiles` в cleartext (для Python).
 
 ### 2.4. Стек вызова после миграции
 ```
 python main.py --project=concrete --range=001-010 --log-name=task_xyz
   │
   ├─ GET /api/internal/profiles?range=001-010  (MultiManager Core)
-  │     └─ возвращает массив account dict (с расшифрованными секретами)
+  │     └─ возвращает массив account dict (секреты как plaintext)
   │
   └─ for each account:
        ├─ POST /api/browser/{profile_id}/start  (MultiManager)
@@ -159,7 +159,7 @@ class MultiManagerClient:
 | `proxy.connection_string` | `proxy` (строка) | `http://user:pass@host:port` |
 | `wallet_evm_address` | `evm` | обратный маппинг |
 | `wallet_sol_address` | `solana` | обратный маппинг |
-| `wallet_password` | `wallet_password` | уже расшифрован в MM |
+| `wallet_password` | `wallet_password` | хранится в MM как plaintext |
 | `email` | `email` | без изменений |
 | `timezone` | `timezone` | без изменений |
 | — | `debugging_port` | **ОТСУТСТВУЕТ** (динамический, приходит в `start_browser()`) |
@@ -267,7 +267,7 @@ async def close(self):
 **Новое:**
 - `get_start_index()`: вместо exec `accounts.py` → `GET /api/profiles` → `max(number) + 1`.
 - Генерация остаётся (BIP39, EVM, Solana) — ✅ без изменений.
-- Запись через `POST /api/profiles/batch` (`src/api/profiles.js` новый endpoint, Roadmap Ф4 MultiManager): только публичные данные (`wallet_evm_address`, `wallet_sol_address`, `wallet_password` default 'asdfj*KK').
+- Запись через `POST /api/profiles/batch` (`src/api/profiles.js` новый endpoint, Roadmap Ф4 MultiManager): только публичные данные (`wallet_evm_address`, `wallet_sol_address`, `wallet_password`; для незаполненного пароля — NULL).
 - **Сиды ТОЛЬКО во временный `config/auto_sids.py`** — никогда в БД. Параноидальный инвариант. Расположение файла: `stAuto0/config/auto_sids.py` (решение Q4, без изменений).
 - Авто-распределение почт: читать `config/free_email.txt`, по одной почте на аккаунт через `PUT /api/profiles/:id {email}`. По завершении `free_email.txt` перезаписывается без использованных строк (логика `scripts/fill_emails.py`).
 
@@ -475,9 +475,9 @@ python scripts/migrate_profile_dirs.py
 | Фаза | Статус | Ключевое |
 |------|--------|----------|
 | Ф1 Core/health | ✅ | `GET /health` есть (`src/core/app.js:23-25`). За Bearer-auth (`app.use(authMiddleware)` до `/health`), но stAuto0 `is_core_alive()` (`Core/multimanager.py:37-42`) считает **401 признаком живого Core** → авто-детект работает корректно. Демон запускается (`API_TOKEN= PORT=3000 node src/index.js`). |
-| Ф2 crypto/secrets | ✅ | AES-256-GCM (`src/crypto/index.js`). Шифруются 6 полей (`email_password, twitter_password, twitter_auth_token, discord_password, discord_token, wallet_password`). Расшифровка через `decryptRowSafe` — **только при master-ключе в памяти**. |
+| Ф2 crypto/secrets | ✅ | Секретные поля профилей и прокси хранятся и читаются как plaintext `TEXT` без шифрования и без master-key gate. Crypto-модуль AES-256-GCM удалён. |
 | Ф3 backup | ✅ | `src/backup/index.js` — hot backup + rolling window (коммит `6e29a46`). |
-| **Ф4 Profiles/Browser (критичная точка стыковки)** | ✅ | `POST /api/browser/:id/start` возвращает **настоящий** `ws_endpoint` — НЕ заглушка (`src/api/browser.js:415-421`). cdpPort ловится из stderr регексом `/DevTools listening on ws:\/\/127\.0\.0\.1:(\d+)/` (`browser.js:346-349`). `GET /api/internal/profiles?range=` отдаёт **расшифрованные секреты + готовую `connection_string` прокси** (`src/api/internal.js:46-63`). `POST /api/profiles/batch` генерирует fingerprint автоматически. `POST /api/browser/:id/stop` — tree-kill (SIGTERM→SIGKILL). |
+| **Ф4 Profiles/Browser (критичная точка стыковки)** | ✅ | `POST /api/browser/:id/start` возвращает **настоящий** `ws_endpoint` — НЕ заглушка (`src/api/browser.js:415-421`). cdpPort ловится из stderr регексом `/DevTools listening on ws:\/\/127\.0\.0\.1:(\d+)/` (`browser.js:346-349`). `GET /api/internal/profiles?range=` отдаёт профили без секретных полей + `has_auth` для прокси (`src/api/internal.js:46-63`). `POST /api/profiles/batch` генерирует fingerprint автоматически. `POST /api/browser/:id/stop` — tree-kill (SIGTERM→SIGKILL). |
 | Ф5 Settings | ✅ | `stAuto0_path`, `python_path`, список проектов из `projects/*.py` (`src/api/settings.js:91-128`, GUI `Settings.vue:73-86`). |
 | **Ф6 Tasks/Scheduler+терминал** | ✅ | CRUD задач ✅; tail-терминал ✅; spawn Python-исполнения ✅ (`child_process.spawn` с `--project`, `--range`, `--log-name`, `--token`, логи в `logs/tasks/`, `updateExecutionStatus` по exit/error). Терминал привязан к задачам через кнопку "View Log". |
 

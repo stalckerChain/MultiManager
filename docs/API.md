@@ -1176,23 +1176,6 @@ Endpoint не принимает параметров, не изменяет с�
 
 ## Настройки
 
-### GET /api/settings/crypto-status
-
-Получить статус крипто-модуля (AES-256-GCM шифрование секретных полей профилей).
-
-**Ответ (200):**
-```json
-{
-  "initialized": true,
-  "hasMasterKey": true,
-  "keySource": "keytar",
-  "passwordMode": false,
-  "encryptedFields": ["email_password", "twitter_password", "twitter_auth_token", "discord_password", "discord_token", "wallet_password"]
-}
-```
-
----
-
 ### POST /api/settings/api-token/regenerate
 
 Перегенерировать постоянный API-токен. Требует Bearer-аутентификации текущим токеном.
@@ -1207,67 +1190,6 @@ Endpoint не принимает параметров, не изменяет с�
 ```
 
 После ротации новый токен действует немедленно; старый токен отклоняется всеми REST-эндпоинтами и WebSocket.
-
----
-
-### POST /api/settings/set-master-password
-
-Установить мастер-пароль (включает passwordMode). Минимум 8 символов.
-
-**Тело запроса:**
-```json
-{
-  "password": "my_strong_password"
-}
-```
-
-**Ответ (200):**
-```json
-{
-  "status": "success",
-  "passwordMode": true
-}
-```
-
-**Ответ (400):** `{ "error": "Пароль должен быть не менее 8 символов" }`
-
----
-
-### POST /api/settings/change-master-password
-
-Сменить мастер-пароль.
-
-**Тело запроса:**
-```json
-{
-  "old_password": "old_password",
-  "new_password": "new_password"
-}
-```
-
-**Ответ (200):**
-```json
-{
-  "status": "success"
-}
-```
-
-**Ответ (400):** `{ "error": "Неверный старый пароль" }`
-
----
-
-### POST /api/settings/recovery-key
-
-Получить recovery-ключ (требуется мастер-пароль). Endpoint использует POST вместо GET, т.к. операция имеет side-effect (удаление ключа из БД после показа).
-
-**Ответ (200):**
-```json
-{
-  "recoveryKey": "recovery-key-here"
-}
-```
-
-**Ответ (400):** `{ "error": "Крипто-модуль не инициализирован" }`
 
 ---
 
@@ -1690,4 +1612,4 @@ Callback endpoint для stAuto0. Обновляет статус одной к�
 | 4401 | WebSocket: невалидный токен (закрытие соединения) |
 | 500 | Внутренняя ошибка сервера |
 | 502 | Ошибка прокси/ротации / CDP порт не найден |
-| 503 | Токен авторизации не инициализирован / Master key не готов |
+| 503 | Токен авторизации не инициализирован |

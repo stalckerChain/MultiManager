@@ -78,7 +78,6 @@ src/                    # Backend (Node.js)
 ├── core/app.js         # Express + middleware
 ├── api/                # REST-эндпоинты (авторизация через auth.js)
 ├── db/                 # SQLite: schema.js, queries.js, index.js
-├── crypto/             # Шифрование (AES-256-GCM, master key)
 ├── proxy/              # Прокси-менеджмент
 ├── executor/           # Запуск Python-скриптов (stAuto0)
 └── cookie/             # Инжект куки
@@ -102,13 +101,12 @@ docs/                   # Документация
 
 ## Безопасность
 
-1. Никогда не логировать пароли, токены, proxy-credentials, master key.
-2. Все mutating-эндпоинты (POST/PUT/DELETE) к `/api/profiles`, `/api/proxies`, `/api/cookies` требуют master key gate (`hasMasterKey()`).
+1. Никогда не логировать пароли, токены, proxy-credentials.
+2. Доступ ко всем эндпоинтам контролируется локальной auth-моделью и API token (Bearer-заголовок).
 3. WebSocket требует `?token=` query parameter.
 4. CDP-инжект: использовать `Runtime.callFunctionOn`, не конкатенировать JS-строки.
 5. Прокси: валидировать scheme, блокировать private/local адреса (SSRF protection).
 6. Файлы: всегда удалять temp-файлы в `finally` block.
-7. Рекавери-ключ показывается один раз и удаляется из БД.
 
 ## Документация
 

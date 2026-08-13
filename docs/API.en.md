@@ -737,11 +737,11 @@ Focus all multi-control windows (slaves first, then master).
 
 ### GET /api/internal/profiles?range=001-010
 
-Get profiles by number range. Returns decrypted secrets.
+Get profiles by number range. Secret fields (passwords, auth tokens, proxy credentials) are not returned.
 
 **Parameters:** `range` — number range in `NNN-NNN` format
 
-**Response (200):** Array of profiles with decrypted secrets
+**Response (200):** Array of profiles (without secret fields)
 
 **Response (400):** `{ "error": "Invalid range format: 001-010" }`
 
@@ -1110,84 +1110,6 @@ Generate a random fingerprint for the specified platform. Does not create a prof
 ---
 
 ## Settings
-
-### GET /api/settings/crypto-status
-
-Get crypto module status (AES-256-GCM encryption for profile secret fields).
-
-**Response (200):**
-```json
-{
-  "initialized": true,
-  "hasMasterKey": true,
-  "keySource": "keytar",
-  "passwordMode": false,
-  "encryptedFields": ["email_password", "twitter_password", "twitter_auth_token", "discord_password", "discord_token", "wallet_password"]
-}
-```
-
----
-
-### POST /api/settings/set-master-password
-
-Set master password (enables passwordMode). Minimum 8 characters.
-
-**Request Body:**
-```json
-{
-  "password": "my_strong_password"
-}
-```
-
-**Response (200):**
-```json
-{
-  "status": "success",
-  "passwordMode": true
-}
-```
-
-**Response (400):** `{ "error": "Password must be at least 8 characters" }`
-
----
-
-### POST /api/settings/change-master-password
-
-Change master password.
-
-**Request Body:**
-```json
-{
-  "old_password": "old_password",
-  "new_password": "new_password"
-}
-```
-
-**Response (200):**
-```json
-{
-  "status": "success"
-}
-```
-
-**Response (400):** `{ "error": "Invalid old password" }`
-
----
-
-### POST /api/settings/recovery-key
-
-Get recovery key (requires master password). Uses POST instead of GET because the operation has a side-effect (key is deleted from DB after display).
-
-**Response (200):**
-```json
-{
-  "recoveryKey": "recovery-key-here"
-}
-```
-
-**Response (400):** `{ "error": "Crypto module not initialized" }`
-
----
 
 ### GET /api/settings/automation
 

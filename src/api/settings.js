@@ -4,8 +4,7 @@ const path = require('path');
 const os = require('os');
 const crypto = require('crypto');
 const { getDatabase } = require('../db');
-const { createSystemConfigQueries, createProfileQueries, createProjectQueries, createMatrixQueries } = require('../db/queries');
-const { hasMasterKey, getMasterKeySource, getRecoveryKey, clearRecoveryKey, unlockWithPassword, rotateKey, generateMasterKey, generateRecoveryKey, setMasterKey, clearMasterKey } = require('../crypto');
+const { createSystemConfigQueries, createProjectQueries, createMatrixQueries } = require('../db/queries');
 const { setToken, notifyToken } = require('./auth');
 const { closeAllWebSocketClients } = require('../core/websocket');
 const { logger } = require('../logger');
@@ -21,14 +20,6 @@ function resolvePath(p) {
 
 const router = express.Router();
 
-router.get('/crypto-status', (req, res) => {
-  res.json({
-    source: getMasterKeySource() || 'none',
-    hasKey: hasMasterKey(),
-    hasPassword: getMasterKeySource() === 'password',
-  });
-});
-
 router.post('/api-token/regenerate', (req, res) => {
   const db = getDatabase();
   const configQueries = createSystemConfigQueries(db);
@@ -41,81 +32,6 @@ router.post('/api-token/regenerate', (req, res) => {
 
   logger.info('API token regenerated');
   res.json({ token: newToken });
-});
-
-router.post('/recovery-key', (req, res) => {
-  const db = getDatabase();
-  const key = getRecoveryKey(db);
-  if (key) {
-    clearRecoveryKey(db);
-  }
-  res.json({ recovery_key: key || '' });
-});
-
-router.post('/set-master-password', (req, res) => {
-  const { password } = req.body;
-  if (!password || password.length < 4) {
-    return res.status(400).json({ error: 'Пароль должен быть минимум 4 символа' });
-  }
-
-  const db = getDatabase();
-  const configQueries = createSystemConfigQueries(db);
-
-  const salt = require('crypto').randomBytes(32);
-  const key = require('../crypto').deriveKeyFromPassword(password, salt);
-  const keyHash = require('crypto').createHash('sha256').update(key).digest();
-
-  if (hasMasterKey()) {
-    const oldKey = require('../crypto').getMasterKey();
-    const profileQueries = createProfileQueries(db);
-    require('../crypto').rotateKey(oldKey, key, db, profileQueries);
-  }
-
-  configQueries.set('master_key_source', 'password');
-  configQueries.set('master_key_salt', salt.toString('hex'));
-  configQueries.set('master_key_hash', keyHash.toString('hex'));
-
-  const recovery = generateRecoveryKey(key);
-
-  clearMasterKey();
-  setMasterKey(key, 'password');
-
-  logger.info('Master-пароль установлен');
-  res.json({ status: 'success', recovery_key: recovery });
-});
-
-router.post('/change-master-password', (req, res) => {
-  const { currentPassword, newPassword } = req.body;
-  if (!currentPassword || !newPassword || newPassword.length < 4) {
-    return res.status(400).json({ error: 'Проверьте введённые пароли' });
-  }
-
-  const db = getDatabase();
-  const configQueries = createSystemConfigQueries(db);
-
-  const unlocked = unlockWithPassword(currentPassword, db);
-  if (!unlocked) {
-    return res.status(403).json({ error: 'Неверный текущий пароль' });
-  }
-
-  const oldKey = require('../crypto').getMasterKey();
-  const salt = require('crypto').randomBytes(32);
-  const key = require('../crypto').deriveKeyFromPassword(newPassword, salt);
-  const keyHash = require('crypto').createHash('sha256').update(key).digest();
-
-  const profileQueries = createProfileQueries(db);
-  rotateKey(oldKey, key, db, profileQueries);
-
-  configQueries.set('master_key_salt', salt.toString('hex'));
-  configQueries.set('master_key_hash', keyHash.toString('hex'));
-
-  const recovery = generateRecoveryKey(key);
-
-  clearMasterKey();
-  setMasterKey(key, 'password');
-
-  logger.info('Мастер-пароль изменён');
-  res.json({ status: 'success', recovery_key: recovery });
 });
 
 router.get('/automation', (req, res) => {

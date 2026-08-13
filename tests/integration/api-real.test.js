@@ -60,11 +60,9 @@ beforeAll(async () => {
   const { setToken } = require('../../src/api/auth');
   const { initDatabase } = require('../../src/db');
   const { app } = require('../../src/core/app');
-  const { setMasterKey } = require('../../src/crypto');
 
   setToken(TEST_TOKEN);
   db = initDatabase();
-  setMasterKey(crypto.randomBytes(32), 'test');
 
   db.prepare("INSERT OR REPLACE INTO system_config (key, value, updated_at) VALUES ('stAuto0_path', ?, CURRENT_TIMESTAMP)").run(process.cwd());
   db.prepare("INSERT OR REPLACE INTO system_config (key, value, updated_at) VALUES ('python_path', ?, CURRENT_TIMESTAMP)").run(process.platform === 'win32' ? 'cmd.exe' : 'echo');
@@ -141,6 +139,7 @@ describe('Profiles', () => {
     expect(res.body.timezone).toBe('Europe/Berlin');
     expect(res.body.email).toBe('user@example.com');
     expect(res.body.email_password).toBe('secret123');
+    expect(res.body.email_password).not.toMatch(/^aes-256-gcm:/);
     expect(res.body.twitter_username).toBe('tw_user');
     expect(res.body.twitter_password).toBe('tw_pass');
     expect(res.body.twitter_auth_token).toBe('tw_token');
@@ -152,6 +151,7 @@ describe('Profiles', () => {
     expect(res.body.wallet_evm_address).toBe('0x1234567890abcdef1234567890abcdef12345678');
     expect(res.body.wallet_sol_address).toBe('AbCdEfGhIjKlMnOpQrStUvWxYz1234567890abcd');
     expect(res.body.wallet_password).toBe('wallet_pass');
+    expect(res.body.wallet_password).not.toMatch(/^aes-256-gcm:/);
 
     await request('DELETE', `/api/profiles/${res.body.id}`);
   });
@@ -246,12 +246,15 @@ describe('Profiles', () => {
     const res = await request('PUT', `/api/profiles/${createdProfileId}`, {
       timezone: 'America/New_York',
       email: 'new@example.com',
+      email_password: 'new-secret-pw',
       twitter_username: 'new_tw',
       wallet_evm_address: '0xabcdef1234567890abcdef1234567890abcdef12',
     });
     expect(res.status).toBe(200);
     expect(res.body.timezone).toBe('America/New_York');
     expect(res.body.email).toBe('new@example.com');
+    expect(res.body.email_password).toBe('new-secret-pw');
+    expect(res.body.email_password).not.toMatch(/^aes-256-gcm:/);
     expect(res.body.twitter_username).toBe('new_tw');
     expect(res.body.wallet_evm_address).toBe('0xabcdef1234567890abcdef1234567890abcdef12');
   });
@@ -356,6 +359,10 @@ describe('Proxies', () => {
     expect(res.body.id).toBeTruthy();
     expect(res.body.host).toBe('proxy.example.com');
     expect(res.body.port).toBe(1080);
+    expect(res.body.username).toBe('user');
+    expect(res.body.password).toBe('pass');
+    expect(res.body.username).not.toMatch(/^aes-256-gcm:/);
+    expect(res.body.password).not.toMatch(/^aes-256-gcm:/);
     createdProxyId = res.body.id;
   });
 
@@ -380,9 +387,15 @@ describe('Proxies', () => {
     const res = await request('PUT', `/api/proxies/${createdProxyId}`, {
       host: 'proxy.example.com',
       port: 1080,
+      username: 'new-user',
+      password: 'new-pass',
     });
     expect(res.status).toBe(200);
     expect(res.body.host).toBe('proxy.example.com');
+    expect(res.body.username).toBe('new-user');
+    expect(res.body.password).toBe('new-pass');
+    expect(res.body.username).not.toMatch(/^aes-256-gcm:/);
+    expect(res.body.password).not.toMatch(/^aes-256-gcm:/);
   });
 
   it('GET /api/proxies/:id/timezone returns error when no last_ip', async () => {

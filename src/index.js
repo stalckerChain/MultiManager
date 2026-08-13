@@ -4,7 +4,6 @@ const { logger, cleanupRunLogs } = require('./logger');
 const { initDatabase, getDatabase } = require('./db');
 const { createSystemConfigQueries } = require('./db/queries');
 const { setToken, notifyToken, resolveToken } = require('./api/auth');
-const { initMasterKey, hasMasterKey } = require('./crypto');
 const { performBackup } = require('./backup');
 const crypto = require('crypto');
 
@@ -38,13 +37,6 @@ if (staleProfiles.length > 0) {
 
 // Затем async-операции
 performBackup(db).catch(err => logger.warn(`Hot backup пропущен (некритично): ${err.message}`));
-initMasterKey(db).then(() => {
-  if (hasMasterKey()) {
-    logger.info('Master-ключ инициализирован');
-  } else {
-    logger.warn('Master-ключ не инициализирован — режим ожидания пароля');
-  }
-}).catch(err => logger.error(`Ошибка initMasterKey: ${err.message}`));
 
 // Очистка старых run-логов при старте приложения (без отдельного процесса)
 try {

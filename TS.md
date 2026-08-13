@@ -16,7 +16,7 @@
 1. **Core-движок (Бэкенд):** Консольное Node.js-приложение (Express + better-sqlite3), работающее в фоновом режиме ОС. Предоставляет локальный REST API + WebSocket для управления БД, жизненным циклом процессов браузера и задачами автоматизации. ✅ `src/index.js`, `src/core/app.js`
 2. **GUI (Фронтенд):** Графическая десктопная оболочка (Electron + Vue 3), выполняющая роль визуального интерфейса. GUI коммуницирует с Core исключительно через локальные HTTP-запросы и WebSocket. ✅ `gui/src/main/index.js`, `gui/src/renderer/`
 
-Система кроссплатформенная (Windows 11, macOS, Linux). Полный антидетект-стек реализован; модули автоматизации (Web3, планировщик, шифрование) — к реализации (см. Roadmap, раздел 11).
+Система кроссплатформенная (Windows 11, macOS, Linux). Полный антидетект-стек реализован; модули автоматизации (Web3, планировщик) — к реализации (см. Roadmap, раздел 11).
 
 **Технологический стек Core:**
 - Node.js ≥ 20.x, Express 4.x, better-sqlite3 (WAL + ACID), pino (логирование), ws (WebSocket), socks (SOCKS5-proxy), adm-zip, ghost-cursor, tree-kill, koffi (FFI для нативных Windows-хуков)
@@ -29,9 +29,7 @@
 - **Локальный хост:** Core открывает порт только на `127.0.0.1`. ✅ `src/index.js:27`
 - **Handshake:** GUI при fork Core передаёт порт через **env `PORT=N`**. API-токен резолвится самим backend по приоритету `--api-token=` → `API_TOKEN` → сохранённый `system_config.api_token` → новая генерация; Electron-запуск использует постоянный токен из БД. ✅ `gui/src/main/core-manager.js`, `src/index.js`
 - **Авторизация:** Все HTTP-запросы требуют `Authorization: Bearer SECRET`. Middleware возвращает 401 при отсутствии/несовпадении токена. Если токен не инициализирован — 503. ✅ `src/api/auth.js`
-- **Master Key Gate:** POST/PUT/DELETE к `/api/profiles`, `/api/proxies`, `/api/cookies` блокируются (503) пока master key не инициализирован. GET-запросы работают. ✅ `src/core/app.js`
 - **WebSocket Authentication:** `/ws` требует `?token=` query parameter. Без валидного токена — `ws.close(4401)`. ✅ `src/core/websocket.js`
-- **Recovery Key One-Time:** Recovery key показывается один раз (в ответе POST /set-master-password) и удаляется из БД. POST /recovery-key удаляет строку после показа (POST вместо GET из-за side-effect). ✅ `src/api/settings.js`, `src/crypto/index.js`
 - **Постоянный API-токен:** `system_config.api_token` генерируется один раз при первом запуске и переиспользуется при перезапусках. Ротация из Settings (`POST /api/settings/api-token/regenerate`) действует немедленно, закрывает WebSocket-соединения и инвалидирует старый токен. ✅ `src/index.js`, `src/api/settings.js`, `src/api/auth.js`, `gui/src/renderer/views/Settings.vue`
 - **Доступ для ИИ-агентов:** Токен доступен для копирования в Settings GUI. ✅ `gui/src/renderer/views/Settings.vue`
 - **Health:** `GET /health` — `{"status":"ok"}` (до middleware авторизации). ✅ `src/core/app.js:20`
@@ -66,18 +64,18 @@
 |---------|-----|-----------|
 | `timezone` | TEXT (обязателен при создании) | Прокидывается через CDP `Emulation.setTimezoneOverride` при старте. Определяется автоматически по IP прокси или задаётся вручную. |
 | `email` | TEXT | Email аккаунта |
-| `email_password` | TEXT | Пароль почты (см. ToDo.md §7.2 — шифрование) |
+| `email_password` | TEXT | Пароль почты |
 | `twitter_username` | TEXT | Логин X/Twitter |
-| `twitter_password` | TEXT | Пароль X (см. ToDo.md §7.2) |
-| `twitter_auth_token` | TEXT | Auth token X (см. ToDo.md §7.2) |
+| `twitter_password` | TEXT | Пароль X |
+| `twitter_auth_token` | TEXT | Auth token X |
 | `twitter_email` | TEXT | Email X |
 | `discord_username` | TEXT | Логин Discord |
-| `discord_password` | TEXT | Пароль Discord (см. ToDo.md §7.2) |
-| `discord_token` | TEXT | Token Discord (см. ToDo.md §7.2) |
+| `discord_password` | TEXT | Пароль Discord |
+| `discord_token` | TEXT | Token Discord |
 | `discord_email` | TEXT | Email Discord |
 | `wallet_evm_address` | TEXT | EVM-адрес (публичный) |
 | `wallet_sol_address` | TEXT | Solana-адрес (публичный) |
-| `wallet_password` | TEXT | Пароль расширения Zerion, default 'asdfj*KK' (см. ToDo.md §7.2) |
+| `wallet_password` | TEXT | Пароль расширения Zerion (может быть пустым/NULL) |
 
 > **🛑 КРИТИЧНОЕ РЕШЕНИЕ:** приватных ключей (`wallet_evm_private`, `wallet_sol_private`) **В СХЕМЕ НЕТ**. Сид-фразы хранятся только во временном файле `config/auto_sids.py` и уничтожаются после инициализации (см. TS_INTEGRATION.md §5). Recovery кошелька по базе невозможен по дизайну — это сознательный параноидальный выбор.
 
@@ -202,26 +200,13 @@ GUI передаёт порт бэкенду через **env-переменну
 - Папка `backups/` создаётся в директории приложения (рядом с `app.db`).
 - 8 unit-тестов: проверка создания, валидности SQLite, ротации, игнорирования посторонних файлов. ✅ `tests/unit/backup.test.js`
 
-### 4.11. Шифрование AES-256-GCM секретов ✅ РЕАЛИЗОВАНО (Roadmap Ф2)
+### 4.11. Хранение секретов профилей и прокси ✅ РЕАЛИЗОВАНО
 
-> **Синхронизация с TS_ADDON §2:** AES-256-GCM для приватников реализован в полном объёме.
+Секретные поля профилей (`email_password`, `twitter_password`, `twitter_auth_token`, `discord_password`, `discord_token`, `wallet_password`) и прокси (`username`, `password`) хранятся и читаются как обычные `TEXT`-значения без шифрования. Приложение не требует master key, master password, keytar или recovery key: перезапуск или переустановка не блокируют редактирование профилей и прокси.
 
-**Реализация:**
+Значения, ранее сохранённые в формате `aes-256-gcm:<iv>:<ciphertext>:<tag>`, автоматически не мигрируются и не преобразуются — query-слой отдаёт их как есть. Восстановление таких значений выполняется отдельным внешним скриптом вне приложения.
 
-**Мастер-ключ — гибрид (решение #6):**
-1. **Дефолт: OS Keyring** (`keytar`). Случайный 256-бит ключ генерируется 1 раз при первом старте, сохраняется в Windows Credential Manager (win32) / macOS Keychain (darwin) / libsecret/Secret Service (linux). ✅ `src/crypto/index.js:initMasterKey()`
-2. **Фоллбэк: system_config** — если keytar недоступен, ключ хранится в `system_config` таблице БД. ✅ `src/crypto/index.js`
-3. **Опция: Мастер-пароль.** В Settings пользователь задаёт пароль → PBKDF2 (210000 итераций, SHA-256, salt из system_config) → ключ в RAM на время сессии. ✅ `src/api/settings.js:set-master-password`, `gui/.../Settings.vue`
-4. **Recovery-key.** Показывается 1 раз при установке пароля (в ответе API). Не хранится в БД. ✅ `src/api/settings.js`
-5. **Plaintext fallback удалён** — `initMasterKey()` не генерирует и не хранит ключ открытым текстом. Если keytar недоступен и пароль не установлен — система работает в режиме ожидания пароля (503 для secret-writing операций). ✅ `src/crypto/index.js`
-
-**Шифруемые колонки:** `email_password`, `twitter_password`, `twitter_auth_token`, `discord_password`, `discord_token`, `wallet_password`. Additionally: `proxies.username`, `proxies.password` (v1.4.0).
-
-**Формат хранения:** `aes-256-gcm:<iv_hex>:<ciphertext_hex>:<tag_hex>` (GCM даёт аутентификацию + целостность).
-
-**Модуль:** `src/crypto/index.js` — функции `encrypt(plaintext)`, `decrypt(blob)`, `rotateKey(oldMaster, newMaster)`, `hasMasterKey()`. Интегрирована в `src/db/queries.js` (прозрачное шифрование при записи, расшифровка при чтении). ✅
-
-> **🛑 Сиды — НИКОГДА в БД и RAM GUI.** Этот инвариант нельзя нарушать шифрованием приватников в БД (см. §3.2): сид-фраза существует только во временном файле stAuto0 и уничтожается.
+> **🛑 Сиды — НИКОГДА в БД и RAM GUI.** Этот инвариант нельзя нарушать (см. §3.2): сид-фраза существует только во временном файле stAuto0 и уничтожается.
 
 ### 4.12. Endpoints для интеграции со stAuto0 ✅ РЕАЛИЗОВАНО (Roadmap Ф4)
 
@@ -283,11 +268,11 @@ Flow:
 ## 6. Стратегия тестирования ✅ РЕАЛИЗОВАНО
 Фреймворк **Vitest v3.x**, 747 тестов (48 файлов). Запуск: `npm test`, `npm run test:watch`.
 
-**Unit (24 файла):** парсеры прокси/куки, fingerprint, auth middleware, расширения, CDP Manager, Multi-Control, Window Arranger, Human-like Typing, backup, crypto.
+**Unit (24 файла):** парсеры прокси/куки, fingerprint, auth middleware, расширения, CDP Manager, Multi-Control, Window Arranger, Human-like Typing, backup.
 
 **Integration (5 файлов):** SQLite WAL (параллельная запись), API endpoints, lifecycle профиля, Proxy Checker, extensions.
 
-**К новым тестам:** crypto (encrypt/decrypt/rotate) — ✅, backup (rolling cleanup) — ✅, `/api/internal/profiles` range-parsing — ✅, `zerion-login` с моком CDP — в работе.
+**К новым тестам:** backup (rolling cleanup) — ✅, `/api/internal/profiles` range-parsing — ✅, `zerion-login` с моком CDP — в работе.
 
 -------------------------------
 ## 7. Формат ответа API для ИИ/Python ✅ ИСПРАВЛЕНО (Roadmap Ф4)
@@ -323,17 +308,14 @@ Python: `connect_over_cdp("http://127.0.0.1:9331")`.
 ## 8.1. Нефункциональные требования (NFR) ✅
 
 ### Производительность
-- **Старт Core:** время инициализации < 3 сек (включая initMasterKey, initDatabase, backup).
+- **Старт Core:** время инициализации < 3 сек (включая initDatabase, backup).
 - **Лимит профилей:** до 500 профилей в БД без деградации UI (виртуализация таблицы).
 - **Concurrent browsers:** до 10 одновременных процессов CloakBrowser (семафор в RunExecutor).
 - **API latency:** медианный ответ < 100ms для CRUD-операций (better-sqlite3 WAL mode).
 
 ### Безопасность
-- **Шифрование:** AES-256-GCM для секретов профилей и прокси (master-key гибрид: keytar/PBKDF2). ✅ §2, §4.11
 - **Аутентификация:** Bearer-токен для API, ?token= для WebSocket. Токен ротируется при каждом старте. ✅ §2
-- **Master-key gate:** mutating endpoints блокируются (503) до инициализации master key. ✅ §2
 - **SSRF protection:** валидация scheme + блокировка private/local адресов в proxy rotation. ✅ §4.2
-- **Рекавери-ключ:** one-time, удаляется из БД после показа. ✅ §2
 
 ### Доступность
 - **Graceful shutdown:** SIGTERM → ожидание 8 сек → SIGKILL (tree-kill). ✅ §4.9
@@ -409,7 +391,6 @@ Python: `connect_over_cdp("http://127.0.0.1:9331")`.
 Автоматическое обновление Electron не является частью production-функциональности: приложение запускается без updater-модуля, не проверяет update-серверы, не скачивает и не устанавливает новые версии. Обновление MultiManager выполняется только вручную пользователем. `electron-updater` удалён из GUI runtime dependencies; `gui/src/main/updater.js` больше не существует. Механизм установки/обновления CloakBrowser не изменён.
 
 ### 10.6. Settings — расширение ✅ РЕАЛИЗОВАНО (Roadmap Ф5)
-- Раздел «Безопасность»: toggle мастер-пароль, поле ввода/смены пароля, отображение recovery-key, статус OS Keyring. ✅ `gui/src/renderer/views/Settings.vue`, `src/api/settings.js`
 - Раздел «Автоматизация»: путь к stAuto0, выбор Python-интерпретатора, список доступных проектов. ✅ `gui/src/renderer/views/Settings.vue`, `src/api/settings.js`
 - Управление проектами: чекбоксы вкл/выкл (is_active), кнопка удаления, синхронизация проектов обновляет список. Удаление проекта — через модальное окно подтверждения; ошибка `409` при связанных задачах не скрывается. ✅ `gui/src/renderer/views/Settings.vue`, `src/api/projects.js` (DELETE /api/projects/:name)
 
@@ -419,10 +400,10 @@ Python: `connect_over_cdp("http://127.0.0.1:9331")`.
 | Фаза | Задача | Файлы | Зависимости |
 |------|--------|-------|-------------|
 | **Ф1** | **✅ Расширение БД:** `timezone`, новые колонки `profiles`. Миграция `ALTER TABLE`. | `src/db/schema.js`, `src/db/queries.js` | — |
-| **Ф2** | **✅ Crypto-модуль AES-256-GCM + гибрид мастер-ключа (Keyring/PBKDF2/recovery) + авто-логин Zerion.** | `src/crypto/index.js`, `src/db/queries.js`, `src/api/browser.js`, `src/api/settings.js`, `src/api/internal.js`, `gui/.../Settings.vue` | Ф1 |
+| **Ф2** | **✅ Авто-логин Zerion по CDP. Crypto-модуль AES-256-GCM и гибрид мастер-ключа (Keyring/PBKDF2/recovery) удалены — секреты профилей и прокси хранятся plaintext.** | `src/api/browser.js`, `src/db/queries.js` | Ф1 |
 | **Ф3** | **✅ Backup Hot Backup + Rolling 7д.** | `src/backup/index.js`, `src/index.js`, `tests/unit/backup.test.js` | — |
 | **Ф4** | **✅ Все endpoints:** `/api/browser/:id/type`, `/api/profiles/batch`, `ws_endpoint`, `/api/internal/profiles`, `/api/browser/:id/zerion-login`. | `src/api/browser.js`, `src/api/profiles.js`, `src/api/internal.js` | Ф1, Ф2 |
-| **Ф5** | **✅ ProfileModal** вкладки (Аккаунты + Кошельки). **✅ Settings** crypto/automation. | `gui/src/renderer/views/ProfileModal.vue`, `gui/src/renderer/views/Settings.vue` | Ф1, Ф2, Ф4 |
+| **Ф5** | **✅ ProfileModal** вкладки (Аккаунты + Кошельки). **✅ Settings** automation. | `gui/src/renderer/views/ProfileModal.vue`, `gui/src/renderer/views/Settings.vue` | Ф1, Ф2, Ф4 |
 | **Ф6** | **✅ Терминал xterm.js + child_process.** | `gui/package.json`, `gui/src/main/pty.js`, `gui/src/renderer/components/Terminal.vue`, `tests/unit/pty.test.js` | Ф4 |
 | **Ф7** | **✅ Automation Matrix:** Проекты, Матрица, Runs, RunExecutor. Новые таблицы `projects`, `project_profile_config`, `runs`, `run_tasks`. Endpoints `/api/projects`, `/api/matrix`, `/api/runs`. GUI: 3 страницы (Матрица, Задачи, История). stAuto0: `run()` → bool, `--run-id`, callback статуса. Параллельный spawn с лимитом. Executor автоматически финализирует статус run после завершения всех процессов. Матрица читает проекты из БД (is_active флаг). | `src/db/schema.js`, `src/db/queries.js`, `src/api/projects.js`, `src/api/matrix.js`, `src/api/runs.js`, `src/api/internal-runs.js`, `src/executor/index.js`, `gui/.../AutomationMatrix.vue`, `gui/.../AutomationRuns.vue`, `gui/.../AutomationHistory.vue`, `gui/.../stores/automation.js` + stAuto0: `base.py`, `browser.py`, `multimanager.py`, `main.py` | Ф4, Ф5, Ф6 |
 
@@ -441,7 +422,7 @@ Python: `connect_over_cdp("http://127.0.0.1:9331")`.
 | 1 | БД: 30 колонок profiles | ✅ | ✅ `schema.js` | — |
 | 2 | БД: новые колонки v1.1.0 | ✅ | ✅ `schema.js:50-63` | Ф1 ✅ |
 | 3 | Timezone в профиле | ✅ | ✅ `schema.js:47` | Ф1 ✅ |
-| 4 | Шифрование AES-256-GCM | ✅ | ✅ `src/crypto/index.js` | Ф2 ✅ |
+| 4 | Секреты профилей/прокси plaintext (crypto-модуль удалён) | ✅ | ✅ `src/db/queries.js` | — |
 | 5 | Hot Backup + Rolling | ✅ | ✅ `src/backup/index.js` | Ф3 ✅ |
 | 6 | `/api/internal/profiles?range=` | ✅ | ✅ `src/api/internal.js` | Ф4 ✅ |
 | 7 | Human-like Typing endpoint | ✅ | ✅ `src/api/browser.js:587-630` | Ф4 ✅ |
@@ -450,7 +431,7 @@ Python: `connect_over_cdp("http://127.0.0.1:9331")`.
 | 10 | Исправление `ws_endpoint` | ✅ | ✅ `src/api/browser.js:377-419` | Ф4 ✅ |
 | 11 | ProfileModal вкладки (акки/кошельки) | ✅ | ✅ `gui/.../AccountsTab.vue`, `WalletsTab.vue` | Ф5 ✅ |
 | 12 | Встроенный терминал | ✅ | ✅ `gui/.../pty.js`, `Terminal.vue` | Ф6 ✅ |
-| 13 | Settings: crypto + automation | ✅ | ✅ `gui/.../Settings.vue`, `src/api/settings.js` | Ф5 ✅ |
+| 13 | Settings: automation | ✅ | ✅ `gui/.../Settings.vue`, `src/api/settings.js` | Ф5 ✅ |
 | 14 | БД: таблицы projects/project_profile_config/runs/run_tasks | ✅ | ✅ `schema.js` | Ф7 ✅ |
 | 15 | `/api/projects` (CRUD + sync) | ✅ | ✅ `src/api/projects.js` | Ф7 ✅ |
 | 16 | `/api/matrix` (GET + PUT) | ✅ | ✅ `src/api/matrix.js` | Ф7 ✅ |

@@ -109,11 +109,8 @@ cd src/os-input/native-hooks && npx node-gyp rebuild
 
 ### First-run flow
 1. При первом запуске генерируется токен авторизации
-2. OS Keyring (keytar) сохраняет мастер-ключ; при недоступности — fallback в таблицу `system_config` БД
-3. Опционально: установить мастер-пароль в Settings → Security (PBKDF2, 210000 итераций)
-4. Recovery-key показывается 1 раз — сохраните в надёжном месте
-5. Логи: `logs/core.log` (системный), `logs/profile_[ID].log` (профиль), `logs/runs/{run_id}/` (задачи)
-6. Бэкапы: `backups/app_YYYYMMDD_HHmmss.db` (ротация 7 дней)
+2. Логи: `logs/core.log` (системный), `logs/profile_[ID].log` (профиль), `logs/runs/{run_id}/` (задачи)
+3. Бэкапы: `backups/app_YYYYMMDD_HHmmss.db` (ротация 7 дней)
 
 ---
 

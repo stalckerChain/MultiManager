@@ -726,11 +726,11 @@ Authorization: Bearer <token>
 
 ### GET /api/internal/profiles?range=001-010
 
-按编号范围获取配置文件。返回解密后的密钥。
+按编号范围获取配置文件。不返回机密字段（密码、auth 令牌、代理凭据）。
 
 **参数：** `range` — 编号范围，格式为 `NNN-NNN`
 
-**响应 (200)：** 包含解密密钥的配置文件数组
+**响应 (200)：** 配置文件数组（不含机密字段）
 
 **响应 (400)：** `{ "error": "范围格式无效：001-010" }`
 
@@ -1079,84 +1079,6 @@ Authorization: Bearer <token>
 ---
 
 ## 设置
-
-### GET /api/settings/crypto-status
-
-获取加密模块状态（针对配置文件密钥字段的 AES-256-GCM 加密）。
-
-**响应 (200)：**
-```json
-{
-  "initialized": true,
-  "hasMasterKey": true,
-  "keySource": "keytar",
-  "passwordMode": false,
-  "encryptedFields": ["email_password", "twitter_password", "twitter_auth_token", "discord_password", "discord_token", "wallet_password"]
-}
-```
-
----
-
-### POST /api/settings/set-master-password
-
-设置主密码（启用 passwordMode）。至少 8 个字符。
-
-**请求体：**
-```json
-{
-  "password": "my_strong_password"
-}
-```
-
-**响应 (200)：**
-```json
-{
-  "status": "success",
-  "passwordMode": true
-}
-```
-
-**响应 (400)：** `{ "error": "密码至少需要 8 个字符" }`
-
----
-
-### POST /api/settings/change-master-password
-
-更改主密码。
-
-**请求体：**
-```json
-{
-  "old_password": "old_password",
-  "new_password": "new_password"
-}
-```
-
-**响应 (200)：**
-```json
-{
-  "status": "success"
-}
-```
-
-**响应 (400)：** `{ "error": "旧密码错误" }`
-
----
-
-### POST /api/settings/recovery-key
-
-获取恢复密钥（需要主密码）。使用 POST 而非 GET，因为此操作有副作用（显示后从数据库中删除密钥）。
-
-**响应 (200)：**
-```json
-{
-  "recoveryKey": "recovery-key-here"
-}
-```
-
-**响应 (400)：** `{ "error": "加密模块未初始化" }`
-
----
 
 ### GET /api/settings/automation
 
