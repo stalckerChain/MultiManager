@@ -235,6 +235,8 @@ Flow:
 
 Реализован как `POST /api/browser/:id/zerion-login` ✅ `src/api/browser.js`.
 
+> **Автологин при ручном запуске (v1.5.1):** при `POST /api/browser/:id/start` без `run_id` (ручной запуск с главной страницы) та же Zerion-логика выполняется автоматически, если у профиля непустые `wallet_evm_address` и `wallet_password`. Перед логином и после него (включая ошибку) вкладки нормализуются к одной `about:blank` через `resetToSingleBlankTab(profileId)` в `src/cdp/profile-tabs.js` (один CDP-сеанс, `devtools://`-вкладки не закрываются, WebSocket закрывается в `finally`, URL не логируются). Ошибка автологина не останавливает браузер и пишется в профильный лог без секретов. Запуски с `run_id` (automation/stAuto0) ручной автологин не вызывают.
+
 ### 4.14. Migration Wizard (AdsPower/Dolphin{anty}) ❌ ЗАМОРОЖЕНО
 Подробности в [ToDo.md](./ToDo.md) §5.
 

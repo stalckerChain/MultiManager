@@ -472,6 +472,14 @@ Authorization: Bearer <token>
 
 启动浏览器。如有绑定代理会自动检查。浏览器使用反检测参数启动：`--fingerprint-timezone`（来自代理IP的GeoIP时区，回退为配置文件时区）、`--lang=en-US`、`--no-first-run`、`--no-default-browser-check`。遇到 `ERR_ADDRESS_IN_USE` 错误时，自动重试最多3次。
 
+**钱包自动登录（手动启动，无 `run_id`）：** 浏览器启动并加载扩展后，对钱包字段执行预检：
+
+- 如果 `wallet_evm_address` 和 `wallet_password` 同时非空，则执行已有的 Zerion 自动登录。登录前和登录后（包括出错时）所有页面标签页都会关闭，仅保留一个 `about:blank` 标签页。
+- 如果两个钱包字段之一缺失或为空，则跳过自动登录；标签页仍会归一化为单个 `about:blank`。
+- 登录错误不会停止浏览器：会写入配置文件日志，不包含密码、EVM 地址和 URL；启动仍返回成功状态。
+- 带 `run_id` 的自动化请求不会触发手动自动登录。
+- 密码、EVM 地址和 URL 不会被记录到日志。
+
 **响应 (200)：**
 ```json
 {

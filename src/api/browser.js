@@ -9,11 +9,38 @@ const { injectCookies } = require('../cookie/inject');
 const { getBrowserDataDir, getExtensionsFromProfileDir } = require('../core/profile-path');
 const { logger, createProfileLogger, appendRunStage, resolveRunLogPath } = require('../logger');
 const { broadcastStatus } = require('../core/websocket');
-const { getExtensionsDir, getManifest, resolveMSG, resolveRuntimeId } = require('./extensions');
 const { humanType } = require('../typing');
 const { validate, browserTypeSchema } = require('./validate');
 const { notFound, conflict, preconditionFailed, badRequest, badGateway, serverError, asyncHandler } = require('./errors');
 const cdp = require('../cdp/client');
+
+// Тестовые швы: подменяют модули без сети и браузера (по образцу
+// setProfileTabsForTesting в window-arranger.js). Передача null/undefined
+// восстанавливает оригинальный модуль.
+let profileTabsModule = null;
+
+function getProfileTabsModule() {
+  if (!profileTabsModule) profileTabsModule = require('../cdp/profile-tabs');
+  return profileTabsModule;
+}
+
+function setProfileTabsForTesting(mod) {
+  profileTabsModule = mod;
+}
+
+const originalCdpClient = cdp;
+let cdpClient = originalCdpClient;
+
+function setCdpClientForTesting(mod) {
+  cdpClient = mod == null ? originalCdpClient : mod;
+}
+
+const originalExtensionsApi = require('./extensions');
+let extensionsApi = originalExtensionsApi;
+
+function setExtensionsApiForTesting(mod) {
+  extensionsApi = mod == null ? originalExtensionsApi : mod;
+}
 
 function toPSEncoded(script) {
   return Buffer.from(script, 'utf16le').toString('base64');
@@ -515,7 +542,7 @@ router.post('/:id/start', asyncHandler(async (req, res) => {
   }
 
   if (extIds.length > 0) {
-    const extDir = getExtensionsDir();
+    const extDir = extensionsApi.getExtensionsDir();
     const checks = await Promise.all(extIds.map(async (id) => {
       const extPath = path.join(extDir, id);
       try {
@@ -597,17 +624,25 @@ router.post('/:id/start', asyncHandler(async (req, res) => {
     }, 2000);
   }
 
+  // run_id из тела запроса обязателен при запуске в рамках automation (POST /api/runs/:id/start):
+  // automation-клиент (stAuto0) передаёт его в body, т.к. получает --run-id от executor.
+  // При ручном запуске run_id = null — этапы CDP не дублируются в run-лог и
+  // выполняется ручной preflight с автологином кошелька.
+  const runId = req.body?.run_id || req.query?.run_id || null;
+
   if (enabledExtPaths.length > 0) {
-    // run_id из тела запроса обязателен при запуске в рамках automation (POST /api/runs/:id/start):
-    // automation-клиент (stAuto0) передаёт его в body, т.к. получает --run-id от executor.
-    // При ручном запуске run_id = null — этапы CDP не дублируются в run-лог.
-    const runId = req.body?.run_id || req.query?.run_id || null;
     try {
       await loadExtensionsViaCDP(req.params.id, runId, enabledExtPaths, logQueries, profileLogger, profile.name);
     } catch (err) {
       profileLogger.error({ profileId: req.params.id, error: err.message }, 'CDP extension loading failed');
       logQueries.add(req.params.id, 'error', `CDP extension loading failed: ${err.message}`);
     }
+  }
+
+  // Ручной запуск (без run_id): автологин кошелька + приведение вкладок к
+  // одной about:blank. Для automation-запросов с run_id не выполняется.
+  if (!runId) {
+    await runManualAutologin(req.params.id, profile, cdpPort, profileLogger, logQueries);
   }
 
   child.on('error', (err) => {
@@ -799,7 +834,7 @@ async function createCdpSession(port) {
 
 async function removeOverlay(ws, sessionId, attempts = 3) {
   for (let i = 0; i < attempts; i++) {
-    const result = await cdp.call(ws, 'Runtime.evaluate', {
+    const result = await cdpClient.call(ws, 'Runtime.evaluate', {
       expression: `(function(){var el=document.querySelector('dialog._3ANLXG_dialog');if(el){el.remove();return true;}return false;})()`,
     }, { sessionId });
     if (!result?.result?.value) break;
@@ -810,7 +845,7 @@ async function removeOverlay(ws, sessionId, attempts = 3) {
 async function waitForSelector(ws, sessionId, selector, timeout = 15000) {
   const start = Date.now();
   while (Date.now() - start < timeout) {
-    const result = await cdp.call(ws, 'Runtime.evaluate', {
+    const result = await cdpClient.call(ws, 'Runtime.evaluate', {
       expression: `document.querySelector(${JSON.stringify(selector)}) !== null`,
     }, { sessionId });
     if (result && result.result && result.result.value) return;
@@ -822,10 +857,10 @@ async function waitForSelector(ws, sessionId, selector, timeout = 15000) {
 async function waitForSelectorHidden(ws, sessionId, selector, timeout = 10000) {
   const start = Date.now();
   while (Date.now() - start < timeout) {
-    await cdp.call(ws, 'Runtime.evaluate', {
+    await cdpClient.call(ws, 'Runtime.evaluate', {
       expression: `(function(){var o=document.querySelector('dialog._3ANLXG_dialog');if(o)o.remove();})()`,
     }, { sessionId });
-    const result = await cdp.call(ws, 'Runtime.evaluate', {
+    const result = await cdpClient.call(ws, 'Runtime.evaluate', {
       expression: `(function(){var el=document.querySelector(${JSON.stringify(selector)});return el===null||el.offsetParent===null||el.style.display==='none';})()`,
     }, { sessionId });
     if (result && result.result && result.result.value) return;
@@ -834,14 +869,76 @@ async function waitForSelectorHidden(ws, sessionId, selector, timeout = 10000) {
   throw new Error(`Timeout waiting for selector to hide: ${selector}`);
 }
 
+// Автологин кошелька при ручном запуске профиля (POST /api/browser/:id/start без run_id).
+//
+// - Ручной запуск определяется по отсутствию run_id в body/query; automation
+//   (POST /api/runs/:id/start) передаёт run_id и здесь пропускается.
+// - Автологин разрешён только при одновременно непустых wallet_evm_address и
+//   wallet_password. При отсутствии любого из полей вкладки нормализуются к
+//   одной about:blank без вызова zerionLogin.
+// - Перед логином и после него (в finally) вкладки нормализуются к одной
+//   about:blank. Ошибка автологина не останавливает браузер: она логируется
+//   в профильный лог без секретов и URL, вкладки остаются приведёнными к
+//   одной about:blank.
+async function runManualAutologin(profileId, profile, cdpPort, profileLogger, logQueries) {
+  // Ленивая загрузка: profile-tabs.js сам импортирует этот модуль (getCdpPort),
+  // поэтому top-level require создал бы циклическую зависимость.
+  const { resetToSingleBlankTab } = getProfileTabsModule();
+
+  const hasWallet = !!(profile.wallet_evm_address && profile.wallet_password);
+
+  if (!hasWallet) {
+    logQueries.add(profileId, 'info', 'Автологин кошелька пропущен: данные кошелька не заданы');
+    try {
+      await resetToSingleBlankTab(profileId);
+    } catch (err) {
+      profileLogger.warn({ profileId, error: err.message }, 'Очистка вкладок не удалась');
+    }
+    return;
+  }
+
+  let zerionExtId = null;
+  try {
+    const extIds = tryParseJson(profile.extensions);
+    const folderName = extIds.length > 0 ? extIds[0] : null;
+    if (folderName) {
+      const extPath = path.join(extensionsApi.getExtensionsDir(), folderName);
+      zerionExtId = await extensionsApi.resolveRuntimeId(extPath, getBrowserDataDir(profile));
+    }
+  } catch (err) {
+    profileLogger.warn({ profileId, error: err.message }, 'Zerion runtime ID resolve failed');
+  }
+
+  try {
+    await resetToSingleBlankTab(profileId);
+
+    if (!zerionExtId) {
+      throw new Error('Не удалось определить runtime ID расширения Zerion');
+    }
+
+    await zerionLogin(cdpPort, profile.wallet_password, zerionExtId);
+    profileLogger.info({ profileId }, 'Автологин кошелька успешен');
+    logQueries.add(profileId, 'info', 'Автологин кошелька успешен');
+  } catch (err) {
+    profileLogger.error({ profileId, error: err.message }, 'Автологин кошелька не выполнен');
+    logQueries.add(profileId, 'error', `Автологин кошелька не выполнен: ${err.message}`);
+  } finally {
+    try {
+      await resetToSingleBlankTab(profileId);
+    } catch (err) {
+      profileLogger.warn({ profileId, error: err.message }, 'Очистка вкладок после автологина не удалась');
+    }
+  }
+}
+
 async function zerionLogin(port, password, extensionId) {
   const LOGIN_URL = `chrome-extension://${extensionId}/popup.8e8f209b.html?windowType=dialog#/login`;
 
-  const wsUrl = await cdp.discoverWsUrl(port);
-  logger.info({ port, wsUrl, loginUrl: LOGIN_URL }, 'zerionLogin: connecting to CDP');
-  const ws = await cdp.connect(wsUrl);
+  const wsUrl = await cdpClient.discoverWsUrl(port);
+  logger.info({ port, hasPassword: !!password }, 'zerionLogin: connecting to CDP');
+  const ws = await cdpClient.connect(wsUrl);
   try {
-    const { targetInfos } = await cdp.call(ws, 'Target.getTargets');
+    const { targetInfos } = await cdpClient.call(ws, 'Target.getTargets');
     let targetId = null;
     if (targetInfos) {
       const existing = targetInfos.find(t => t.url && t.url.includes(extensionId) && t.url.includes('#/login'));
@@ -850,13 +947,13 @@ async function zerionLogin(port, password, extensionId) {
 
     if (!targetId) {
       logger.info({ port }, 'zerionLogin: creating new Zerion tab');
-      const result = await cdp.call(ws, 'Target.createTarget', { url: LOGIN_URL });
+      const result = await cdpClient.call(ws, 'Target.createTarget', { url: LOGIN_URL });
       targetId = result.targetId;
     } else {
       logger.info({ port, targetId }, 'zerionLogin: found existing Zerion tab');
     }
 
-    const { sessionId } = await cdp.call(ws, 'Target.attachToTarget', { targetId, flatten: true });
+    const { sessionId } = await cdpClient.call(ws, 'Target.attachToTarget', { targetId, flatten: true });
     logger.info({ port, targetId, sessionId }, 'zerionLogin: attached to target');
 
     await new Promise(r => setTimeout(r, 1000));
@@ -867,15 +964,15 @@ async function zerionLogin(port, password, extensionId) {
     await waitForSelector(ws, sessionId, "input[type='password']", 15000);
     logger.info({ port }, 'zerionLogin: password input found');
 
-    await cdp.call(ws, 'Runtime.evaluate', {
+    await cdpClient.call(ws, 'Runtime.evaluate', {
       expression: `document.querySelector("input[type='password']").click()`,
     }, { sessionId });
 
-    await cdp.call(ws, 'Runtime.evaluate', {
+    await cdpClient.call(ws, 'Runtime.evaluate', {
       expression: `document.querySelector("input[type='password']").value = ${JSON.stringify(password)}`,
     }, { sessionId });
 
-    await cdp.call(ws, 'Runtime.evaluate', {
+    await cdpClient.call(ws, 'Runtime.evaluate', {
       expression: `(function(){var btn=document.querySelector('button[form]');if(btn)btn.click();})()`,
     }, { sessionId });
     logger.info({ port }, 'zerionLogin: unlock button clicked');
@@ -943,7 +1040,7 @@ router.post('/:id/zerion-login', asyncHandler(async (req, res) => {
   const walletPassword = profile.wallet_password;
   if (!walletPassword) throw badRequest('Не задан wallet_password в профиле');
 
-  const extDir = getExtensionsDir();
+  const extDir = extensionsApi.getExtensionsDir();
   const extIds = tryParseJson(profile.extensions);
   const folderName = extIds.length > 0 ? extIds[0] : null;
 
@@ -951,7 +1048,7 @@ router.post('/:id/zerion-login', asyncHandler(async (req, res) => {
 
   const extPath = path.join(extDir, folderName);
   const profileDir = getBrowserDataDir(profile);
-  const zerionExtId = await resolveRuntimeId(extPath, profileDir);
+  const zerionExtId = await extensionsApi.resolveRuntimeId(extPath, profileDir);
 
   if (!zerionExtId) throw badRequest('Не удалось определить runtime ID расширения Zerion');
 
@@ -1006,3 +1103,7 @@ module.exports = router;
 module.exports.getCdpPort = getCdpPort;
 module.exports.createCdpSession = createCdpSession;
 module.exports.getProfileWindows = () => profileWindows;
+module.exports.runManualAutologin = runManualAutologin;
+module.exports.setProfileTabsForTesting = setProfileTabsForTesting;
+module.exports.setCdpClientForTesting = setCdpClientForTesting;
+module.exports.setExtensionsApiForTesting = setExtensionsApiForTesting;

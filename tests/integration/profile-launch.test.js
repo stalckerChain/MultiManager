@@ -9,6 +9,7 @@ import { generateFingerprint } from '../../src/fingerprint';
 import { getBrowserDataDir } from '../../src/core/profile-path';
 import { createProfileLogger, getAppDir } from '../../src/logger';
 import * as cdp from '../../src/cdp/client';
+import * as profileTabs from '../../src/cdp/profile-tabs';
 
 function cookiesToNetscape(cookies) {
   const lines = ['# Netscape HTTP Cookie File'];
@@ -259,6 +260,7 @@ describe.skipIf(!isCloakOptIn)('CloakBrowser real lifecycle (opt-in: CLOAKBROWSE
   afterAll(async () => {
     // Браузер останавливается даже при падении промежуточного шага.
     try { await stopCloakBrowser(child); } catch { /* ignore */ }
+    profileTabs.setCdpPortProviderForTesting(null);
     if (child) {
       const gone = !isProcessAlive(child.pid);
       expect(gone).toBe(true);
@@ -290,4 +292,40 @@ describe.skipIf(!isCloakOptIn)('CloakBrowser real lifecycle (opt-in: CLOAKBROWSE
       ws.close();
     }
   });
+
+  it('resetToSingleBlankTab приводит профиль к одной about:blank вкладке', async () => {
+    // Открыть несколько рабочих вкладок, включая не-page и devtools-like targets.
+    const ws = await cdp.connect(await cdp.discoverWsUrl(cdpPort));
+    try {
+      await cdp.call(ws, 'Target.createTarget', { url: 'about:blank' });
+      await cdp.call(ws, 'Target.createTarget', { url: 'about:blank' });
+    } finally {
+      ws.close();
+    }
+
+    // Тестовый шов: направляем resetToSingleBlankTab на реальный CDP-порт.
+    profileTabs.setCdpPortProviderForTesting(() => cdpPort);
+
+    const result = await profileTabs.resetToSingleBlankTab(profile.id);
+    expect(result.kept).toBe(1);
+
+    // Закрытие вкладок в Chromium асинхронно: дожидаемся стабилизации до 1 page-target.
+    const checkWs = await cdp.connect(await cdp.discoverWsUrl(cdpPort));
+    try {
+      let pages = [];
+      const deadline = Date.now() + 5000;
+      while (Date.now() < deadline) {
+        const { targetInfos } = await cdp.call(checkWs, 'Target.getTargets');
+        pages = targetInfos.filter(
+          t => t.type === 'page' && !(t.url || '').startsWith('devtools://')
+        );
+        if (pages.length === 1) break;
+        await new Promise(r => setTimeout(r, 250));
+      }
+      expect(pages).toHaveLength(1);
+      expect(pages[0].url).toBe('about:blank');
+    } finally {
+      checkWs.close();
+    }
+  }, 30000);
 });

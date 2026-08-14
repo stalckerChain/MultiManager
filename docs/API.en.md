@@ -485,6 +485,14 @@ Start browser. Automatically checks proxy if assigned. Browser launches with ant
 
 `run_id` — automation run identifier. When provided, extension loading stages (`browser_connection`, `cdp_extension_loading`) and failures are written to the linked run log (`logs/runs/<run_id>/<profile>.log`). Omitting `run_id` (manual profile launch) keeps those stages out of a run log. Contains no secrets. The automation client (e.g. `stAuto0`, which receives `--run-id` from the executor) is expected to pass it in this body.
 
+**Wallet auto-login (manual launch, no `run_id`):** after the browser starts and extensions load, a wallet-field preflight is performed:
+
+- If `wallet_evm_address` and `wallet_password` are both non-empty, the existing Zerion auto-login runs. Before and after login (including on failure) all page tabs are closed and a single `about:blank` tab remains.
+- If at least one wallet field is missing or empty, auto-login is skipped; tabs are still normalized to a single `about:blank`.
+- A login error does not stop the browser: it is written to the profile log without the password, EVM address, or URLs; the launch returns a successful state.
+- Manual auto-login is never triggered for automation requests that include `run_id`.
+- Password, EVM address, and URLs are never logged.
+
 **Response (200):**
 ```json
 {

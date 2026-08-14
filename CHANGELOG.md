@@ -31,6 +31,19 @@
   - URL и ссылки не логируются и не попадают в сообщения об ошибках; URL передаётся только параметром `Target.createTarget`.
   ✅ `src/cdp/profile-tabs.js` (новый), `src/api/window-arranger.js`, `tests/unit/window-arranger.test.js`, `docs/API.md`, `docs/API.en.md`, `docs/API.zh.md`
 
+### Браузер / Автологин
+
+- **[FEAT] Автологин кошелька при ручном запуске профиля.**
+  При `POST /api/browser/:id/start` **без `run_id`** (ручной запуск с главной страницы) после запуска браузера и загрузки расширений выполняется preflight по wallet-полям:
+  - Автологин разрешён только при одновременно непустых `wallet_evm_address` и `wallet_password`. При отсутствии любого из полей вызывается нормализация вкладок и preflight завершается без `zerionLogin`.
+  - При наличии обоих полей перед логином вызывается `resetToSingleBlankTab` (убираются стартовые и служебные вкладки), затем выполняется существующая Zerion-логика; после попытки логина в `finally` вкладки снова нормализуются к одной `about:blank`.
+  - Ошибка автологина не останавливает браузер: она записывается в профильный лог без пароля, EVM-адреса и URL; вкладки нормализуются, запуск возвращает согласованное успешное состояние.
+  - Automation-запросы с `run_id` (например, от `stAuto0`) новый ручной автологин не получают — повторного входа нет.
+  - Новая операция `resetToSingleBlankTab(profileId)` в `src/cdp/profile-tabs.js`: внутри одного `withProfileSession` создаёт `about:blank`, закрывает остальные page-targets, не трогает `devtools://`; корректна при отсутствии старых вкладок и при частичной ошибке закрытия; WebSocket закрывается в `finally`; URL не логируются.
+  - В `zerionLogin` убраны полные URL из логов (`loginUrl`/`wsUrl`); логируется только `hasPassword`.
+  - Тестовые швы (`setProfileTabsForTesting`, `setCdpClientForTesting`, `setExtensionsApiForTesting`, `setCdpPortProviderForTesting`) восстанавливают оригиналы при передаче `null`; устранено дублирование импортов `extensions` (единый `extensionsApi`).
+  ✅ `src/api/browser.js`, `src/cdp/profile-tabs.js`, `tests/unit/browser-autologin.test.js` (новый, 18 тестов), `tests/unit/profile-tabs.test.js` (новый, 11 тестов), `tests/integration/profile-launch.test.js` (+opt-in тест с реальным CloakBrowser), `docs/API.md`, `docs/API.en.md`, `docs/API.zh.md`, `TS.md`, `README.md`
+
 ## v1.5.0
 
 ### Security / Storage
