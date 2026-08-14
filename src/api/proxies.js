@@ -1,6 +1,6 @@
 const express = require('express');
 const { getDatabase, createProxyQueries, createProfileQueries } = require('../db');
-const { parseProxy, parseProxyList, checkProxy, rotateProxy, getTimezoneByIp } = require('../proxy');
+const { parseProxy, parseProxyList, checkProxy, rotateProxy, getTimezoneByIp, normalizeHost } = require('../proxy');
 const { validate, proxyCreateSchema, proxyUpdateSchema, proxyImportSchema, distributePreviewSchema, distributeSchema } = require('./validate');
 const { notFound, conflict, badRequest, badGateway, serverError } = require('./errors');
 const { asyncHandler } = require('./errors');
@@ -157,12 +157,14 @@ router.post('/', validate(proxyCreateSchema), (req, res) => {
 
   const { type, host, port, username, password, proxy_rotation_url } = req.body;
 
-  const existing = queries.findByHostPort(host, port);
+  const normalizedHost = normalizeHost(host);
+
+  const existing = queries.findByHostPort(normalizedHost, port);
   if (existing) {
     throw conflict('Прокси с таким host:port уже существует');
   }
 
-  const proxy = queries.create({ type, host, port, username, password, proxy_rotation_url });
+  const proxy = queries.create({ type, host: normalizedHost, port, username, password, proxy_rotation_url });
   res.status(201).json(proxy);
 });
 
@@ -178,11 +180,12 @@ router.post('/import', validate(proxyImportSchema), (req, res) => {
     const duplicates = [];
     
     for (const proxy of proxies) {
-      const existing = queries.findByHostPort(proxy.host, proxy.port);
+      const normalizedProxy = { ...proxy, host: normalizeHost(proxy.host) };
+      const existing = queries.findByHostPort(normalizedProxy.host, normalizedProxy.port);
       if (existing) {
-        duplicates.push(proxy);
+        duplicates.push(normalizedProxy);
       } else {
-        const p = queries.create(proxy);
+        const p = queries.create(normalizedProxy);
         created.push(p);
       }
     }
@@ -210,8 +213,16 @@ router.put('/:id', validate(proxyUpdateSchema), (req, res) => {
 
   const { type, host, port, username, password, proxy_rotation_url, is_active } = req.body;
 
+  const effectiveHost = host !== undefined ? normalizeHost(host) : proxy.host;
+  const effectivePort = port !== undefined ? port : proxy.port;
+
+  const existing = queries.findByHostPort(effectiveHost, effectivePort);
+  if (existing && existing.id !== Number(req.params.id)) {
+    throw conflict('Прокси с таким host:port уже существует');
+  }
+
   const updated = queries.update(req.params.id, {
-    type, host, port, username, password, proxy_rotation_url, is_active,
+    type, host: host !== undefined ? effectiveHost : undefined, port, username, password, proxy_rotation_url, is_active,
   });
   res.json(updated);
 });

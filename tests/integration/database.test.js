@@ -154,6 +154,14 @@ describe('Database Queries', () => {
       const cleared = queries.getById(created.id);
       expect(cleared.location).toBeNull();
     });
+
+    it('findByHostPort находит старую ненормализованную запись по нормализованному host', () => {
+      const queries = createProxyQueries(db);
+      queries.create({ type: 'http', host: '  Proxy.Com  ', port: 8080 });
+      const found = queries.findByHostPort('proxy.com', 8080);
+      expect(found).toBeTruthy();
+      expect(found.port).toBe(8080);
+    });
   });
 
   describe('Cookies', () => {

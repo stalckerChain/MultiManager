@@ -207,6 +207,10 @@ Authorization: Bearer <token>
 
 **必填字段：** `type`、`host`、`port`
 
+`host` 在保存前会进行规范化：去除首尾空格（`trim`）并转换为小写（`toLowerCase`）。数据库中保存的是规范化后的 `host`。
+
+重复项由规范化的 `host:port` 对确定。`type`、`username`、`password` 和 `proxy_rotation_url` 不属于重复项键。
+
 **响应 (201)：** 创建的代理
 
 **响应 (409)：** 具有相同 `host:port` 的代理已存在
@@ -241,6 +245,8 @@ Authorization: Bearer <token>
 
 `count` — 新创建的代理数量，`duplicate_count` — 跳过的重复代理数量。
 
+列表中的每个代理都会应用与单个创建相同的 `host` 规范化（trim + lowercase）。重复项由规范化的 `host:port` 对确定。单个输入列表内重复的行会通过每次插入后的顺序检查被丢弃：`duplicate_count` 同时涵盖与现有记录的匹配和列表内重复的行。
+
 ---
 
 ### GET /api/proxies
@@ -267,6 +273,19 @@ Authorization: Bearer <token>
   "host": "new-host.com",
   "port": 9090,
   "is_active": true
+}
+```
+
+如果提供了 `host` 字段，则在检查并保存前对其进行规范化（trim + lowercase）。如果未提供 `host`，则当前值保持不变。
+
+更新前会根据规范化的 `host:port` 对进行冲突检查（针对请求中实际提供的字段；缺失的字段取自当前记录）。如果与另一条记录匹配，则返回 **409** 且记录不会被修改。将记录更新为其自身当前规范化的 `host:port` 是允许的。
+
+**响应 (200)：** 更新后的代理
+
+**响应 (409)：** 具有相同 `host:port` 的代理已存在
+```json
+{
+  "error": "具有相同 host:port 的代理已存在"
 }
 ```
 

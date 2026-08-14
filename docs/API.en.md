@@ -207,6 +207,10 @@ Add a proxy.
 
 **Required Fields:** `type`, `host`, `port`
 
+`host` is normalized before saving: leading/trailing whitespace is removed (`trim`) and the value is converted to lowercase (`toLowerCase`). The normalized `host` is stored in the database.
+
+A duplicate is determined by the normalized `host:port` pair. The `type`, `username`, `password` and `proxy_rotation_url` fields are not part of the duplicate key.
+
 **Response (201):** Created proxy
 
 **Response (409):** A proxy with the same `host:port` already exists
@@ -241,6 +245,8 @@ Bulk import proxies.
 
 `count` — number of newly created proxies, `duplicate_count` — number of skipped duplicates.
 
+The same `host` normalization (trim + lowercase) as in single creation is applied to every proxy in the list. A duplicate is determined by the normalized `host:port` pair. Rows repeated within a single input list are dropped by the same sequential check after each insert: `duplicate_count` covers both matches with existing records and repeated rows of the list.
+
 ---
 
 ### GET /api/proxies
@@ -267,6 +273,19 @@ Update proxy.
   "host": "new-host.com",
   "port": 9090,
   "is_active": true
+}
+```
+
+If the `host` field is provided, it is normalized (trim + lowercase) before checking and saving. If `host` is absent, the current value is preserved unchanged.
+
+Before updating, a conflict check is performed against the normalized `host:port` pair (for fields actually provided in the request; missing ones are taken from the current record). If it matches another record, **409** is returned and the record is not modified. Updating a record to its own current normalized `host:port` is allowed.
+
+**Response (200):** Updated proxy
+
+**Response (409):** A proxy with the same `host:port` already exists
+```json
+{
+  "error": "A proxy with the same host:port already exists"
 }
 ```
 

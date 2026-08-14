@@ -143,7 +143,7 @@ GUI передаёт порт бэкенду через **env-переменну
 ### 4.2. Менеджер прокси и ротация (Proxy Manager) ✅ РЕАЛИЗОВАНО
 - CRUD `CRUD /api/proxies`, `POST /api/proxies/import`, `POST /api/proxies/:id/check`. ✅ `src/api/proxies.js`
 - Протоколы HTTP/HTTPS/SOCKS5. Четыре формата парсинга. ✅ `src/proxy/index.js:7-39`
-- **Дедупликация:** при добавлении одиночного или массового импорта прокси проверяется уникальность по `host:port`. Дубликаты отбрасываются с сообщением в ответе (`duplicate_count`, `duplicates`). ✅ `src/api/proxies.js`, `src/db/queries.js`, `gui/src/api/proxies.js`, `gui/src/db/queries.js`
+- **Дедупликация:** при добавлении одиночного или массового импорта прокси проверяется уникальность по нормализованной паре `host:port`: `host` приводится через `trim()` + `toLowerCase()` перед сравнением и записью, в БД хранится нормализованный `host`. Дубликаты отбрасываются с сообщением в ответе (`duplicate_count`, `duplicates`). `PUT /api/proxies/:id` перед обновлением проверяет конфликт по нормализованной паре и при занятом `host:port` другой записью возвращает 409 без изменения записи; обновление записи на её собственный нормализованный `host:port` допустимо. Поиск выполняется через `LOWER(TRIM(host)) = ? AND port = ?`, поэтому находит и старые ненормализованные записи без миграции. ✅ `src/api/proxies.js`, `src/db/queries.js`
 - Ротация мобильных прокси: GET к `proxy_rotation_url`, пауза 3 сек. ✅ `src/proxy/index.js:180`
 - Proxy Checker: тестовый запрос к `api.ipify.org`; при недоступности — 412 Precondition Failed. ✅ `src/api/browser.js:263-276`
 - Автоопределение типа (HTTP→SOCKS5 fallback). ✅ `src/proxy/index.js:163-175`

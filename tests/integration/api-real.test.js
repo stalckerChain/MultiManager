@@ -398,6 +398,69 @@ describe('Proxies', () => {
     expect(res.body.password).not.toMatch(/^aes-256-gcm:/);
   });
 
+  it('POST /api/proxies normalizes host (trim + lowercase)', async () => {
+    const suffix = Date.now();
+    const res = await request('POST', '/api/proxies', {
+      type: 'http',
+      host: `  Case-Host-${suffix}.COM  `,
+      port: 9090,
+    });
+    expect(res.status).toBe(201);
+    expect(res.body.host).toBe(`case-host-${suffix}.com`);
+    await request('DELETE', `/api/proxies/${res.body.id}`).catch(() => {});
+  });
+
+  it('POST /api/proxies rejects duplicate by normalized host:port with 409', async () => {
+    const suffix = Date.now();
+    const first = await request('POST', '/api/proxies', {
+      type: 'http',
+      host: `dup-host-${suffix}.com`,
+      port: 7070,
+    });
+    expect(first.status).toBe(201);
+
+    const res = await request('POST', '/api/proxies', {
+      type: 'socks5',
+      host: `DUP-HOST-${suffix}.COM`,
+      port: 7070,
+    });
+    expect(res.status).toBe(409);
+    expect(res.body.error).toBe('Прокси с таким host:port уже существует');
+
+    await request('DELETE', `/api/proxies/${first.body.id}`).catch(() => {});
+  });
+
+  it('PUT /api/proxies/:id rejects conflict with another record (409) and keeps the record unchanged', async () => {
+    const suffix = Date.now();
+    const a = await request('POST', '/api/proxies', {
+      type: 'http',
+      host: `conflict-a-${suffix}.com`,
+      port: 8080,
+    });
+    const b = await request('POST', '/api/proxies', {
+      type: 'http',
+      host: `conflict-b-${suffix}.com`,
+      port: 8080,
+    });
+    expect(a.status).toBe(201);
+    expect(b.status).toBe(201);
+
+    const res = await request('PUT', `/api/proxies/${b.body.id}`, {
+      host: `conflict-a-${suffix}.com`,
+      port: 8080,
+    });
+    expect(res.status).toBe(409);
+    expect(res.body.error).toBe('Прокси с таким host:port уже существует');
+
+    const after = await request('GET', `/api/proxies/${b.body.id}`);
+    expect(after.status).toBe(200);
+    expect(after.body.host).toBe(`conflict-b-${suffix}.com`);
+    expect(after.body.port).toBe(8080);
+
+    await request('DELETE', `/api/proxies/${a.body.id}`).catch(() => {});
+    await request('DELETE', `/api/proxies/${b.body.id}`).catch(() => {});
+  });
+
   it('GET /api/proxies/:id/timezone returns error when no last_ip', async () => {
     const res = await request('GET', `/api/proxies/${createdProxyId}/timezone`);
     expect(res.status).toBe(502);

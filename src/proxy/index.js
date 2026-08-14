@@ -9,6 +9,11 @@ const IPV4_LEADING_ZERO = /^0\d+/;
 const IPV4_OCTET = /^\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}$/;
 const MAX_REDIRECTS = 5;
 
+function normalizeHost(host) {
+  if (typeof host !== 'string') return host;
+  return host.trim().toLowerCase();
+}
+
 function parseProxy(proxyString) {
   const urlRegex = /^(https?|socks5):\/\/(?:([^:]+):([^@]+)@)?([^:]+):(\d+)$/;
   const urlMatch = proxyString.match(urlRegex);
@@ -351,4 +356,4 @@ async function getTimezoneByIp(ip, timeout = 5000) {
   });
 }
 
-module.exports = { parseProxy, parseProxyList, checkProxy, rotateProxy, getTimezoneByIp, isPrivateAddress, isValidHostOrIp };
+module.exports = { parseProxy, parseProxyList, checkProxy, rotateProxy, getTimezoneByIp, isPrivateAddress, isValidHostOrIp, normalizeHost };

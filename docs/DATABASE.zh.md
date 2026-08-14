@@ -76,7 +76,7 @@ SQLite 数据库，使用 WAL 日志和 ACID 事务。
 | `updated_at` | DATETIME | 更新时间 |
 
 **索引：**
-- `idx_proxies_host_port` — host:port 查找（用于 API 层通过 `findByHostPort()` 进行重复检测）
+- `idx_proxies_host_port` — host:port 查找（普通搜索索引；`host:port` 对的唯一性由 API 层的应用级检查保证，而非此索引）
 
 **触发器：**
 - `update_proxies_timestamp` — 自动更新 `updated_at`

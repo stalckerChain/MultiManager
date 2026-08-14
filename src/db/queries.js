@@ -164,7 +164,7 @@ function createProxyQueries(db) {
   const updateLastIp = db.prepare('UPDATE proxies SET last_ip = ?, last_checked_at = CURRENT_TIMESTAMP WHERE id = ?');
   const updateActive = db.prepare('UPDATE proxies SET is_active = ? WHERE id = ?');
   const deleteById = db.prepare('DELETE FROM proxies WHERE id = ?');
-  const findByHostPort = db.prepare('SELECT * FROM proxies WHERE host = ? AND port = ?');
+  const findByHostPort = db.prepare('SELECT * FROM proxies WHERE LOWER(TRIM(host)) = ? AND port = ?');
   const getUsedIds = db.prepare('SELECT DISTINCT proxy_id FROM profiles WHERE proxy_id IS NOT NULL');
 
   return {
