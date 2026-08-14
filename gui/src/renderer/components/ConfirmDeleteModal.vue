@@ -2,9 +2,9 @@
   <a-modal
     :open="open"
     :title="title"
-    :ok-text="t('confirmDelete.ok')"
+    :ok-text="okLabel"
     :cancel-text="t('common.cancel')"
-    :ok-button-props="{ danger: true, disabled: !checked }"
+    :ok-button-props="{ danger, disabled: !checked }"
     :confirm-loading="loading"
     :mask-closable="false"
     :closable="!loading"
@@ -21,7 +21,7 @@
       <slot />
     </div>
     <a-checkbox v-model:checked="checked" class="mt-4">
-      {{ t('confirmDelete.checkbox') }}
+      {{ checkboxLabel }}
     </a-checkbox>
   </a-modal>
 </template>
@@ -36,6 +36,9 @@ const props = defineProps({
   message: String,
   count: { type: Number, default: null },
   loading: Boolean,
+  okText: { type: String, default: '' },
+  checkboxText: { type: String, default: '' },
+  danger: { type: Boolean, default: true },
 });
 
 const emit = defineEmits(['update:open', 'confirm', 'cancel']);
@@ -43,6 +46,9 @@ const emit = defineEmits(['update:open', 'confirm', 'cancel']);
 const { t } = useTranslation();
 
 const checked = ref(false);
+
+const okLabel = computed(() => props.okText || t('confirmDelete.ok'));
+const checkboxLabel = computed(() => props.checkboxText || t('confirmDelete.checkbox'));
 
 const countText = computed(() => {
   if (props.count === null || props.count === undefined) return '';

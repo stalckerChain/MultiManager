@@ -121,6 +121,15 @@ const proxyImportSchema = z.object({
   text: z.string().min(1, 'text обязателен').max(100000, 'максимум 100KB текста'),
 });
 
+const distributePreviewSchema = z.object({
+  mode: z.enum(['used', 'all']),
+});
+
+const distributeSchema = z.object({
+  mode: z.enum(['used', 'all']),
+  working_proxy_ids: z.array(z.number().int().positive()),
+});
+
 // --- Browser ---
 
 const browserTypeSchema = z.object({
@@ -159,6 +168,8 @@ module.exports = {
   proxyCreateSchema,
   proxyUpdateSchema,
   proxyImportSchema,
+  distributePreviewSchema,
+  distributeSchema,
   browserTypeSchema,
   projectUpdateSchema,
   runCreateSchema,

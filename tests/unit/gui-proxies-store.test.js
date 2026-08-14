@@ -113,4 +113,54 @@ describe('proxies store', () => {
     await promise;
     expect(store.loading).toBe(false);
   });
+
+  it('previewDistribution вызывает preview endpoint с mode', async () => {
+    client.post.mockResolvedValue({
+      data: {
+        mode: 'used',
+        profiles_count: 3,
+        checked_count: 2,
+        working_count: 1,
+        failed_count: 1,
+        working_proxy_ids: [5],
+      },
+    });
+    const store = useProxiesStore();
+    const result = await store.previewDistribution('used');
+    expect(client.post).toHaveBeenCalledWith('/api/proxies/distribute/preview', { mode: 'used' });
+    expect(result.working_count).toBe(1);
+    expect(result.working_proxy_ids).toEqual([5]);
+  });
+
+  it('previewDistribution передаёт mode "all"', async () => {
+    client.post.mockResolvedValue({ data: { mode: 'all', working_count: 0, working_proxy_ids: [] } });
+    const store = useProxiesStore();
+    const result = await store.previewDistribution('all');
+    expect(client.post).toHaveBeenCalledWith('/api/proxies/distribute/preview', { mode: 'all' });
+    expect(result.mode).toBe('all');
+  });
+
+  it('distributeProxies вызывает distribute endpoint с mode и ID', async () => {
+    client.post.mockResolvedValue({ data: { assigned_profiles: 4, used_proxies: 2 } });
+    const store = useProxiesStore();
+    const result = await store.distributeProxies('all', [1, 2]);
+    expect(client.post).toHaveBeenCalledWith('/api/proxies/distribute', {
+      mode: 'all',
+      working_proxy_ids: [1, 2],
+    });
+    expect(result.assigned_profiles).toBe(4);
+    expect(result.used_proxies).toBe(2);
+  });
+
+  it('previewDistribution пробрасывает ошибку', async () => {
+    client.post.mockRejectedValue(new Error('preview failed'));
+    const store = useProxiesStore();
+    await expect(store.previewDistribution('used')).rejects.toThrow('preview failed');
+  });
+
+  it('distributeProxies пробрасывает ошибку', async () => {
+    client.post.mockRejectedValue(new Error('distribute failed'));
+    const store = useProxiesStore();
+    await expect(store.distributeProxies('used', [1])).rejects.toThrow('distribute failed');
+  });
 });

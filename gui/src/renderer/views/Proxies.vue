@@ -3,6 +3,8 @@
     <div class="flex items-center justify-between mb-4">
       <h1 class="text-xl font-bold">{{ t('proxies.title') }}</h1>
       <div class="flex items-center gap-2">
+        <a-button @click="handleDistributeUsed" :loading="distributionLoading">{{ t('proxies.distributeUsed') }}</a-button>
+        <a-button @click="handleDistributeAll" :loading="distributionLoading">{{ t('proxies.distributeAll') }}</a-button>
         <a-button type="primary" @click="showAddModal">{{ t('proxies.add') }}</a-button>
         <a-button @click="showImportModal">{{ t('proxies.bulkImport') }}</a-button>
         <a-button danger @click="deleteUnused">{{ t('proxies.deleteUnused') }}</a-button>
@@ -98,6 +100,18 @@
     <ConfirmDeleteModal v-model:open="bulkDeleteOpen" :title="t('proxies.deleteBulkConfirmTitle')"
       :message="t('confirmDelete.warning')" :count="bulkDeleteCount" :loading="bulkDeleteLoading"
       @confirm="confirmBulkDelete" />
+
+    <ConfirmDeleteModal v-model:open="distributeOpen" :title="t('proxies.distributeConfirmTitle')"
+      :message="distributeMessage" :loading="distributeConfirmLoading"
+      :ok-text="t('common.confirm')" :checkbox-text="t('proxies.distributeCheckbox')" :danger="false"
+      @confirm="confirmDistribution" @cancel="cancelDistribution">
+      <div v-if="distributionPreview" class="space-y-1 text-sm">
+        <div>{{ t('proxies.distributeChecked', { count: distributionPreview.checked_count }) }}</div>
+        <div>{{ t('proxies.distributeWorking', { count: distributionPreview.working_count }) }}</div>
+        <div>{{ t('proxies.distributeFailed', { count: distributionPreview.failed_count }) }}</div>
+        <div class="pt-1 font-medium">{{ t('proxies.distributeProfiles', { count: distributionPreview.profiles_count }) }}</div>
+      </div>
+    </ConfirmDeleteModal>
   </div>
 </template>
 
@@ -139,6 +153,12 @@ const singleDeleteLoading = ref(false);
 const bulkDeleteOpen = ref(false);
 const bulkDeleteCount = ref(0);
 const bulkDeleteLoading = ref(false);
+
+const distributeOpen = ref(false);
+const distributionLoading = ref(false);
+const distributeConfirmLoading = ref(false);
+const distributionMode = ref(null);
+const distributionPreview = ref(null);
 
 const proxiesPageSize = createPageSizeStore('multimanager.proxies.pageSize');
 const current = ref(1);
@@ -321,6 +341,69 @@ async function confirmBulkDelete() {
 
 function deleteUnused() {
   // TODO: implement delete unused proxies
+}
+
+const distributeMessage = computed(() => {
+  if (!distributionPreview.value) return '';
+  return t('proxies.distributeConfirmMessage', {
+    profiles: distributionPreview.value.profiles_count,
+  });
+});
+
+async function handleDistributeUsed() {
+  await startDistribution('used');
+}
+
+async function handleDistributeAll() {
+  await startDistribution('all');
+}
+
+async function startDistribution(mode) {
+  if (distributionLoading.value) return;
+  distributionLoading.value = true;
+  distributionPreview.value = null;
+  try {
+    const preview = await proxiesStore.previewDistribution(mode);
+    if (preview.working_count === 0) {
+      message.error(t('proxies.distributeNoWorking'));
+      return;
+    }
+    distributionMode.value = mode;
+    distributionPreview.value = preview;
+    distributeOpen.value = true;
+  } catch (err) {
+    message.error(err.message || t('proxies.distributePreviewError'));
+  } finally {
+    distributionLoading.value = false;
+  }
+}
+
+function cancelDistribution() {
+  distributionPreview.value = null;
+  distributionMode.value = null;
+}
+
+async function confirmDistribution() {
+  if (!distributionPreview.value) return;
+  distributeConfirmLoading.value = true;
+  try {
+    const result = await proxiesStore.distributeProxies(
+      distributionMode.value,
+      distributionPreview.value.working_proxy_ids
+    );
+    distributeOpen.value = false;
+    message.success(t('proxies.distributeSuccess', { assigned: result.assigned_profiles }));
+    distributionPreview.value = null;
+    distributionMode.value = null;
+    await Promise.all([proxiesStore.fetchAll(), profilesStore.fetchAll()]);
+  } catch (err) {
+    message.error(err.message || t('proxies.distributeError'));
+    distributeOpen.value = false;
+    distributionPreview.value = null;
+    distributionMode.value = null;
+  } finally {
+    distributeConfirmLoading.value = false;
+  }
 }
 
 watch(() => appStore.initialized, (ready) => {

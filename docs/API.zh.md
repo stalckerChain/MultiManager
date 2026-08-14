@@ -300,6 +300,83 @@ Authorization: Bearer <token>
 
 ---
 
+### POST /api/proxies/distribute/preview
+
+在分配前对代理进行预检查。按顺序检查所选模式的来源集（如配置了轮换则自动轮换），
+返回结果，**不**修改配置文件的分配。不返回代理的用户名/密码。
+
+**请求体：**
+```json
+{
+  "mode": "used"
+}
+```
+
+**参数：** `mode` — `used`（至少分配给一个配置文件的唯一代理）或 `all`（表中的所有代理，与 `is_active` 无关）。
+
+**响应 (200)：**
+```json
+{
+  "mode": "used",
+  "profiles_count": 10,
+  "checked_count": 5,
+  "working_count": 4,
+  "failed_count": 1,
+  "working_proxy_ids": [1, 2, 3, 4]
+}
+```
+
+- `profiles_count` — 配置文件总数（目标组）；
+- `checked_count` — 已检查的代理数量；
+- `working_count` / `failed_count` — 可用和不可用代理；
+- `working_proxy_ids` — 可用代理的数字 ID，传递给第二阶段。
+
+每个代理的检查方式与 `POST /api/proxies/:id/check` 相同（轮换 → 等待 → 检查），
+并更新技术字段（`is_active`、`last_ip`、location）。单个代理的错误不会中断其余
+处理，该代理被视为不可用。
+
+**响应 (400)：** `mode` 无效。
+
+---
+
+### POST /api/proxies/distribute
+
+将可用代理确认分配到所有配置文件。不进行网络重检。仅在一个 SQLite 事务中更新
+`profiles.proxy_id`。不返回代理的用户名/密码。
+
+**请求体：**
+```json
+{
+  "mode": "used",
+  "working_proxy_ids": [1, 2, 3, 4]
+}
+```
+
+**参数：**
+- `mode` — 与 preview 相同的模式；
+- `working_proxy_ids` — preview 响应中的可用代理 ID。
+
+后端会重新验证所有传递的 ID 是否属于所选模式的有效来源；不匹配时操作被拒绝且不
+做任何更改。
+
+**分配逻辑：** 账户按稳定顺序（`profiles.number`）处理；为每个账户从当前循环的剩余
+代理中随机选择一个；当可用代理用完时，完整列表被恢复（循环重新开始）。同一循环内
+代理不会重复。
+
+**响应 (200)：**
+```json
+{
+  "assigned_profiles": 10,
+  "used_proxies": 4
+}
+```
+
+**响应 (400)：**
+- `working_proxy_ids` 包含所选模式有效来源之外的代理；
+- `working_proxy_ids` 为空 — “没有可用代理可分配”；分配不变。
+
+---
+
 ### GET /api/proxies/:id/timezone
 
 根据代理 IP 地址获取时区。需要先执行代理检查。

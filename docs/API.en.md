@@ -300,6 +300,87 @@ Check proxy (with auto-rotation if configured).
 
 ---
 
+### POST /api/proxies/distribute/preview
+
+Pre-check proxies before distribution. Sequentially checks the source set of the selected
+mode (with rotation when configured) and returns the results **without** changing profile
+assignments. Does not return proxy username/password.
+
+**Request Body:**
+```json
+{
+  "mode": "used"
+}
+```
+
+**Parameters:** `mode` — `used` (unique proxies assigned to at least one profile) or
+`all` (all proxies from the table, regardless of `is_active`).
+
+**Response (200):**
+```json
+{
+  "mode": "used",
+  "profiles_count": 10,
+  "checked_count": 5,
+  "working_count": 4,
+  "failed_count": 1,
+  "working_proxy_ids": [1, 2, 3, 4]
+}
+```
+
+- `profiles_count` — total number of profiles (target group);
+- `checked_count` — number of checked proxies;
+- `working_count` / `failed_count` — working and failed proxies;
+- `working_proxy_ids` — numeric IDs of working proxies, passed to the second phase.
+
+Each proxy is checked the same way as `POST /api/proxies/:id/check` (rotation → wait →
+check); technical fields (`is_active`, `last_ip`, location) are updated. An error on one
+proxy does not stop the rest — such proxy is treated as failed.
+
+**Response (400):** invalid `mode`.
+
+---
+
+### POST /api/proxies/distribute
+
+Confirmed distribution of working proxies across all profiles. Does not re-check the
+network. Updates only `profiles.proxy_id` in a single SQLite transaction. Does not return
+proxy username/password.
+
+**Request Body:**
+```json
+{
+  "mode": "used",
+  "working_proxy_ids": [1, 2, 3, 4]
+}
+```
+
+**Parameters:**
+- `mode` — the same mode as in preview;
+- `working_proxy_ids` — working proxy IDs from the preview response.
+
+The backend re-validates that all passed IDs belong to the valid source of the selected
+mode; on mismatch the operation is rejected without changes.
+
+**Distribution logic:** accounts are processed in a stable order (`profiles.number`); for
+each account a random proxy is picked from the remaining ones in the current cycle; when
+working proxies run out, the full list is restored (cycle restarts). Within one cycle a
+proxy is not repeated.
+
+**Response (200):**
+```json
+{
+  "assigned_profiles": 10,
+  "used_proxies": 4
+}
+```
+
+**Response (400):**
+- `working_proxy_ids` contains proxies outside the valid source for the selected mode;
+- `working_proxy_ids` is empty — «No working proxies to distribute»; assignments are not changed.
+
+---
+
 ### GET /api/proxies/:id/timezone
 
 Get timezone by proxy IP address. Requires prior proxy check.

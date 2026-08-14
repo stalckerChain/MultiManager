@@ -11,6 +11,7 @@ function createProfileQueries(db) {
   const getByStatus = db.prepare('SELECT * FROM profiles WHERE status = ?');
   const updateStatus = db.prepare('UPDATE profiles SET status = ? WHERE id = ?');
   const updatePid = db.prepare('UPDATE profiles SET pid = ? WHERE id = ?');
+  const updateProxyId = db.prepare('UPDATE profiles SET proxy_id = ? WHERE id = ?');
   const deleteById = db.prepare('DELETE FROM profiles WHERE id = ?');
   const count = db.prepare('SELECT COUNT(*) as count FROM profiles');
 
@@ -99,6 +100,15 @@ function createProfileQueries(db) {
       return getById.get(id);
     },
 
+    updateProxyAssignments(assignments) {
+      const tx = db.transaction((items) => {
+        for (const item of items) {
+          updateProxyId.run(item.proxy_id, item.id);
+        }
+      });
+      tx(assignments);
+    },
+
     updatePid(id, pid) {
       updatePid.run(pid, id);
       return getById.get(id);
@@ -155,6 +165,7 @@ function createProxyQueries(db) {
   const updateActive = db.prepare('UPDATE proxies SET is_active = ? WHERE id = ?');
   const deleteById = db.prepare('DELETE FROM proxies WHERE id = ?');
   const findByHostPort = db.prepare('SELECT * FROM proxies WHERE host = ? AND port = ?');
+  const getUsedIds = db.prepare('SELECT DISTINCT proxy_id FROM profiles WHERE proxy_id IS NOT NULL');
 
   return {
     create(data) {
@@ -216,6 +227,10 @@ function createProxyQueries(db) {
 
     findByHostPort(host, port) {
       return findByHostPort.get(host, port);
+    },
+
+    getUsedIds() {
+      return getUsedIds.all().map(row => row.proxy_id);
     },
 
     update(id, data) {

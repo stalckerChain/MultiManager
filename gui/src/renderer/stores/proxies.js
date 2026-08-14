@@ -47,5 +47,29 @@ export const useProxiesStore = defineStore('proxies', () => {
     return data;
   }
 
-  return { proxies, loading, fetchAll, create, importBulk, update, remove, check };
+  async function previewDistribution(mode) {
+    const { data } = await client.post('/api/proxies/distribute/preview', { mode });
+    return data;
+  }
+
+  async function distributeProxies(mode, workingProxyIds) {
+    const { data } = await client.post('/api/proxies/distribute', {
+      mode,
+      working_proxy_ids: workingProxyIds,
+    });
+    return data;
+  }
+
+  return {
+    proxies,
+    loading,
+    fetchAll,
+    create,
+    importBulk,
+    update,
+    remove,
+    check,
+    previewDistribution,
+    distributeProxies,
+  };
 });
