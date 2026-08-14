@@ -7,7 +7,27 @@
     "proxies": "Прокси",
     "extensions": "Расширения",
     "settings": "Настройки",
-    "automation": "Автоматизация"
+    "automation": "Автоматизация",
+    "sync": "Синхронизатор"
+  },
+  "sync": {
+    "title": "Синхронизатор",
+    "startSync": "Sync",
+    "stopSync": "Stop Sync",
+    "selectMaster": "Выберите Master окно:",
+    "master": "Master",
+    "runningCount": "Запущено профилей: {{count}}",
+    "startSyncFailed": "Не удалось запустить Sync",
+    "stopSyncFailed": "Не удалось остановить Sync",
+    "tabsTitle": "Вкладки профилей",
+    "linksPlaceholder": "Вставляйте ссылки, по одной на строку",
+    "openLinks": "Открыть",
+    "closeAllTabs": "Закрыть все вкладки",
+    "noLinks": "Введите хотя бы одну ссылку",
+    "openLinksError": "Не удалось открыть ссылки",
+    "closeAllTabsError": "Не удалось закрыть вкладки",
+    "openResult": "Открыто вкладок: {{created}}, ошибок: {{failed}}",
+    "closeResult": "Успешно: {{success}} профилей, с ошибками: {{failed}}"
   },
   "profiles": {
     "title": "Менеджер профилей",

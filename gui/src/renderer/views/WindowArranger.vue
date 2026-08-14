@@ -1,8 +1,36 @@
 <template>
   <div>
     <div class="flex items-center justify-between mb-4">
-      <h1 class="text-xl font-bold">Window Arranger</h1>
+      <h1 class="text-xl font-bold">{{ t('sync.title') }}</h1>
       <div class="flex items-center gap-2">
+        <a-button v-if="syncStore.active" type="primary" danger :loading="syncStore.loading" @click="stopSync">
+          <template #icon><swap-outlined /></template>
+          {{ t('sync.stopSync') }}
+          <span class="ml-1 text-xs">({{ syncStore.slaveCount }})</span>
+        </a-button>
+        <a-dropdown v-else :disabled="runningProfiles.length < 2">
+          <a-button :loading="syncStore.loading">
+            <template #icon><swap-outlined /></template>
+            {{ t('sync.startSync') }}
+          </a-button>
+          <template #overlay>
+            <a-menu @click="handleSyncMenu">
+              <a-menu-item key="label" disabled>
+                <span class="text-slate-400">{{ t('sync.selectMaster') }}</span>
+              </a-menu-item>
+              <a-menu-divider />
+              <a-menu-item v-for="p in runningProfiles" :key="p.id">
+                <span class="font-medium">{{ p.name }}</span>
+                <span class="text-xs text-slate-500 ml-2">PID: {{ p.pid }}</span>
+              </a-menu-item>
+            </a-menu>
+          </template>
+        </a-dropdown>
+        <a-tag v-if="syncStore.active" color="green">{{ t('sync.master') }}: {{ masterName }}</a-tag>
+        <span class="text-xs text-slate-400">{{ t('sync.runningCount', { count: runningProfiles.length }) }}</span>
+
+        <a-divider type="vertical" />
+
         <a-button type="primary" @click="arrangeGrid">
           <AppstoreOutlined /> Grid
         </a-button>
@@ -14,6 +42,23 @@
         </a-button>
       </div>
     </div>
+
+    <a-card class="bg-slate-800 mb-4">
+      <template #title>{{ t('sync.tabsTitle') }}</template>
+      <div class="space-y-4">
+        <a-textarea v-model:value="links" :rows="5" :placeholder="t('sync.linksPlaceholder')" />
+        <div class="flex items-center gap-2">
+          <a-button type="primary" :loading="openingLinks" @click="openLinks">
+            {{ t('sync.openLinks') }}
+          </a-button>
+          <a-button danger :loading="closingTabs" @click="closeAllTabs">
+            {{ t('sync.closeAllTabs') }}
+          </a-button>
+        </div>
+      </div>
+    </a-card>
+
+    <a-alert v-if="tabResultSummary" :message="tabResultSummary" type="info" show-icon closable class="mb-4" />
 
     <div class="grid grid-cols-2 gap-4">
       <a-card title="Window Preview" class="bg-slate-800">
@@ -70,18 +115,40 @@
 </template>
 
 <script setup>
-import { ref, watch } from 'vue';
-import { AppstoreOutlined, BlockOutlined, ReloadOutlined } from '@ant-design/icons-vue';
+import { ref, computed, watch } from 'vue';
+import { message } from 'ant-design-vue';
+import { useTranslation } from 'i18next-vue';
+import { AppstoreOutlined, BlockOutlined, ReloadOutlined, SwapOutlined } from '@ant-design/icons-vue';
 import client from '../api/client.js';
 import { useAppStore } from '../stores/app.js';
+import { useProfilesStore } from '../stores/profiles.js';
+import { useSyncStore } from '../stores/sync.js';
 
+const { t } = useTranslation();
 const appStore = useAppStore();
+const profilesStore = useProfilesStore();
+const syncStore = useSyncStore();
+
 const windows = ref([]);
 const loading = ref(false);
 const selectedWindow = ref(null);
 const lastAction = ref('');
 const gridCols = ref(1);
 const gridRows = ref(1);
+
+const links = ref('');
+const openingLinks = ref(false);
+const closingTabs = ref(false);
+const tabResultSummary = ref('');
+
+const runningProfiles = computed(() =>
+  profilesStore.profiles.filter(p => p.status === 'running')
+);
+
+const masterName = computed(() => {
+  const master = profilesStore.profiles.find(p => p.id === syncStore.masterId);
+  return master?.name || syncStore.masterId;
+});
 
 const columns = [
   { title: 'Name', dataIndex: 'name', key: 'name', ellipsis: true },
@@ -144,7 +211,68 @@ async function focusWindow(id) {
   } catch {}
 }
 
+async function handleSyncMenu({ key }) {
+  if (key === 'label') return;
+  const runningIds = runningProfiles.value.map(p => p.id);
+  try {
+    await syncStore.startSync(key, runningIds);
+  } catch (err) {
+    message.error(err.message || t('sync.startSyncFailed'));
+  }
+}
+
+async function stopSync() {
+  try {
+    await syncStore.stopSync();
+  } catch (err) {
+    message.error(err.message || t('sync.stopSyncFailed'));
+  }
+}
+
+async function closeAllTabs() {
+  closingTabs.value = true;
+  try {
+    const { data } = await client.post('/api/window-arranger/close-all-tabs');
+    showTabResult(data, 'close');
+  } catch (err) {
+    message.error(err.message || t('sync.closeAllTabsError'));
+  } finally {
+    closingTabs.value = false;
+    refreshWindows();
+  }
+}
+
+async function openLinks() {
+  const items = links.value.split('\n').map(l => l.trim()).filter(l => l.length > 0);
+  if (items.length === 0) {
+    message.warning(t('sync.noLinks'));
+    return;
+  }
+  openingLinks.value = true;
+  try {
+    const { data } = await client.post('/api/window-arranger/open-links', { links: items });
+    showTabResult(data, 'open');
+  } catch (err) {
+    message.error(err.message || t('sync.openLinksError'));
+  } finally {
+    openingLinks.value = false;
+    refreshWindows();
+  }
+}
+
+function showTabResult(data, kind) {
+  if (kind === 'open') {
+    tabResultSummary.value = t('sync.openResult', { created: data.created, failed: data.failed });
+  } else {
+    tabResultSummary.value = t('sync.closeResult', { success: data.success, failed: data.failed });
+  }
+}
+
 watch(() => appStore.initialized, (ready) => {
-  if (ready) refreshWindows();
+  if (ready) {
+    refreshWindows();
+    profilesStore.fetchAll().catch(() => {});
+    syncStore.fetchStatus().catch(() => {});
+  }
 }, { immediate: true });
 </script>

@@ -6,8 +6,8 @@
         <a-menu mode="horizontal" :selected-keys="selectedKeys" theme="dark" class="border-none bg-transparent"
           @click="handleMenuClick">
           <a-menu-item key="profiles">{{ t('nav.profiles') }}</a-menu-item>
+          <a-menu-item key="arranger">{{ t('nav.sync') }}</a-menu-item>
           <a-menu-item key="proxies">{{ t('nav.proxies') }}</a-menu-item>
-          <a-menu-item key="arranger">Window Arranger</a-menu-item>
           <a-menu-item key="extensions">{{ t('nav.extensions') }}</a-menu-item>
           <a-sub-menu key="automation" :title="t('nav.automation')">
             <a-menu-item key="automation/matrix">{{ t('automation.matrix') }}</a-menu-item>

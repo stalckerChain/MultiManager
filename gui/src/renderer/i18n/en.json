@@ -7,7 +7,27 @@
     "proxies": "Proxies",
     "extensions": "Extensions",
     "settings": "Settings",
-    "automation": "Automation"
+    "automation": "Automation",
+    "sync": "Synchronizer"
+  },
+  "sync": {
+    "title": "Synchronizer",
+    "startSync": "Sync",
+    "stopSync": "Stop Sync",
+    "selectMaster": "Select Master window:",
+    "master": "Master",
+    "runningCount": "Running profiles: {{count}}",
+    "startSyncFailed": "Failed to start Sync",
+    "stopSyncFailed": "Failed to stop Sync",
+    "tabsTitle": "Profile Tabs",
+    "linksPlaceholder": "Paste links, one per line",
+    "openLinks": "Open",
+    "closeAllTabs": "Close All Tabs",
+    "noLinks": "Enter at least one link",
+    "openLinksError": "Failed to open links",
+    "closeAllTabsError": "Failed to close tabs",
+    "openResult": "Tabs opened: {{created}}, errors: {{failed}}",
+    "closeResult": "Success: {{success}} profiles, with errors: {{failed}}"
   },
   "profiles": {
     "title": "Profile Manager",

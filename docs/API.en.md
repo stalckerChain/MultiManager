@@ -1078,6 +1078,117 @@ Focus a specific window.
 
 ---
 
+### POST /api/window-arranger/close-all-tabs
+
+Close all tabs in every running profile.
+
+For each profile a new `about:blank` tab is created first, then the original
+page tabs are closed (except the newly created one). The created tab is never
+closed. An error in one profile does not stop the others. URLs and links are
+never logged.
+
+**Response (200):**
+```json
+{
+  "total": 2,
+  "success": 1,
+  "failed": 1,
+  "profiles": [
+    {
+      "profileId": "f81d4fae-...",
+      "profileName": "My Profile",
+      "success": true,
+      "closed": 5,
+      "kept": 1,
+      "errors": []
+    },
+    {
+      "profileId": "f81d4fae-...",
+      "profileName": "Another Profile",
+      "success": false,
+      "closed": 0,
+      "kept": 0,
+      "errors": [],
+      "error": "CDP port is unavailable for profile ..."
+    }
+  ]
+}
+```
+
+Fields:
+
+- `total` — number of processed running profiles;
+- `success` / `failed` — profiles without errors / with errors;
+- `profiles[]` — per-profile result:
+  - `profileId`, `profileName`;
+  - `success` — whether the operation finished without errors;
+  - `closed` — how many original tabs were closed;
+  - `kept` — how many tabs were kept (the created `about:blank`);
+  - `errors[]` — partial close errors per target (`targetId` + `error`);
+  - `error` — whole-profile error (e.g. CDP port unavailable).
+
+---
+
+### POST /api/window-arranger/open-links
+
+Open the given links in every running profile.
+
+**Request body:**
+```json
+{
+  "links": ["https://example.com/page1", "https://example.com/page2"]
+}
+```
+
+`links` — an array of strings. Empty strings are skipped, order is preserved. A
+separate tab is created for each non-empty link in each running profile. Processing
+continues after an individual link or profile error. URLs are never logged and do
+not appear in error messages.
+
+**Errors (400):** `links` is not an array of strings — `{ "error": "links must be
+an array of strings", "code": "BAD_REQUEST" }`.
+
+**Response (200):**
+```json
+{
+  "total": 3,
+  "created": 5,
+  "failed": 1,
+  "profiles": [
+    {
+      "profileId": "f81d4fae-...",
+      "profileName": "My Profile",
+      "success": true,
+      "created": 3,
+      "failed": 0,
+      "errors": []
+    },
+    {
+      "profileId": "f81d4fae-...",
+      "profileName": "Another Profile",
+      "success": false,
+      "created": 2,
+      "failed": 1,
+      "errors": [{ "error": "CDP error" }]
+    }
+  ]
+}
+```
+
+Fields:
+
+- `total` — number of non-empty links;
+- `created` — total tabs created;
+- `failed` — total failed operations;
+- `profiles[]` — per-profile result:
+  - `profileId`, `profileName`;
+  - `success` — whether all links of the profile were processed without errors;
+  - `created` / `failed` — per-profile success / failure;
+  - `errors[]` — per-link errors (no URL);
+  - `error` — whole-profile error (e.g. CDP port unavailable).
+
+---
+
 ## Fingerprint Generator
 
 ### POST /api/fingerprint/generate

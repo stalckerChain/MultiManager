@@ -1,5 +1,20 @@
 # Changelog
 
+## v1.5.1
+
+### Синхронизатор / Tabs
+
+- **[FEAT] Вкладка `Window Arranger` переименована в «Синхронизатор».**
+  Навигационное имя и заголовок вкладки заменены через i18n (en/ru/zh); маршрут `/arranger` сохранён; в меню вкладка идёт сразу после «Профили». Управление Sync (кнопка Sync с выбором Master, Stop Sync, тэг Master, счётчик запущенных профилей) перенесено из `Profiles.vue` в `WindowArranger.vue` и размещено в верхнем ряду слева от кнопок расположения окон. Из `Profiles.vue` удалены Sync-кнопки, Sync-меню и связанные импорты/обработчики.
+  ✅ `gui/src/renderer/views/WindowArranger.vue`, `gui/src/renderer/views/Profiles.vue`, `gui/src/renderer/components/Layout.vue`, `gui/src/renderer/i18n/*.json`
+
+- **[FEAT] Массовые операции с вкладками всех запущенных профилей.**
+  Добавлены `POST /api/window-arranger/close-all-tabs` и `POST /api/window-arranger/open-links` (JSON `{ links: string[] }`). Операции выполняются только для running-профилей через существующие profile queries. Новый общий CDP-слой `src/cdp/profile-tabs.js` использует низкоуровневый `cdp/client` (`call`, `connect`, `discoverWsUrl`) и порт из `getCdpPort(profileId)`; WebSocket краткоживущей сессии закрывается в `finally`, сессии не пересекаются с `browserConnections` CdpManager. Ограниченный параллелизм (`mapLimit`, 4 одновременных сессии) — операция для 100+ профилей не создаёт взрыв CDP-соединений.
+  - `close-all-tabs`: для каждого профиля фиксируется исходный набор page targets, создаётся новая вкладка `about:blank`, затем закрываются только исходные targets (созданная вкладка никогда не закрывается). Возвращаются фактические результаты по каждому профилю и target.
+  - `open-links`: `links` проверяется как массив строк; пустые строки отбрасываются с сохранением порядка; для каждой непустой ссылки и каждого running-профиля создаётся отдельная вкладка; ошибка отдельной ссылки/профиля не прерывает обработку остальных.
+  - URL и ссылки не логируются и не попадают в сообщения об ошибках; URL передаётся только параметром `Target.createTarget`.
+  ✅ `src/cdp/profile-tabs.js` (новый), `src/api/window-arranger.js`, `tests/unit/window-arranger.test.js`, `docs/API.md`, `docs/API.en.md`, `docs/API.zh.md`
+
 ## v1.5.0
 
 ### Security / Storage

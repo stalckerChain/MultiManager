@@ -6,6 +6,15 @@ const { logger } = require('../logger');
 
 const execAsync = promisify(exec);
 
+const TAB_OP_CONCURRENCY = 4;
+
+let profileTabs = require('../cdp/profile-tabs');
+
+// Тестовый шов: позволяет подменить CDP-слой в unit-тестах без сети и браузера.
+function setProfileTabsForTesting(mod) {
+  profileTabs = mod;
+}
+
 // PowerShell через spawn + -EncodedCommand (Base64 UTF-16LE).
 //
 // Две причины, почему именно так:
@@ -358,6 +367,34 @@ public class WinAPI {
   }
 }
 
+function getRunningProfiles() {
+  const db = getDatabase();
+  const profileQueries = createProfileQueries(db);
+  return profileQueries.getByStatus('running').map(p => ({ id: p.id, name: p.name || p.id }));
+}
+
+// Ограниченный параллелизм: одновременно выполняется не более `limit` задач.
+async function mapLimit(items, limit, fn) {
+  const results = new Array(items.length);
+  let index = 0;
+  // Взятие индекса — один синхронный блок, атомарный в рамках тика event loop:
+  // воркеры не могут получить один и тот же элемент даже после добавления await.
+  const takeIndex = () => {
+    const i = index;
+    index = i + 1;
+    return i;
+  };
+  const workers = Array.from({ length: Math.min(limit, items.length) }, async () => {
+    for (;;) {
+      const i = takeIndex();
+      if (i >= items.length) break;
+      results[i] = await fn(items[i], i);
+    }
+  });
+  await Promise.all(workers);
+  return results;
+}
+
 router.get('/windows', async (req, res) => {
   try {
     const windows = await getRunningWindows();
@@ -431,4 +468,145 @@ router.post('/focus/:windowId', async (req, res) => {
   }
 });
 
+// Массовые операции с вкладками всех запущенных профилей.
+//
+// Ошибка одного профиля не останавливает обработку остальных. Созданные
+// вкладки не закрываются как чужие: сначала фиксируется исходный набор
+// target ID, закрываются только targets из этого набора.
+//
+// URL и ссылки не логируются и не попадают в сообщения об ошибках.
+
+async function closeAllTabsFor(profiles) {
+  const perProfile = await mapLimit(profiles, TAB_OP_CONCURRENCY, async (profile) => {
+    try {
+      const summary = await profileTabs.withProfileSession(profile.id, async (ws) => {
+        const original = await profileTabs.listPageTargets(ws);
+        const originalIds = original.map(t => t.targetId);
+
+        const blankId = await profileTabs.createTarget(ws, 'about:blank');
+
+        let closed = 0;
+        const errors = [];
+        for (const targetId of originalIds) {
+          if (targetId === blankId) continue;
+          try {
+            const ok = await profileTabs.closeTarget(ws, targetId);
+            if (ok) {
+              closed++;
+            } else {
+              errors.push({ targetId, error: 'closeTarget returned false' });
+            }
+          } catch (err) {
+            errors.push({ targetId, error: err.message });
+          }
+        }
+        return { closed, kept: 1, errors };
+      });
+      return {
+        profileId: profile.id,
+        profileName: profile.name,
+        success: true,
+        closed: summary.closed,
+        kept: summary.kept,
+        errors: summary.errors,
+      };
+    } catch (err) {
+      return {
+        profileId: profile.id,
+        profileName: profile.name,
+        success: false,
+        closed: 0,
+        kept: 0,
+        errors: [],
+        error: err.message,
+      };
+    }
+  });
+
+  return {
+    total: perProfile.length,
+    success: perProfile.filter(p => p.success).length,
+    failed: perProfile.filter(p => !p.success).length,
+    profiles: perProfile,
+  };
+}
+
+async function openLinksFor(profiles, links) {
+  let created = 0;
+  let failed = 0;
+
+  const perProfile = await mapLimit(profiles, TAB_OP_CONCURRENCY, async (profile) => {
+    try {
+      const errors = [];
+      let profileCreated = 0;
+      let profileFailed = 0;
+
+      await profileTabs.withProfileSession(profile.id, async (ws) => {
+        for (const link of links) {
+          try {
+            await profileTabs.createTarget(ws, link);
+            profileCreated++;
+          } catch (err) {
+            profileFailed++;
+            errors.push({ error: err.message });
+          }
+        }
+      });
+
+      created += profileCreated;
+      failed += profileFailed;
+      return {
+        profileId: profile.id,
+        profileName: profile.name,
+        success: profileFailed === 0,
+        created: profileCreated,
+        failed: profileFailed,
+        errors,
+      };
+    } catch (err) {
+      failed += links.length;
+      return {
+        profileId: profile.id,
+        profileName: profile.name,
+        success: false,
+        created: 0,
+        failed: links.length,
+        errors: [],
+        error: err.message,
+      };
+    }
+  });
+
+  return { total: links.length, created, failed, profiles: perProfile };
+}
+
+router.post('/close-all-tabs', async (req, res) => {
+  try {
+    res.json(await closeAllTabsFor(getRunningProfiles()));
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+router.post('/open-links', async (req, res) => {
+  try {
+    const links = req.body && req.body.links;
+    if (!Array.isArray(links)) {
+      return res.status(400).json({ error: 'links must be an array of strings', code: 'BAD_REQUEST' });
+    }
+    if (links.some(l => typeof l !== 'string')) {
+      return res.status(400).json({ error: 'links must contain only strings', code: 'BAD_REQUEST' });
+    }
+    const normalized = links.filter(l => l.trim().length > 0);
+
+    res.json(await openLinksFor(getRunningProfiles(), normalized));
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
 module.exports = router;
+module.exports.closeAllTabsFor = closeAllTabsFor;
+module.exports.openLinksFor = openLinksFor;
+module.exports.getRunningProfiles = getRunningProfiles;
+module.exports.setProfileTabsForTesting = setProfileTabsForTesting;

@@ -10,36 +10,6 @@
         <a-button @click="handleOneClick">
           {{ t('profiles.createOneClick') }}
         </a-button>
-
-        <a-divider type="vertical" />
-
-        <a-button v-if="syncStore.active" type="primary" danger :loading="syncStore.loading" @click="syncStore.stopSync()">
-          <template #icon><swap-outlined /></template>
-          Stop Sync
-          <span class="ml-1 text-xs">({{ syncStore.slaveCount }})</span>
-        </a-button>
-        <a-dropdown v-else :disabled="runningProfiles.length < 2">
-          <a-button :loading="syncStore.loading">
-            <template #icon><swap-outlined /></template>
-            Sync
-          </a-button>
-          <template #overlay>
-            <a-menu @click="handleSyncMenu">
-              <a-menu-item key="label" disabled>
-                <span class="text-slate-400">Выберите Master окно:</span>
-              </a-menu-item>
-              <a-menu-divider />
-              <a-menu-item v-for="p in runningProfiles" :key="p.id">
-                <span class="font-medium">{{ p.name }}</span>
-                <span class="text-xs text-slate-500 ml-2">PID: {{ p.pid }}</span>
-              </a-menu-item>
-            </a-menu>
-          </template>
-        </a-dropdown>
-
-        <a-tag v-if="syncStore.active" color="green" class="ml-1">
-          Master: {{ profilesStore.profiles.find(p => p.id === syncStore.masterId)?.name || syncStore.masterId }}
-        </a-tag>
       </div>
     </div>
 
@@ -151,10 +121,8 @@ import { useTranslation } from 'i18next-vue';
 import { useProfilesStore } from '../stores/profiles.js';
 import { useBrowserStore } from '../stores/browser.js';
 import { useAppStore } from '../stores/app.js';
-import { useSyncStore } from '../stores/sync.js';
 import { useProxiesStore } from '../stores/proxies.js';
 import { useWebSocket } from '../composables/useWebSocket.js';
-import { SwapOutlined } from '@ant-design/icons-vue';
 import client from '../api/client.js';
 import ProfileModal from './ProfileModal.vue';
 import ProxyModal from './ProxyModal.vue';
@@ -166,7 +134,6 @@ const { t } = useTranslation();
 const profilesStore = useProfilesStore();
 const appStore = useAppStore();
 const browserStore = useBrowserStore();
-const syncStore = useSyncStore();
 const proxiesStore = useProxiesStore();
 const { connected } = useWebSocket();
 
@@ -290,12 +257,6 @@ async function handleOneClick() {
     platform: 'windows',
     timezone: Intl.DateTimeFormat().resolvedOptions().timeZone || 'UTC',
   });
-}
-
-async function handleSyncMenu({ key }) {
-  if (key === 'label') return;
-  const runningIds = runningProfiles.value.map(p => p.id);
-  await syncStore.startSync(key, runningIds);
 }
 
 async function handleSave(values) {
@@ -441,7 +402,6 @@ watch(() => appStore.initialized, (ready) => {
   if (ready) {
     profilesStore.fetchAll().catch(() => {});
     proxiesStore.fetchAll().catch(() => {});
-    syncStore.fetchStatus().catch(() => {});
   }
 }, { immediate: true });
 

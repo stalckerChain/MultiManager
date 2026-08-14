@@ -7,7 +7,27 @@
     "proxies": "代理",
     "extensions": "扩展",
     "settings": "设置",
-    "automation": "自动化"
+    "automation": "自动化",
+    "sync": "同步器"
+  },
+  "sync": {
+    "title": "同步器",
+    "startSync": "同步",
+    "stopSync": "停止同步",
+    "selectMaster": "选择主窗口：",
+    "master": "主窗口",
+    "runningCount": "运行中的配置文件：{{count}}",
+    "startSyncFailed": "无法启动同步",
+    "stopSyncFailed": "无法停止同步",
+    "tabsTitle": "配置文件标签页",
+    "linksPlaceholder": "粘贴链接，每行一个",
+    "openLinks": "打开",
+    "closeAllTabs": "关闭所有标签页",
+    "noLinks": "请输入至少一个链接",
+    "openLinksError": "无法打开链接",
+    "closeAllTabsError": "无法关闭标签页",
+    "openResult": "已打开标签页：{{created}}，错误：{{failed}}",
+    "closeResult": "成功：{{success}} 个配置文件，有错误：{{failed}}"
   },
   "profiles": {
     "title": "配置文件管理器",

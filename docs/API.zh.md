@@ -1047,6 +1047,110 @@ Authorization: Bearer <token>
 
 ---
 
+### POST /api/window-arranger/close-all-tabs
+
+关闭所有运行中配置文件的所有标签页。
+
+对每个配置文件先创建新的 `about:blank` 标签页，然后关闭原始页面标签页（新建的除外）。新建的标签页不会被关闭。一个配置文件的错误不会阻止其他配置文件。URL 和链接不会被记录日志。
+
+**响应 (200)：**
+```json
+{
+  "total": 2,
+  "success": 1,
+  "failed": 1,
+  "profiles": [
+    {
+      "profileId": "f81d4fae-...",
+      "profileName": "我的配置",
+      "success": true,
+      "closed": 5,
+      "kept": 1,
+      "errors": []
+    },
+    {
+      "profileId": "f81d4fae-...",
+      "profileName": "另一个配置",
+      "success": false,
+      "closed": 0,
+      "kept": 0,
+      "errors": [],
+      "error": "CDP port is unavailable for profile ..."
+    }
+  ]
+}
+```
+
+字段说明：
+
+- `total` — 已处理的运行中配置文件数量；
+- `success` / `failed` — 无错误 / 有错误的配置文件数量；
+- `profiles[]` — 每个配置文件的结果：
+  - `profileId`, `profileName` — 配置文件的 ID 和名称；
+  - `success` — 该配置文件的操作是否无错误完成；
+  - `closed` — 已关闭的原始标签页数量；
+  - `kept` — 保留的标签页数量（新建的 `about:blank`）；
+  - `errors[]` — 单个标签页的关闭错误（`targetId` + `error`）；
+  - `error` — 整个配置文件的错误（例如 CDP 端口不可用）。
+
+---
+
+### POST /api/window-arranger/open-links
+
+在所有运行中的配置文件中打开传入的链接。
+
+**请求体：**
+```json
+{
+  "links": ["https://example.com/page1", "https://example.com/page2"]
+}
+```
+
+`links` 为字符串数组。空字符串会被跳过，顺序保留。为每个运行中的配置文件和每条非空链接各创建一个标签页。单个链接或配置文件的错误不会中断处理。URL 不会记录日志，也不会出现在错误信息中。
+
+**错误 (400)：** `links` 不是字符串数组 — `{ "error": "links must be an array of strings", "code": "BAD_REQUEST" }`。
+
+**响应 (200)：**
+```json
+{
+  "total": 3,
+  "created": 5,
+  "failed": 1,
+  "profiles": [
+    {
+      "profileId": "f81d4fae-...",
+      "profileName": "我的配置",
+      "success": true,
+      "created": 3,
+      "failed": 0,
+      "errors": []
+    },
+    {
+      "profileId": "f81d4fae-...",
+      "profileName": "另一个配置",
+      "success": false,
+      "created": 2,
+      "failed": 1,
+      "errors": [{ "error": "CDP error" }]
+    }
+  ]
+}
+```
+
+字段说明：
+
+- `total` — 非空链接数量；
+- `created` — 总共创建的标签页数量；
+- `failed` — 总共失败的操作数量；
+- `profiles[]` — 每个配置文件的结果：
+  - `profileId`, `profileName`;
+  - `success` — 该配置文件的所有链接是否无错误处理；
+  - `created` / `failed` — 该配置文件的成功 / 失败数量；
+  - `errors[]` — 单个链接的错误（不含 URL）；
+  - `error` — 整个配置文件的错误（例如 CDP 端口不可用）。
+
+---
+
 ## 指纹生成器
 
 ### POST /api/fingerprint/generate
