@@ -68,11 +68,27 @@ const profileUpdateSchema = z.object({
   wallet_evm_address: z.any().optional(),
   wallet_sol_address: z.any().optional(),
   wallet_password: z.any().optional(),
+  fingerprint_seed: z.string().uuid('fingerprint_seed должен быть UUID').optional(),
+  user_agent: z.string().min(1, 'user_agent обязателен в fingerprint-наборе').max(1000).optional(),
+  screen_resolution: z.string().regex(/^\d+x\d+$/, 'screen_resolution должен быть в формате WxH').optional(),
+  hardware_cores: z.number().int().min(0).max(128).optional(),
+  hardware_memory: z.number().int().min(0).max(1024).optional(),
+  fingerprint_platform: z.enum(['windows', 'macos', 'linux']).optional(),
   profile_path: z.string().max(1024).nullable().optional().refine(
     v => !v || path.isAbsolute(v),
     'profile_path must be an absolute path'
   ),
-}).passthrough();
+}).passthrough().superRefine((data, ctx) => {
+  const fpFields = ['fingerprint_seed', 'user_agent', 'screen_resolution', 'hardware_cores', 'hardware_memory', 'fingerprint_platform'];
+  const present = fpFields.filter(f => data[f] !== undefined);
+  if (present.length > 0 && present.length < fpFields.length) {
+    ctx.addIssue({
+      code: 'custom',
+      path: ['fingerprint_seed'],
+      message: 'fingerprint-набор должен передаваться полностью',
+    });
+  }
+});
 
 const profileBatchSchema = z.object({
   accounts: z.array(z.object({

@@ -138,6 +138,25 @@ Update profile.
 }
 ```
 
+**Fingerprint set** (optional, must be sent as one complete set):
+```json
+{
+  "platform": "windows",
+  "fingerprint_seed": "46f7702b-c11d-4ab7-b29c-d314472e7e5c",
+  "user_agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) ...",
+  "screen_resolution": "1920x1080",
+  "hardware_cores": 8,
+  "hardware_memory": 16,
+  "fingerprint_platform": "windows"
+}
+```
+
+Behavior:
+- If a complete fingerprint set (all six fields) is provided, it is saved in a single UPDATE without generating a new fingerprint, even when `platform` changes. `fingerprint_platform` must match the effective platform (`platform` if provided, otherwise the profile's current platform); on mismatch — `400`.
+- If no set is provided and `platform` differs from the saved one — the backend generates a new full fingerprint for the new platform (previous behavior).
+- If no set is provided and the platform is unchanged — the profile's fingerprint fields are kept unchanged.
+- An incomplete set (e.g. only `user_agent`) is rejected with `400`.
+
 **Response (200):** Updated profile
 
 ---

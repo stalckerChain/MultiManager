@@ -3,7 +3,7 @@ const { getDatabase, createProfileQueries, createSystemConfigQueries } = require
 const { generateFingerprint } = require('../fingerprint');
 const { getCloakBrowserVersion } = require('../core/cloakbrowser-version');
 const { validate, profileCreateSchema, profileUpdateSchema, profileBatchSchema } = require('./validate');
-const { notFound, conflict, serverError } = require('./errors');
+const { notFound, conflict, serverError, badRequest } = require('./errors');
 const { logger } = require('../logger');
 
 function getChromeVersion(db) {
@@ -133,12 +133,27 @@ router.put('/:id', validate(profileUpdateSchema), (req, res) => {
   const body = req.body;
   const toNull = (v) => (v === '' || v === undefined) ? null : v;
 
-  const { name, proxy_id, platform, extensions, tags, notes, timezone, email, email_password, twitter_username, twitter_password, twitter_auth_token, twitter_email, discord_username, discord_password, discord_token, discord_email, wallet_evm_address, wallet_sol_address, wallet_password, profile_path } = body;
+  const { name, proxy_id, platform, extensions, tags, notes, timezone, email, email_password, twitter_username, twitter_password, twitter_auth_token, twitter_email, discord_username, discord_password, discord_token, discord_email, wallet_evm_address, wallet_sol_address, wallet_password, profile_path, fingerprint_seed, user_agent, screen_resolution, hardware_cores, hardware_memory, fingerprint_platform } = body;
 
   const chromeVersion = getChromeVersion(db);
-  const fingerprint = platform && platform !== profile.platform
-    ? generateFingerprint(platform, chromeVersion)
-    : null;
+
+  let fingerprint = null;
+
+  if (fingerprint_seed !== undefined) {
+    const effectivePlatform = platform !== undefined ? platform : profile.platform;
+    if (fingerprint_platform !== effectivePlatform) {
+      throw badRequest('fingerprint_platform не совпадает с выбранной платформой');
+    }
+    fingerprint = {
+      fingerprint_seed,
+      user_agent,
+      screen_resolution,
+      hardware_cores,
+      hardware_memory,
+    };
+  } else if (platform && platform !== profile.platform) {
+    fingerprint = generateFingerprint(platform, chromeVersion);
+  }
 
   const updated = queries.update(req.params.id, {
     name: toNull(name),

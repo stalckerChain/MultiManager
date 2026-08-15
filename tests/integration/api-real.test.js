@@ -279,6 +279,106 @@ describe('Profiles', () => {
   });
 });
 
+describe('Profiles - fingerprint persistence', () => {
+  let profileId;
+
+  afterAll(async () => {
+    await request('DELETE', `/api/profiles/${profileId}`).catch(() => {});
+  });
+
+  it('POST /api/profiles creates profile with initial fingerprint', async () => {
+    const res = await request('POST', '/api/profiles', {
+      name: 'FP Persist Profile',
+      platform: 'windows',
+      timezone: 'Europe/Berlin',
+    });
+    expect(res.status).toBe(201);
+    expect(res.body.fingerprint_seed).toBeTruthy();
+    profileId = res.body.id;
+  });
+
+  it('POST /api/fingerprint/generate returns a full fingerprint for the platform', async () => {
+    const res = await request('POST', '/api/fingerprint/generate', { platform: 'windows' });
+    expect(res.status).toBe(200);
+    expect(res.body.fingerprint_seed).toBeTruthy();
+    expect(res.body.user_agent).toBeTruthy();
+    expect(res.body.screen_resolution).toMatch(/^\d+x\d+$/);
+    expect(res.body.hardware_cores).toBeGreaterThan(0);
+    expect(res.body.hardware_memory).toBeGreaterThan(0);
+    expect(res.body.platform).toBe('windows');
+  });
+
+  it('PUT /api/profiles/:id saves a generated fingerprint and persists it after GET', async () => {
+    const gen = await request('POST', '/api/fingerprint/generate', { platform: 'windows' });
+    const fp = gen.body;
+
+    const res = await request('PUT', `/api/profiles/${profileId}`, {
+      platform: 'windows',
+      fingerprint_seed: fp.fingerprint_seed,
+      user_agent: fp.user_agent,
+      screen_resolution: fp.screen_resolution,
+      hardware_cores: fp.hardware_cores,
+      hardware_memory: fp.hardware_memory,
+      fingerprint_platform: 'windows',
+    });
+    expect(res.status).toBe(200);
+    expect(res.body.fingerprint_seed).toBe(fp.fingerprint_seed);
+    expect(res.body.user_agent).toBe(fp.user_agent);
+    expect(res.body.hardware_cores).toBe(fp.hardware_cores);
+    expect(res.body.hardware_memory).toBe(fp.hardware_memory);
+
+    const again = await request('GET', `/api/profiles/${profileId}`);
+    expect(again.status).toBe(200);
+    expect(again.body.fingerprint_seed).toBe(fp.fingerprint_seed);
+    expect(again.body.user_agent).toBe(fp.user_agent);
+  });
+
+  it('does not generate a second seed when a set is provided despite a platform change', async () => {
+    const gen = await request('POST', '/api/fingerprint/generate', { platform: 'linux' });
+    const fp = gen.body;
+
+    const res = await request('PUT', `/api/profiles/${profileId}`, {
+      platform: 'linux',
+      fingerprint_seed: fp.fingerprint_seed,
+      user_agent: fp.user_agent,
+      screen_resolution: fp.screen_resolution,
+      hardware_cores: fp.hardware_cores,
+      hardware_memory: fp.hardware_memory,
+      fingerprint_platform: 'linux',
+    });
+    expect(res.status).toBe(200);
+    expect(res.body.platform).toBe('linux');
+    expect(res.body.fingerprint_seed).toBe(fp.fingerprint_seed);
+    expect(res.body.user_agent).toBe(fp.user_agent);
+  });
+
+  it('auto-generates a new fingerprint on platform change without a provided set', async () => {
+    const before = await request('GET', `/api/profiles/${profileId}`);
+
+    const res = await request('PUT', `/api/profiles/${profileId}`, { platform: 'macos' });
+    expect(res.status).toBe(200);
+    expect(res.body.platform).toBe('macos');
+    expect(res.body.fingerprint_seed).not.toBe(before.body.fingerprint_seed);
+    expect(res.body.user_agent).toContain('Macintosh');
+  });
+
+  it('keeps the fingerprint after editing unrelated fields', async () => {
+    const before = await request('GET', `/api/profiles/${profileId}`);
+
+    const res = await request('PUT', `/api/profiles/${profileId}`, {
+      name: 'FP Renamed',
+      tags: ['keep'],
+      notes: 'notes',
+    });
+    expect(res.status).toBe(200);
+    expect(res.body.name).toBe('FP Renamed');
+    expect(res.body.fingerprint_seed).toBe(before.body.fingerprint_seed);
+    expect(res.body.user_agent).toBe(before.body.user_agent);
+    expect(res.body.hardware_cores).toBe(before.body.hardware_cores);
+    expect(res.body.hardware_memory).toBe(before.body.hardware_memory);
+  });
+});
+
 describe('Profiles Batch', () => {
   let batchIds = [];
 

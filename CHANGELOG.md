@@ -4,6 +4,15 @@
 
 ### GUI / Профили
 
+- **[FEAT] Сохранение сгенерированного fingerprint при редактировании профиля.**
+  После нажатия `Generate Fingerprint` новый полный fingerprint остаётся в форме и сохраняется в БД по кнопке `OK`, без повторной генерации на backend.
+  - `ProfileModal.vue`: в `form` добавлены `fingerprint_seed`, `hardware_cores`, `hardware_memory`, `fingerprint_platform`; загружаются при открытии профиля и сбрасываются при создании. `generateFingerprint()` заполняет все поля из ответа `POST /api/fingerprint/generate`. `handleOk()` передаёт fingerprint-поля в событии `save`; без нажатия `Generate` они исключаются из payload. При смене `form.platform` флаг `fingerprintGenerated` сбрасывается, поэтому профиль сохраняется с автогенерацией backend, а не с ошибочным набором.
+  - `src/api/validate.js`: `profileUpdateSchema` расширен полями `fingerprint_seed` (UUID), `user_agent`, `screen_resolution` (формат `WxH`), `hardware_cores`/`hardware_memory` (int, разумные границы), `fingerprint_platform` (enum). `superRefine` отклоняет частичный fingerprint-набор (400).
+  - `src/api/profiles.js` (`PUT /:id`): переданный полный набор сохраняется одним UPDATE без генерации второго seed; `fingerprint_platform` сверяется с эффективной платформой (400 при несовпадении). Набор не передан + платформа изменена → прежняя автогенерация; платформа не изменена → старые fingerprint-значения сохраняются.
+  - `src/db/queries.js`: `hardware_cores`/`hardware_memory`/`user_agent`/`screen_resolution`/`fingerprint_seed` передаются по проверке `!== undefined ? value : null` — явные нулевые hardware-значения не теряются через `|| null`.
+  - Тесты: `tests/unit/profiles-fingerprint-update.test.js` (новый, 9 тестов), `tests/integration/api-real.test.js` (+6 тестов профиля fingerprint-persistence). Схема БД и `--fingerprint=<seed>` в запуске не изменялись.
+  ✅ `gui/src/renderer/views/ProfileModal.vue`, `src/api/validate.js`, `src/api/profiles.js`, `src/db/queries.js`, `tests/unit/profiles-fingerprint-update.test.js` (новый), `tests/integration/api-real.test.js`, `docs/API.md`, `docs/API.en.md`, `docs/API.zh.md`, `README.md`
+
 - **[FEAT] Порядок столбцов таблицы профилей.** Столбец `Action` перемещён в массиве `columns` сразу после `Name`: итоговый порядок `#`, `Name`, `Action`, `Proxy`, `Proxy Status`, `Fingerprint`, `Status`. Ключ `actions` и `fixed: 'right'` сохранены — шаблон ячейки и обработчики не изменены, API и схема БД не затронуты.
   ✅ `gui/src/renderer/views/Profiles.vue`
 

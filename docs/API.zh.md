@@ -138,6 +138,25 @@ Authorization: Bearer <token>
 }
 ```
 
+**Fingerprint 集合**（可选，必须作为一个完整集合一次性传入）：
+```json
+{
+  "platform": "windows",
+  "fingerprint_seed": "46f7702b-c11d-4ab7-b29c-d314472e7e5c",
+  "user_agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) ...",
+  "screen_resolution": "1920x1080",
+  "hardware_cores": 8,
+  "hardware_memory": 16,
+  "fingerprint_platform": "windows"
+}
+```
+
+行为：
+- 如果传入完整的 fingerprint 集合（全部六个字段），则通过一次 UPDATE 保存，不再生成新的 fingerprint，即使 `platform` 改变也是如此。`fingerprint_platform` 必须与有效平台（传入的 `platform`，否则为配置文件当前平台）一致；不一致时返回 `400`。
+- 如果未传入集合且 `platform` 与保存的不同 — 后端为新平台生成新的完整 fingerprint（原有行为）。
+- 如果未传入集合且平台未改变 — 配置文件的 fingerprint 字段保持不变。
+- 传入不完整集合（例如只有 `user_agent`）将返回 `400`。
+
 **响应 (200)：** 更新后的配置文件
 
 ---

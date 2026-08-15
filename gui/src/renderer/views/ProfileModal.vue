@@ -170,6 +170,10 @@ const form = reactive({
   notes: '',
   user_agent: '',
   screen_resolution: '',
+  fingerprint_seed: '',
+  hardware_cores: null,
+  hardware_memory: null,
+  fingerprint_platform: '',
   timezone: '',
   email: '',
   email_password: '',
@@ -224,7 +228,14 @@ watch(() => props.open, (isOpen) => {
   }
 });
 
+const fingerprintGenerated = ref(false);
+
+watch(() => form.platform, () => {
+  fingerprintGenerated.value = false;
+});
+
 watch(() => props.profile, (p) => {
+  fingerprintGenerated.value = false;
   if (p) {
     Object.assign(form, {
       name: p.name,
@@ -235,6 +246,10 @@ watch(() => props.profile, (p) => {
       notes: p.notes || '',
       user_agent: p.user_agent,
       screen_resolution: p.screen_resolution,
+      fingerprint_seed: p.fingerprint_seed,
+      hardware_cores: p.hardware_cores,
+      hardware_memory: p.hardware_memory,
+      fingerprint_platform: p.platform,
       timezone: p.timezone || '',
       email: p.email || '',
       email_password: p.email_password || '',
@@ -255,6 +270,7 @@ watch(() => props.profile, (p) => {
     Object.assign(form, {
       name: '', tags: [], platform: 'windows', proxy_id: null,
       extensions: [], notes: '', user_agent: '', screen_resolution: '',
+      fingerprint_seed: '', hardware_cores: null, hardware_memory: null, fingerprint_platform: '',
       timezone: '',
       email: '', email_password: '',
       twitter_username: '', twitter_password: '', twitter_auth_token: '', twitter_email: '',
@@ -279,8 +295,13 @@ async function generateFingerprint() {
   const { data } = await client.post('/api/fingerprint/generate', {
     platform: form.platform,
   });
+  form.fingerprint_seed = data.fingerprint_seed;
   form.user_agent = data.user_agent;
   form.screen_resolution = data.screen_resolution;
+  form.hardware_cores = data.hardware_cores;
+  form.hardware_memory = data.hardware_memory;
+  form.fingerprint_platform = data.platform;
+  fingerprintGenerated.value = true;
 }
 
 function handleCancel() {
@@ -292,6 +313,15 @@ function handleOk() {
     message.error(t('profiles.modal.timezoneRequired'));
     return;
   }
-  emit('save', { ...form });
+  const payload = { ...form };
+  if (!fingerprintGenerated.value) {
+    delete payload.fingerprint_seed;
+    delete payload.user_agent;
+    delete payload.screen_resolution;
+    delete payload.hardware_cores;
+    delete payload.hardware_memory;
+    delete payload.fingerprint_platform;
+  }
+  emit('save', payload);
 }
 </script>
