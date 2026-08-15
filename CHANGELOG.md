@@ -2,6 +2,16 @@
 
 ## v1.5.1
 
+### GUI / Профили
+
+- **[FEAT] Порядок столбцов таблицы профилей.** Столбец `Action` перемещён в массиве `columns` сразу после `Name`: итоговый порядок `#`, `Name`, `Action`, `Proxy`, `Proxy Status`, `Fingerprint`, `Status`. Ключ `actions` и `fixed: 'right'` сохранены — шаблон ячейки и обработчики не изменены, API и схема БД не затронуты.
+  ✅ `gui/src/renderer/views/Profiles.vue`
+
+### Браузер / Запуск
+
+- **[FEAT] Отключение уведомления `Restore pages?`.** В общий массив стартовых аргументов профиля добавлен штатный Chromium-флаг `--disable-session-crashed-bubble`. Флаг применяется ко всем профилям независимо от proxy, расширений и `run_id`. Существующие `--no-first-run` и `--no-default-browser-check` сохранены без изменений. Профильные данные, session- и crash-файлы не удаляются.
+  ✅ `src/api/browser.js`, `tests/unit/browser-start-await.test.js`, `tests/integration/profile-launch.test.js`, `docs/API.md`, `docs/API.en.md`, `docs/API.zh.md`
+
 ### Прокси / Распределение
 
 - **[FEAT] Нормализация и дедупликация прокси при создании/импорте/обновлении.**

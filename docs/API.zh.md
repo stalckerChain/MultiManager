@@ -470,7 +470,7 @@ Authorization: Bearer <token>
 
 ### POST /api/browser/:id/start
 
-启动浏览器。如有绑定代理会自动检查。浏览器使用反检测参数启动：`--fingerprint-timezone`（来自代理IP的GeoIP时区，回退为配置文件时区）、`--lang=en-US`、`--no-first-run`、`--no-default-browser-check`。遇到 `ERR_ADDRESS_IN_USE` 错误时，自动重试最多3次。
+启动浏览器。如有绑定代理会自动检查。浏览器使用反检测参数启动：`--fingerprint-timezone`（来自代理IP的GeoIP时区，回退为配置文件时区）、`--lang=en-US`、`--no-first-run`、`--no-default-browser-check`、`--disable-session-crashed-bubble`。遇到 `ERR_ADDRESS_IN_USE` 错误时，自动重试最多3次。
 
 **钱包自动登录（手动启动，无 `run_id`）：** 浏览器启动并加载扩展后，对钱包字段执行预检：
 

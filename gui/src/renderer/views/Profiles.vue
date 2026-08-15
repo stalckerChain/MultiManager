@@ -180,11 +180,11 @@ function handleTableChange(p) {
 const columns = [
   { title: '#', dataIndex: 'number', key: 'number', width: 60 },
   { title: t('profiles.columns.name'), key: 'name', width: 200 },
+  { title: t('profiles.columns.actions'), key: 'actions', width: 200, fixed: 'right' },
   { title: t('profiles.columns.proxy'), key: 'proxy', width: 150 },
   { title: 'Proxy Status', key: 'proxy_status', width: 130 },
   { title: t('profiles.columns.fingerprint'), key: 'fingerprint', width: 200 },
   { title: t('profiles.columns.status'), key: 'status', width: 150 },
-  { title: t('profiles.columns.actions'), key: 'actions', width: 200, fixed: 'right' },
 ];
 
 const filteredProfiles = computed(() => {

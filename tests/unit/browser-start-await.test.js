@@ -79,6 +79,10 @@ describe('Browser — anti-detect args and retry logic', () => {
     expect(content).toContain("'--no-default-browser-check'");
   });
 
+  it('--disable-session-crashed-bubble is passed as browser arg', () => {
+    expect(content).toContain("'--disable-session-crashed-bubble'");
+  });
+
   it('timezone falls back to Asia/Bishkek when profile has no timezone', () => {
     expect(content).toMatch(/timezone\s*=\s*profile\.timezone\s*\|\|\s*'Asia\/Bishkek'/);
   });

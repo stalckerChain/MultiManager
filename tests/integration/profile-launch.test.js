@@ -177,6 +177,7 @@ function launchCloakBrowser(binPath, userDataDir) {
       `--user-data-dir=${userDataDir}`,
       '--no-first-run',
       '--no-default-browser-check',
+      '--disable-session-crashed-bubble',
       '--lang=en-US',
     ];
     const child = spawn(binPath, args, { stdio: ['ignore', 'pipe', 'pipe'] });

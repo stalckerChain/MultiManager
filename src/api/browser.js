@@ -511,6 +511,7 @@ router.post('/:id/start', asyncHandler(async (req, res) => {
     '--lang=en-US',
     '--no-first-run',
     '--no-default-browser-check',
+    '--disable-session-crashed-bubble',
     `--fingerprint-timezone=${timezone}`,
     '--fingerprint-storage-quota=10240',
   ];

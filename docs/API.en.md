@@ -474,7 +474,7 @@ Delete all profile cookies.
 
 ### POST /api/browser/:id/start
 
-Start browser. Automatically checks proxy if assigned. Browser launches with anti-detect args: `--fingerprint-timezone` (timezone from GeoIP proxy, fallback — profile), `--lang=en-US`, `--no-first-run`, `--no-default-browser-check`. On `ERR_ADDRESS_IN_USE` error, automatically retries up to 3 times.
+Start browser. Automatically checks proxy if assigned. Browser launches with anti-detect args: `--fingerprint-timezone` (timezone from GeoIP proxy, fallback — profile), `--lang=en-US`, `--no-first-run`, `--no-default-browser-check`, `--disable-session-crashed-bubble`. On `ERR_ADDRESS_IN_USE` error, automatically retries up to 3 times.
 
 **Optional request body:**
 ```json
