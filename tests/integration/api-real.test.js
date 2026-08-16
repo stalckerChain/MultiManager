@@ -621,11 +621,67 @@ describe('Cookies', () => {
     expect(res.body).toContain('\t');
   });
 
+  it('GET /api/cookies/:profileId/export uses Network.getAllCookies for a running profile', async () => {
+    const browserApi = require('../../src/api/browser');
+    const cookieInject = require('../../src/cookie/inject');
+
+    const calls = [];
+    const fakeWs = { close: () => {} };
+    const fakeCdp = {
+      discoverWsUrl: async () => 'ws://127.0.0.1:9123/devtools/browser',
+      connect: async () => fakeWs,
+      call: async (ws, method) => {
+        calls.push(method);
+        if (method === 'Network.getAllCookies') {
+          return { cookies: [
+            { name: 'cdp_session', value: 'cdp_val', domain: '.cdp.example.com', path: '/', expires: -1, httpOnly: true, secure: true, sameSite: 'None', priority: 'Medium' },
+          ] };
+        }
+        return {};
+      },
+    };
+
+    db.prepare('UPDATE profiles SET status = ? WHERE id = ?').run('running', profileId);
+    browserApi.setCdpPortForTesting(profileId, 9123);
+    cookieInject.setCdpClientForTesting(fakeCdp);
+
+    try {
+      const res = await request('GET', `/api/cookies/${profileId}/export?format=json`);
+      expect(res.status).toBe(200);
+      expect(res.body).toHaveLength(1);
+      expect(res.body[0].name).toBe('cdp_session');
+      expect(res.body[0].value).toBe('cdp_val');
+      expect(res.body[0].same_site).toBe('None');
+      expect(res.body[0].priority).toBe('Medium');
+
+      expect(calls).toContain('Network.getAllCookies');
+      expect(calls).not.toContain('Network.getCookies');
+    } finally {
+      cookieInject.setCdpClientForTesting(null);
+      browserApi.setCdpPortForTesting(profileId, null);
+      db.prepare('UPDATE profiles SET status = ? WHERE id = ?').run('stopped', profileId);
+    }
+  });
+
+  it('GET /api/cookies/:profileId/export returns only queue records for a stopped profile', async () => {
+    const res = await request('GET', `/api/cookies/${profileId}/export?format=json`);
+    expect(res.status).toBe(200);
+    expect(Array.isArray(res.body)).toBe(true);
+    // Не применённые импортированные cookies остаются в очереди.
+    expect(res.body).toHaveLength(2);
+  });
+
   it('DELETE /api/cookies/:profileId clears cookies', async () => {
     const res = await request('DELETE', `/api/cookies/${profileId}`);
     expect(res.status).toBe(204);
     const check = await request('GET', `/api/cookies/${profileId}`);
     expect(check.body.length).toBe(0);
+  });
+
+  it('GET /api/cookies/:profileId/export returns [] for an empty queue', async () => {
+    const res = await request('GET', `/api/cookies/${profileId}/export?format=json`);
+    expect(res.status).toBe(200);
+    expect(res.body).toEqual([]);
   });
 });
 

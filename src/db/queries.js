@@ -269,6 +269,7 @@ function createCookieQueries(db) {
 
   const getByProfileId = db.prepare('SELECT * FROM cookies WHERE profile_id = ?');
   const deleteByProfileId = db.prepare('DELETE FROM cookies WHERE profile_id = ?');
+  const deleteById = db.prepare('DELETE FROM cookies WHERE profile_id = ? AND id = ?');
 
   return {
     import(profileId, cookies) {
@@ -296,6 +297,17 @@ function createCookieQueries(db) {
 
     deleteByProfileId(profileId) {
       return deleteByProfileId.run(profileId);
+    },
+
+    deleteByIds(profileId, ids) {
+      if (!Array.isArray(ids) || ids.length === 0) return { changes: 0 };
+      const tx = db.transaction((items) => {
+        for (const id of items) {
+          deleteById.run(profileId, id);
+        }
+      });
+      tx(ids);
+      return { changes: ids.length };
     },
   };
 }

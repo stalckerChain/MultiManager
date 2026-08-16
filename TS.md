@@ -154,7 +154,8 @@ GUI передаёт порт бэкенду через **env-переменну
 
 ### 4.3. Управление куки (Cookie Import/Export) ✅ РЕАЛИЗОВАНО (частично — GUI)
 - `GET|POST|DELETE /api/cookies/:profileId`, экспорт в JSON/Netscape. ✅ `src/api/cookies.js`, `src/cookie/inject.js`
-- Инжекция в `--user-data-dir` профиля перед запуском. ✅ `src/api/browser.js:289`
+- Таблица `cookies` — очередь одноразового импорта. Применение после запуска профиля через CDP `Network.setCookies` на browser-level WebSocket (без `sessionId`); подтверждение через `Network.getAllCookies` по ключу `(domain, path, name)` без сравнения `value`; удаляются только подтверждённые записи по snapshot DB `id`; при ошибке записи сохраняются для повтора. Файл `Default/Cookies` не читается и не перезаписывается. ✅ `src/cookie/inject.js`, `src/api/browser.js:651-654`
+- Экспорт запущенного профиля — актуальные cookies через CDP `Network.getAllCookies`; остановленного — только оставшиеся в очереди записи. ✅ `src/api/cookies.js:63-108`
 
 ### 4.4. Логика синхронизатора (Multi-Control) v0.16.0 ✅ РЕАЛИЗОВАНО
 - CDP-синтез мыши/скролла + Native OS hooks (WH_KEYBOARD_LL) как единственный источник клавиатуры (v0.16.0: CDP-клавиатура удалена, double dispatch устранён). ✅ `src/multi-control/`, `src/os-input/native-hooks/`

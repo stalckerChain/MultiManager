@@ -370,6 +370,62 @@ describe('Browser — async spawn retry and CDP-ready transition (source-level)'
   });
 });
 
+// --- Source-level tests: CDP cookie injection lifecycle ---
+
+describe('Browser — CDP cookie injection after launch (source-level)', () => {
+  const content = readFileSync(BROWSER_JS, 'utf-8');
+
+  it('no longer imports or calls file-based injectCookies', () => {
+    expect(content).not.toContain('injectCookies');
+  });
+
+  it('applies cookies via CDP after the running state is set', () => {
+    const applyIdx = content.indexOf('await applyProfileCookies(req.params.id, cdpPort');
+    const runningIdx = content.indexOf("profileQueries.updateStatus(req.params.id, 'running')");
+    const broadcastIdx = content.indexOf("broadcastStatus(req.params.id, 'running', child.pid)");
+    expect(applyIdx).toBeGreaterThan(-1);
+    expect(runningIdx).toBeGreaterThan(-1);
+    expect(applyIdx).toBeGreaterThan(runningIdx);
+    expect(applyIdx).toBeGreaterThan(broadcastIdx);
+  });
+
+  it('applies cookies before extension loading and manual autologin', () => {
+    const applyIdx = content.indexOf('await applyProfileCookies(req.params.id, cdpPort');
+    const extIdx = content.indexOf('await loadExtensionsViaCDP(req.params.id, runId, enabledExtPaths');
+    const autologinIdx = content.indexOf('await runManualAutologin(req.params.id, profile, cdpPort');
+    expect(applyIdx).toBeGreaterThan(-1);
+    expect(extIdx).toBeGreaterThan(-1);
+    expect(autologinIdx).toBeGreaterThan(-1);
+    expect(applyIdx).toBeLessThan(extIdx);
+    expect(applyIdx).toBeLessThan(autologinIdx);
+  });
+
+  it('applyProfileCookies is non-fatal: wraps CDP error and never transitions to stopped', () => {
+    const block = content.slice(
+      content.indexOf('async function applyProfileCookies'),
+      content.indexOf('// Автологин кошелька при ручном запуске профиля')
+    );
+    expect(block).toContain('try {');
+    expect(block).toContain('} catch (err) {');
+    expect(block).not.toContain("updateStatus(profileId, 'stopped')");
+    expect(block).not.toContain('updateStatus(');
+  });
+
+  it('logs only safe metadata during CDP injection (no cookie values)', () => {
+    const block = content.slice(
+      content.indexOf('async function applyProfileCookies'),
+      content.indexOf('// Автологин кошелька при ручном запуске профиля')
+    );
+    expect(block).not.toMatch(/\.value/);
+    expect(block).toContain('cookieCount');
+  });
+
+  it('exports getProfileCookiesViaCdp and the CDP injection helper', () => {
+    expect(content).toMatch(/module\.exports\.applyProfileCookies\s*=\s*applyProfileCookies/);
+    expect(content).toMatch(/module\.exports\.getProfileCookiesViaCdp\s*=\s*getProfileCookiesViaCdp/);
+  });
+});
+
 // --- Functional harness: spawn retry state machine ---
 
 function createHarnessChild(pid) {

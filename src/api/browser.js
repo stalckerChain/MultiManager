@@ -5,7 +5,6 @@ const fs = require('fs');
 const path = require('path');
 const { getDatabase, createProfileQueries, createProxyQueries, createLogQueries } = require('../db');
 const { checkProxy, rotateProxy, getTimezoneByIp } = require('../proxy');
-const { injectCookies } = require('../cookie/inject');
 const { getBrowserDataDir, getExtensionsFromProfileDir } = require('../core/profile-path');
 const { logger, createProfileLogger, appendRunStage, resolveRunLogPath } = require('../logger');
 const { broadcastStatus } = require('../core/websocket');
@@ -40,6 +39,13 @@ let extensionsApi = originalExtensionsApi;
 
 function setExtensionsApiForTesting(mod) {
   extensionsApi = mod == null ? originalExtensionsApi : mod;
+}
+
+const originalCookieInject = require('../cookie/inject');
+let cookieInject = originalCookieInject;
+
+function setCookieInjectForTesting(mod) {
+  cookieInject = mod == null ? originalCookieInject : mod;
 }
 
 function toPSEncoded(script) {
@@ -174,6 +180,20 @@ function tryParseJson(json) {
 
 function getCdpPort(profileId) {
   return cdpPorts.get(profileId) || null;
+}
+
+function setCdpPortForTesting(profileId, port) {
+  if (port == null) cdpPorts.delete(profileId);
+  else cdpPorts.set(profileId, port);
+}
+
+// Получить актуальные cookies запущенного профиля через CDP
+// Network.getAllCookies. Для остановленного профиля (без CDP-порта) возвращает
+// null — вызывающий код использует таблицу cookies как fallback.
+async function getProfileCookiesViaCdp(profileId) {
+  const port = getCdpPort(profileId);
+  if (!port) return null;
+  return cookieInject.getCookiesFromCdp(port);
 }
 
 async function getBrowserPath() {
@@ -498,9 +518,6 @@ router.post('/:id/start', asyncHandler(async (req, res) => {
     return res.status(400).json({ error: `External profile directory not found: ${userDataDir}`, code: 'PROFILE_DIR_NOT_FOUND' });
   }
 
-  injectCookies(req.params.id);
-  profileLogger.info({ profileId: req.params.id, profileDir: userDataDir }, 'Куки инжектированы');
-
   const args = [
     '--remote-debugging-port=0',
     '--fingerprint=' + profile.fingerprint_seed,
@@ -630,6 +647,11 @@ router.post('/:id/start', asyncHandler(async (req, res) => {
   // При ручном запуске run_id = null — этапы CDP не дублируются в run-лог и
   // выполняется ручной preflight с автологином кошелька.
   const runId = req.body?.run_id || req.query?.run_id || null;
+
+  // Применяем импортированные cookies через CDP (browser-level WebSocket без
+  // sessionId) после готовности CDP и до загрузки расширений/автологина.
+  // Ошибка инъекции не останавливает браузер.
+  await applyProfileCookies(req.params.id, cdpPort, profileLogger, logQueries);
 
   if (enabledExtPaths.length > 0) {
     try {
@@ -870,6 +892,26 @@ async function waitForSelectorHidden(ws, sessionId, selector, timeout = 10000) {
   throw new Error(`Timeout waiting for selector to hide: ${selector}`);
 }
 
+// Применение импортированных cookies через CDP после готовности браузера.
+//
+// Ошибка инъекции не останавливает запуск: она логируется в профильный лог и
+// в обычный logQueries только безопасными данными — profileId, количество
+// cookies и текст ошибки, без значений cookies.
+async function applyProfileCookies(profileId, cdpPort, profileLogger, logQueries) {
+  try {
+    const applied = await cookieInject.applyCookiesToCdp(profileId, cdpPort);
+    if (applied > 0) {
+      logQueries.add(profileId, 'info', `Применено cookies через CDP: ${applied}`);
+      profileLogger.info({ profileId, cookieCount: applied }, 'Cookies применены через CDP');
+    }
+    return applied;
+  } catch (err) {
+    logQueries.add(profileId, 'warn', `Ошибка применения cookies через CDP: ${err.message}`);
+    profileLogger.warn({ profileId, error: err.message }, 'Ошибка применения cookies через CDP');
+    return 0;
+  }
+}
+
 // Автологин кошелька при ручном запуске профиля (POST /api/browser/:id/start без run_id).
 //
 // - Ручной запуск определяется по отсутствию run_id в body/query; automation
@@ -1104,7 +1146,11 @@ module.exports = router;
 module.exports.getCdpPort = getCdpPort;
 module.exports.createCdpSession = createCdpSession;
 module.exports.getProfileWindows = () => profileWindows;
+module.exports.applyProfileCookies = applyProfileCookies;
+module.exports.getProfileCookiesViaCdp = getProfileCookiesViaCdp;
 module.exports.runManualAutologin = runManualAutologin;
 module.exports.setProfileTabsForTesting = setProfileTabsForTesting;
 module.exports.setCdpClientForTesting = setCdpClientForTesting;
 module.exports.setExtensionsApiForTesting = setExtensionsApiForTesting;
+module.exports.setCookieInjectForTesting = setCookieInjectForTesting;
+module.exports.setCdpPortForTesting = setCdpPortForTesting;

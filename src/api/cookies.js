@@ -3,8 +3,9 @@ const path = require('path');
 const os = require('os');
 const fs = require('fs');
 const { getDatabase, createCookieQueries, createProfileQueries } = require('../db');
-const { parseJsonCookies, parseNetscapeCookies, exportCookiesToJson } = require('../cookie');
+const { parseJsonCookies, parseNetscapeCookies } = require('../cookie');
 const { validate, cookieImportSchema } = require('./validate');
+const { getProfileCookiesViaCdp } = require('./browser');
 
 const router = express.Router();
 
@@ -59,7 +60,7 @@ router.post('/:profileId/import', validate(cookieImportSchema), async (req, res)
   res.json({ count: cookies.length });
 });
 
-router.get('/:profileId/export', (req, res) => {
+router.get('/:profileId/export', async (req, res) => {
   const db = getDatabase();
   const profileQueries = createProfileQueries(db);
   const cookieQueries = createCookieQueries(db);
@@ -70,7 +71,21 @@ router.get('/:profileId/export', (req, res) => {
   }
 
   const { format } = req.query;
-  const cookies = cookieQueries.getByProfileId(req.params.profileId);
+
+  // Таблица cookies — очередь одноразового импорта: уже применённые cookies
+  // находятся только в нативном хранилище Chromium. Для запущенного профиля
+  // берём актуальные cookies через CDP Network.getAllCookies; для остановленного
+  // возвращаем только оставшиеся в очереди записи.
+  let cookies;
+  if (profile.status === 'running') {
+    try {
+      cookies = (await getProfileCookiesViaCdp(req.params.profileId)) || [];
+    } catch (err) {
+      return res.status(502).json({ error: 'Ошибка получения cookies через CDP', details: err.message });
+    }
+  } else {
+    cookies = cookieQueries.getByProfileId(req.params.profileId);
+  }
 
   if (format === 'netscape') {
     const lines = cookies.map(c => {

@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeAll, afterAll } from 'vitest';
+import { describe, it, expect, vi, beforeAll, afterAll } from 'vitest';
 import path from 'path';
 import fs from 'fs';
 import os from 'os';
@@ -10,28 +10,7 @@ import { getBrowserDataDir } from '../../src/core/profile-path';
 import { createProfileLogger, getAppDir } from '../../src/logger';
 import * as cdp from '../../src/cdp/client';
 import * as profileTabs from '../../src/cdp/profile-tabs';
-
-function cookiesToNetscape(cookies) {
-  const lines = ['# Netscape HTTP Cookie File'];
-  for (const c of cookies) {
-    lines.push([
-      c.domain,
-      c.http_only ? 'TRUE' : 'FALSE',
-      c.path || '/',
-      c.secure ? 'TRUE' : 'FALSE',
-      c.expires || 0,
-      c.name,
-      c.value,
-    ].join('\t'));
-  }
-  return lines.join('\n');
-}
-
-function ensureDir(dir) {
-  if (!fs.existsSync(dir)) {
-    fs.mkdirSync(dir, { recursive: true });
-  }
-}
+import * as cookieInject from '../../src/cookie/inject';
 
 let db;
 let profileQueries;
@@ -86,23 +65,57 @@ describe('Profile Launch Flow', () => {
     expect(savedCookies.length).toBe(3);
   });
 
-  it('injects cookies into profile directory', () => {
-    const cookies = cookieQueries.getByProfileId(profile.id);
-    expect(cookies.length).toBe(3);
+  it('не создаёт Netscape-файл Default/Cookies и удаляет подтверждённые записи из очереди', async () => {
+    const imported = cookieQueries.getByProfileId(profile.id);
+    expect(imported.length).toBe(3);
 
     const userDataDir = getBrowserDataDir(profile);
-    ensureDir(path.join(userDataDir, 'Default'));
-
     const cookieFile = path.join(userDataDir, 'Default', 'Cookies');
-    fs.writeFileSync(cookieFile, cookiesToNetscape(cookies), 'utf-8');
 
-    expect(fs.existsSync(cookieFile)).toBe(true);
-
-    const content = fs.readFileSync(cookieFile, 'utf-8');
-    const lines = content.split('\n').filter(l => l && !l.startsWith('#'));
-    expect(lines.length).toBe(3);
-    expect(content).toContain('.example.com');
-    expect(content).toContain('session_id');
+    const fakeWs = { close: vi.fn() };
+    const fakeCdp = {
+      discoverWsUrl: vi.fn().mockResolvedValue('ws://127.0.0.1:9222/devtools/browser'),
+      connect: vi.fn().mockResolvedValue(fakeWs),
+      call: vi.fn(async (ws, method) => {
+        if (method === 'Network.setCookies') return {};
+        if (method === 'Network.getAllCookies') {
+          // Chromium подтверждает по ключу (domain, path, name); value может
+          // быть нормализовано.
+          return {
+            cookies: imported.map(c => ({
+              name: c.name,
+              value: `normalized-${c.value}`,
+              domain: c.domain,
+              path: c.path || '/',
+              expires: c.expires,
+              httpOnly: c.http_only === 1,
+              secure: c.secure === 1,
+              sameSite: c.same_site,
+            })),
+          };
+        }
+        return {};
+      }),
+    };
+    cookieInject.setCdpClientForTesting(fakeCdp);
+    cookieInject.setDatabaseForTesting(db);
+    try {
+      const applied = await cookieInject.applyCookiesToCdp(profile.id, 9222);
+      expect(applied).toBe(3);
+      expect(fakeCdp.call).toHaveBeenCalledWith(
+        fakeWs,
+        'Network.setCookies',
+        expect.objectContaining({ cookies: expect.any(Array) })
+      );
+      expect(fakeCdp.call).toHaveBeenCalledWith(fakeWs, 'Network.getAllCookies');
+      // Chromium-хранилище cookies не трогается файловой записью.
+      expect(fs.existsSync(cookieFile)).toBe(false);
+      // Подтверждённые записи удалены из очереди.
+      expect(cookieQueries.getByProfileId(profile.id)).toHaveLength(0);
+    } finally {
+      cookieInject.setCdpClientForTesting(null);
+      cookieInject.setDatabaseForTesting(null);
+    }
   });
 
   it('creates profile logger writing to file', async () => {
@@ -329,4 +342,53 @@ describe.skipIf(!isCloakOptIn)('CloakBrowser real lifecycle (opt-in: CLOAKBROWSE
       checkWs.close();
     }
   }, 30000);
+
+  it('Network.setCookies → Network.getAllCookies в default browser context', async () => {
+    const ws = await cdp.connect(await cdp.discoverWsUrl(cdpPort));
+    try {
+      await cdp.call(ws, 'Network.setCookies', {
+        cookies: [{
+          name: 'mm_cdp_test',
+          value: 'mm_cdp_val',
+          domain: '.example.com',
+          path: '/',
+          httpOnly: true,
+          secure: true,
+          sameSite: 'Lax',
+          expires: Math.floor(Date.now() / 1000) + 86400,
+        }],
+      });
+
+      const { cookies } = await cdp.call(ws, 'Network.getAllCookies');
+      const found = cookies.find(c => c.name === 'mm_cdp_test');
+      expect(found).toBeTruthy();
+      expect(found.value).toBe('mm_cdp_val');
+      expect(found.httpOnly).toBe(true);
+      expect(found.secure).toBe(true);
+      expect(found.sameSite).toBe('Lax');
+    } finally {
+      ws.close();
+    }
+  }, 30000);
+
+  it('cookies сохраняются между остановкой и повторным запуском (persistent storage)', async () => {
+    // Останавливаем браузер и перезапускаем с тем же user-data-dir.
+    await stopCloakBrowser(child);
+    child = null;
+
+    const relaunched = await launchCloakBrowser(browserPath, userDataDir);
+    child = relaunched.child;
+    cdpPort = relaunched.cdpPort;
+    expect(isProcessAlive(child.pid)).toBe(true);
+
+    const checkWs = await cdp.connect(await cdp.discoverWsUrl(cdpPort));
+    try {
+      const { cookies } = await cdp.call(checkWs, 'Network.getAllCookies');
+      const found = cookies.find(c => c.name === 'mm_cdp_test');
+      expect(found).toBeTruthy();
+      expect(found.value).toBe('mm_cdp_val');
+    } finally {
+      checkWs.close();
+    }
+  }, 60000);
 });
