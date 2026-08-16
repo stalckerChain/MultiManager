@@ -1,6 +1,14 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
+import { readFileSync } from 'fs';
+import { EventEmitter } from 'node:events';
 
-const SHUTDOWN_TIMEOUT_MS = 8000;
+import * as browserApi from '../../src/api/browser.js';
+
+const BROWSER_JS = new URL('../../src/api/browser.js', import.meta.url);
+
+const CDP_CLOSE_TIMEOUT_MS = 2000;
+const PROCESS_EXIT_TIMEOUT_MS = 8000;
+const WINDOWS_SIGNAL_WAIT_MS = 2500;
 
 function createMockChild(pid = 1234) {
   const listeners = {};
@@ -39,6 +47,44 @@ function createMockProfileLogger() {
   };
 }
 
+// Реальный EventEmitter-ребёнок с pid: даёт once/removeListener, как у
+// ChildProcess, и позволяет эмитить exit.
+function createEmitterChild(pid) {
+  const child = new EventEmitter();
+  child.pid = pid;
+  return child;
+}
+
+function flushMicrotasks() {
+  return new Promise((resolve) => setImmediate(resolve));
+}
+
+let cdpMock;
+let taskkillMock;
+
+beforeEach(() => {
+  cdpMock = {
+    discoverWsUrl: vi.fn(),
+    connect: vi.fn(),
+    send: vi.fn(),
+    call: vi.fn(),
+  };
+  taskkillMock = vi.fn().mockResolvedValue(null);
+  browserApi.setCdpClientForTesting(cdpMock);
+  browserApi.setTaskkillForTesting(taskkillMock);
+  vi.spyOn(process, 'platform', 'get').mockReturnValue('win32');
+  vi.spyOn(process, 'kill').mockReturnValue(true);
+});
+
+afterEach(() => {
+  vi.useRealTimers();
+  vi.restoreAllMocks();
+  browserApi.setCdpClientForTesting(null);
+  browserApi.setTaskkillForTesting(null);
+  browserApi.setCdpPortForTesting('p1', null);
+  browserApi.stoppingProfiles.clear();
+});
+
 function isProcessAlive(pid) {
   if (!pid || pid <= 0) return false;
   try {
@@ -47,42 +93,6 @@ function isProcessAlive(pid) {
   } catch (e) {
     return e.code === 'EPERM';
   }
-}
-
-async function gracefulCloseBrowser(child, profileId, profileLogger, logQueries) {
-  return new Promise((resolve) => {
-    let resolved = false;
-    const done = () => {
-      if (!resolved) {
-        resolved = true;
-        resolve();
-      }
-    };
-
-    const timer = setTimeout(() => {
-      logQueries.add(profileId, 'warn', 'Graceful shutdown timeout, force killing');
-      child.kill('SIGKILL', (err) => {
-        if (err) logQueries.add(profileId, 'warn', `Force kill failed: ${err.message}`);
-        done();
-      });
-    }, SHUTDOWN_TIMEOUT_MS);
-
-    child.on('exit', () => {
-      clearTimeout(timer);
-      done();
-    });
-
-    child.kill('SIGTERM', (err) => {
-      if (err) {
-        clearTimeout(timer);
-        logQueries.add(profileId, 'warn', `SIGTERM failed (process may be dead): ${err.message}`);
-        child.kill('SIGKILL', (err2) => {
-          if (err2) logQueries.add(profileId, 'warn', `SIGKILL failed (process may be dead): ${err2.message}`);
-          done();
-        });
-      }
-    });
-  });
 }
 
 function cleanupProfile(profileId, profileQueries, logQueries, profileLogger, runningProfiles, profileWindows, cdpPorts, broadcastStatus) {
@@ -115,119 +125,262 @@ function startHealthCheck(runningProfiles, isProcessAliveFn, cleanupFn, interval
   return timer;
 }
 
-describe('Browser — graceful shutdown', () => {
-  it('gracefulCloseBrowser завершает процесс через SIGTERM', async () => {
-    const child = createMockChild(111);
+describe('Browser — graceful shutdown через CDP (реальная логика)', () => {
+  it('Browser.close вызывается первым и до сигнального fallback, WebSocket закрыт', async () => {
+    const ws = { close: vi.fn() };
+    cdpMock.discoverWsUrl.mockResolvedValue('ws://127.0.0.1:9222/devtools/browser');
+    cdpMock.connect.mockResolvedValue(ws);
+    browserApi.setCdpPortForTesting('p1', 9222);
+
+    const child = createEmitterChild(7777);
     const profileLogger = createMockProfileLogger();
     const logQueries = createMockLogQueries();
 
-    const closePromise = gracefulCloseBrowser(child, 'p1', profileLogger, logQueries);
+    const closePromise = browserApi.gracefulCloseBrowser(child, 'p1', profileLogger, logQueries);
+    await flushMicrotasks();
+
+    expect(cdpMock.discoverWsUrl).toHaveBeenCalledWith(9222);
+    expect(cdpMock.connect).toHaveBeenCalledWith('ws://127.0.0.1:9222/devtools/browser', { timeout: CDP_CLOSE_TIMEOUT_MS });
+    expect(cdpMock.send).toHaveBeenCalledWith(ws, 'Browser.close');
+    expect(ws.close).toHaveBeenCalled();
 
     child.emit('exit');
     await closePromise;
 
-    expect(child.kill).toHaveBeenCalledWith('SIGTERM', expect.any(Function));
-    expect(logQueries.add).not.toHaveBeenCalledWith('p1', 'warn', expect.stringContaining('timeout'));
+    expect(taskkillMock).not.toHaveBeenCalled();
+    expect(logQueries.add).not.toHaveBeenCalledWith('p1', 'warn', expect.stringContaining('did not exit'));
+    expect(browserApi.stoppingProfiles.has('p1')).toBe(false);
   });
 
-  it('gracefulCloseBrowser делает SIGKILL при ошибке SIGTERM', async () => {
-    const child = createMockChild(222);
-    child.kill = vi.fn((signal, cb) => {
-      if (signal === 'SIGTERM') {
-        cb(new Error('kill failed'));
-      } else if (signal === 'SIGKILL') {
-        cb(null);
-      }
-    });
+  it('завершается по событию exit без сигналов и без fallback', async () => {
+    const child = createEmitterChild(8888);
     const profileLogger = createMockProfileLogger();
     const logQueries = createMockLogQueries();
 
-    const closePromise = gracefulCloseBrowser(child, 'p2', profileLogger, logQueries);
+    const closePromise = browserApi.gracefulCloseBrowser(child, 'p1', profileLogger, logQueries);
+    await flushMicrotasks();
+
+    expect(cdpMock.connect).not.toHaveBeenCalled();
+    expect(taskkillMock).not.toHaveBeenCalled();
+
+    child.emit('exit');
     await closePromise;
 
-    expect(child.kill).toHaveBeenCalledWith('SIGKILL', expect.any(Function));
-    expect(logQueries.add).toHaveBeenCalledWith('p2', 'warn', expect.stringContaining('SIGTERM failed'));
+    expect(taskkillMock).not.toHaveBeenCalled();
+    expect(logQueries.add).not.toHaveBeenCalledWith('p1', 'warn', expect.stringContaining('did not exit'));
   });
 
-  it('gracefulCloseBrowser логирует timeout при превышении лимита', async () => {
-    const child = createMockChild(333);
-    child.kill = vi.fn((signal, cb) => {
-      if (signal === 'SIGKILL') cb(null);
-    });
+  it('fallback при отсутствии CDP-порта: CDP не трогается, процесс завершается по exit', async () => {
+    const child = createEmitterChild(9999);
     const profileLogger = createMockProfileLogger();
     const logQueries = createMockLogQueries();
 
+    const closePromise = browserApi.gracefulCloseBrowser(child, 'p1', profileLogger, logQueries);
+    await flushMicrotasks();
+
+    expect(cdpMock.discoverWsUrl).not.toHaveBeenCalled();
+    expect(cdpMock.connect).not.toHaveBeenCalled();
+
+    child.emit('exit');
+    await closePromise;
+  });
+
+  it('не логирует как warning ожидаемое сообщение «WebSocket was closed» после Browser.close', async () => {
+    const ws = { close: vi.fn() };
+    cdpMock.discoverWsUrl.mockResolvedValue('ws://127.0.0.1:9222/devtools/browser');
+    cdpMock.connect.mockResolvedValue(ws);
+    cdpMock.send.mockImplementation(() => {
+      throw new Error('WebSocket was closed before the connection was established');
+    });
+    browserApi.setCdpPortForTesting('p1', 9222);
+
+    const child = createEmitterChild(1111);
+    const profileLogger = createMockProfileLogger();
+    const logQueries = createMockLogQueries();
+
+    const closePromise = browserApi.gracefulCloseBrowser(child, 'p1', profileLogger, logQueries);
+    await flushMicrotasks();
+    child.emit('exit');
+    await closePromise;
+
+    expect(ws.close).toHaveBeenCalled();
+    expect(logQueries.add).not.toHaveBeenCalledWith('p1', 'warn', expect.stringContaining('CDP Browser.close failed'));
+    expect(profileLogger.warn).not.toHaveBeenCalled();
+  });
+
+  it('не логирует как warning ожидаемое сообщение «Connection closed» после Browser.close', async () => {
+    const ws = { close: vi.fn() };
+    cdpMock.discoverWsUrl.mockResolvedValue('ws://127.0.0.1:9222/devtools/browser');
+    cdpMock.connect.mockResolvedValue(ws);
+    cdpMock.send.mockImplementation(() => {
+      throw new Error('Connection closed');
+    });
+    browserApi.setCdpPortForTesting('p1', 9222);
+
+    const child = createEmitterChild(2222);
+    const profileLogger = createMockProfileLogger();
+    const logQueries = createMockLogQueries();
+
+    const closePromise = browserApi.gracefulCloseBrowser(child, 'p1', profileLogger, logQueries);
+    await flushMicrotasks();
+    child.emit('exit');
+    await closePromise;
+
+    expect(ws.close).toHaveBeenCalled();
+    expect(logQueries.add).not.toHaveBeenCalledWith('p1', 'warn', expect.stringContaining('CDP Browser.close failed'));
+  });
+
+  it('логирует настоящую ошибку подключения/отправки CDP и продолжает fallback', async () => {
+    cdpMock.discoverWsUrl.mockResolvedValue('ws://127.0.0.1:9222/devtools/browser');
+    cdpMock.connect.mockRejectedValue(new Error('ECONNREFUSED 127.0.0.1:9222'));
+    browserApi.setCdpPortForTesting('p1', 9222);
+
+    const child = createEmitterChild(3333);
+    const profileLogger = createMockProfileLogger();
+    const logQueries = createMockLogQueries();
+
+    const closePromise = browserApi.gracefulCloseBrowser(child, 'p1', profileLogger, logQueries);
+    await flushMicrotasks();
+    child.emit('exit');
+    await closePromise;
+
+    expect(logQueries.add).toHaveBeenCalledWith('p1', 'warn', 'CDP Browser.close failed: ECONNREFUSED 127.0.0.1:9222');
+    expect(profileLogger.warn).toHaveBeenCalledWith(
+      { profileId: 'p1', error: 'ECONNREFUSED 127.0.0.1:9222' },
+      'CDP Browser.close failed'
+    );
+    expect(taskkillMock).not.toHaveBeenCalled();
+  });
+
+  it('таймаут ожидания exit (8 сек) → graceful taskkill без /F → force taskkill с /F', async () => {
     vi.useFakeTimers();
-    const closePromise = gracefulCloseBrowser(child, 'p3', profileLogger, logQueries);
-
-    vi.advanceTimersByTime(SHUTDOWN_TIMEOUT_MS + 100);
-    await closePromise;
-    vi.useRealTimers();
-
-    expect(logQueries.add).toHaveBeenCalledWith('p3', 'warn', 'Graceful shutdown timeout, force killing');
-  });
-
-  it('gracefulCloseBrowser логирует ошибку SIGKILL в таймауте', async () => {
-    const child = createMockChild(333);
-    child.kill = vi.fn((signal, cb) => {
-      if (signal === 'SIGKILL') cb(new Error('process not found'));
-    });
+    const child = createEmitterChild(4444);
     const profileLogger = createMockProfileLogger();
     const logQueries = createMockLogQueries();
 
+    const closePromise = browserApi.gracefulCloseBrowser(child, 'p1', profileLogger, logQueries);
+
+    await vi.advanceTimersByTimeAsync(PROCESS_EXIT_TIMEOUT_MS - 1);
+    expect(taskkillMock).not.toHaveBeenCalled();
+    expect(logQueries.add).not.toHaveBeenCalledWith('p1', 'warn', expect.stringContaining('did not exit'));
+
+    await vi.advanceTimersByTimeAsync(1);
+    expect(logQueries.add).toHaveBeenCalledWith('p1', 'warn', expect.stringContaining('did not exit'));
+    expect(taskkillMock).toHaveBeenCalledWith(child.pid, false);
+
+    await vi.advanceTimersByTimeAsync(WINDOWS_SIGNAL_WAIT_MS - 1);
+    expect(taskkillMock).toHaveBeenCalledTimes(1);
+
+    await vi.advanceTimersByTimeAsync(1);
+    expect(taskkillMock).toHaveBeenCalledWith(child.pid, true);
+    expect(taskkillMock).toHaveBeenCalledTimes(2);
+
+    await closePromise;
+    expect(browserApi.stoppingProfiles.has('p1')).toBe(false);
+  });
+
+  it('полный Windows-flow: CDP → ожидание → graceful → force, Browser.close раньше сигналов', async () => {
     vi.useFakeTimers();
-    const closePromise = gracefulCloseBrowser(child, 'p3', profileLogger, logQueries);
+    const ws = { close: vi.fn() };
+    cdpMock.discoverWsUrl.mockResolvedValue('ws://127.0.0.1:9333/devtools/browser');
+    cdpMock.connect.mockResolvedValue(ws);
+    browserApi.setCdpPortForTesting('p1', 9333);
 
-    vi.advanceTimersByTime(SHUTDOWN_TIMEOUT_MS + 100);
-    await closePromise;
-    vi.useRealTimers();
-
-    expect(logQueries.add).toHaveBeenCalledWith('p3', 'warn', expect.stringContaining('Force kill failed'));
-  });
-
-  it('gracefulCloseBrowser логирует ошибку SIGKILL после неудачного SIGTERM', async () => {
-    const child = createMockChild(444);
-    child.kill = vi.fn((signal, cb) => {
-      if (signal === 'SIGTERM') cb(new Error('process not found'));
-      else if (signal === 'SIGKILL') cb(new Error('also dead'));
-    });
+    const child = createEmitterChild(5555);
     const profileLogger = createMockProfileLogger();
     const logQueries = createMockLogQueries();
 
-    const closePromise = gracefulCloseBrowser(child, 'p4', profileLogger, logQueries);
+    const closePromise = browserApi.gracefulCloseBrowser(child, 'p1', profileLogger, logQueries);
+
+    await vi.advanceTimersByTimeAsync(PROCESS_EXIT_TIMEOUT_MS + WINDOWS_SIGNAL_WAIT_MS + 100);
     await closePromise;
 
-    expect(logQueries.add).toHaveBeenCalledWith('p4', 'warn', expect.stringContaining('SIGTERM failed'));
-    expect(logQueries.add).toHaveBeenCalledWith('p4', 'warn', expect.stringContaining('SIGKILL failed'));
+    expect(cdpMock.send).toHaveBeenCalledWith(ws, 'Browser.close');
+    expect(cdpMock.send.mock.invocationCallOrder[0])
+      .toBeLessThan(taskkillMock.mock.invocationCallOrder[0]);
+    expect(taskkillMock).toHaveBeenNthCalledWith(1, child.pid, false);
+    expect(taskkillMock).toHaveBeenNthCalledWith(2, child.pid, true);
+    expect(ws.close).toHaveBeenCalled();
   });
 
-  it('runningProfiles хранит запущенные процессы', () => {
-    const runningProfiles = new Map();
-    const child = createMockChild(444);
-    runningProfiles.set('p4', child);
+  it('второй stop-запрос во время первого shutdown не запускает повторное завершение', async () => {
+    vi.useFakeTimers();
+    const child1 = createEmitterChild(6666);
+    const child2 = createEmitterChild(7777);
+    const logger1 = createMockProfileLogger();
+    const lq1 = createMockLogQueries();
+    const logger2 = createMockProfileLogger();
+    const lq2 = createMockLogQueries();
 
-    expect(runningProfiles.has('p4')).toBe(true);
-    expect(runningProfiles.get('p4').pid).toBe(444);
+    const first = browserApi.gracefulCloseBrowser(child1, 'p1', logger1, lq1);
+    const second = browserApi.gracefulCloseBrowser(child2, 'p1', logger2, lq2);
+    await second;
+
+    expect(lq2.add).toHaveBeenCalledWith('p1', 'warn', 'Shutdown already in progress for this profile');
+    expect(taskkillMock).not.toHaveBeenCalled();
+    expect(cdpMock.connect).not.toHaveBeenCalled();
+
+    child1.emit('exit');
+    await first;
+    expect(browserApi.stoppingProfiles.has('p1')).toBe(false);
+  });
+});
+
+describe('Browser — graceful shutdown платформенные команды (source-level)', () => {
+  const content = readFileSync(BROWSER_JS, 'utf-8');
+  const shutdownBlock = content.slice(
+    content.indexOf('async function gracefulCloseBrowser'),
+    content.indexOf('async function createCdpSession')
+  );
+  const taskkillBlock = content.slice(
+    content.indexOf('function defaultTaskkill'),
+    content.indexOf('let taskkillFn')
+  );
+
+  it('Unix-ветка использует tree-kill: SIGTERM (graceful) до SIGKILL (force)', () => {
+    expect(shutdownBlock).toContain("sendUnixSignal(pid, 'SIGTERM'");
+    expect(shutdownBlock).toContain("sendUnixSignal(pid, 'SIGKILL'");
+    expect(shutdownBlock.indexOf("'SIGTERM'")).toBeLessThan(shutdownBlock.indexOf("'SIGKILL'"));
+    expect(shutdownBlock.indexOf('Browser.close')).toBeLessThan(shutdownBlock.indexOf("'SIGTERM'"));
   });
 
-  it('runningProfiles очищается после shutdown', () => {
-    const runningProfiles = new Map();
-    runningProfiles.set('p1', createMockChild(1));
-    runningProfiles.set('p2', createMockChild(2));
-
-    runningProfiles.clear();
-
-    expect(runningProfiles.size).toBe(0);
+  it('Windows-ветка: graceful taskkill /T без /F, force taskkill /T /F', () => {
+    expect(shutdownBlock).toContain('runWindowsTaskkill(pid, false,');
+    expect(shutdownBlock).toContain('runWindowsTaskkill(pid, true,');
   });
 
-  it('profileWindows очищается после shutdown', () => {
-    const profileWindows = new Map();
-    profileWindows.set('p1', { pid: 1, handle: '123' });
-    profileWindows.set('p2', { pid: 2, handle: '456' });
+  it('defaultTaskkill собирает безопасную команду taskkill через spawn с числовым PID', () => {
+    expect(taskkillBlock).toContain("spawn('taskkill', ['/PID', String(pid), '/T']");
+    expect(taskkillBlock).toContain("force ? ['/F'] : []");
+  });
 
-    profileWindows.clear();
+  it('отдельные таймауты фаз: CDP 2 сек, exit 8 сек, signal fallback 5 сек', () => {
+    expect(content).toContain('const CDP_CLOSE_TIMEOUT_MS = 2000;');
+    expect(content).toContain('const PROCESS_EXIT_TIMEOUT_MS = 8000;');
+    expect(content).toContain('const SIGNAL_FALLBACK_TIMEOUT_MS = 5000;');
+    expect(content).toContain('const WINDOWS_SIGNAL_WAIT_MS = 2500;');
+  });
 
-    expect(profileWindows.size).toBe(0);
+  it('Windows-ветка ждёт короткий фиксированный интервал, не полный signal timeout', () => {
+    const windowsGraceful = shutdownBlock.slice(
+      shutdownBlock.indexOf('runWindowsTaskkill(pid, false,'),
+      shutdownBlock.indexOf('} else {', shutdownBlock.indexOf('runWindowsTaskkill(pid, false,'))
+    );
+    expect(windowsGraceful).toContain('WINDOWS_SIGNAL_WAIT_MS');
+    expect(windowsGraceful).not.toContain('SIGNAL_FALLBACK_TIMEOUT_MS');
+  });
+
+  it('gracefulCloseBrowser использует cdpClient (тестовый шов) для Browser.close', () => {
+    const shutdownHelpers = content.slice(
+      content.indexOf('async function sendCdpBrowserClose'),
+      content.indexOf('async function createCdpSession')
+    );
+    expect(shutdownHelpers).toContain('cdpClient.discoverWsUrl');
+    expect(shutdownHelpers).toContain('cdpClient.connect');
+    expect(shutdownHelpers).toContain("cdpClient.send(ws, 'Browser.close')");
+    expect(shutdownHelpers).not.toContain('Target.attachToTarget');
+    expect(shutdownHelpers).not.toContain('sessionId:');
+    expect(shutdownHelpers).not.toContain('sessionId,');
   });
 });
 
@@ -287,14 +440,6 @@ describe('Browser — shutdown endpoint', () => {
 });
 
 describe('Browser — process health check (isProcessAlive)', () => {
-  beforeEach(() => {
-    vi.spyOn(process, 'kill');
-  });
-
-  afterEach(() => {
-    vi.restoreAllMocks();
-  });
-
   it('isProcessAlive возвращает true если процесс существует', () => {
     process.kill.mockReturnValue(true);
     expect(isProcessAlive(1234)).toBe(true);

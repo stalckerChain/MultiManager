@@ -524,7 +524,14 @@ Authorization: Bearer <token>
 
 ### POST /api/browser/:id/stop
 
-停止浏览器。5 秒内未终止则强制结束。
+停止浏览器。通过 CDP 优雅关闭：
+
+1. 在 browser-level WebSocket 上发送 `Browser.close`（超时 2 秒）——Chromium 自行关闭标签页并刷新持久化存储（包括 SQLite WAL）。
+2. 等待进程退出，最长 8 秒。
+3. 超时后发送优雅信号：Unix `SIGTERM`，Windows `taskkill /PID <pid> /T`（不带 `/F`）。
+4. 若进程仍未退出，则强制结束：Unix `SIGKILL`，Windows `taskkill /PID <pid> /T /F`。
+
+在 Windows 上，不带 `/F` 的 `taskkill` 之后总是等待固定的短间隔（2–3 秒）：Chromium 可能忽略 WM_CLOSE，因此随后执行强制结束。CDP 不可用或 `Browser.close` 出错不会阻止回退终止。对同一配置文件重复 stop/shutdown 会被忽略（`stoppingProfiles`）。
 
 **响应 (200)：**
 ```json
@@ -537,7 +544,7 @@ Authorization: Bearer <token>
 
 ### POST /api/browser/shutdown
 
-批量停止所有运行中的浏览器。优雅关闭：SIGTERM → 等待 → SIGKILL。
+批量停止所有运行中的浏览器。对每个配置文件执行 CDP 优雅关闭：`Browser.close` → 等待进程退出 → 优雅信号（`SIGTERM` / `taskkill /T`）→ 强制结束（`SIGKILL` / `taskkill /T /F`）。
 
 **响应 (200)：**
 ```json

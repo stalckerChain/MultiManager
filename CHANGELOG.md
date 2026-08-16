@@ -21,6 +21,19 @@
 - **[FEAT] Отключение уведомления `Restore pages?`.** В общий массив стартовых аргументов профиля добавлен штатный Chromium-флаг `--disable-session-crashed-bubble`. Флаг применяется ко всем профилям независимо от proxy, расширений и `run_id`. Существующие `--no-first-run` и `--no-default-browser-check` сохранены без изменений. Профильные данные, session- и crash-файлы не удаляются.
   ✅ `src/api/browser.js`, `tests/unit/browser-start-await.test.js`, `tests/integration/profile-launch.test.js`, `docs/API.md`, `docs/API.en.md`, `docs/API.zh.md`
 
+### Браузер / Shutdown
+
+- **[FEAT] Graceful shutdown Chromium через CDP `Browser.close`.**
+  Первым действием остановки браузера (`POST /api/browser/:id/stop`, `POST /api/browser/shutdown`) теперь отправляется CDP `Browser.close` на browser-level WebSocket, чтобы Chromium сам корректно закрыл вкладки и сбросил persistent storage (включая WAL-журналы SQLite `Cookies`, Local Storage).
+  - CDP-порт берётся из `cdpPorts` до любых cleanup-операций; обработчик `exit` регистрируется до shutdown-команд; WebSocket закрывается в `finally` при успехе, ошибке и таймауте. `Browser.close` выполняется через существующий `cdpClient` без `Target.attachToTarget` и без `sessionId`, ответ не обязателен (Chromium может закрыть WebSocket сразу после команды).
+  - Отдельные таймауты фаз: CDP close — 2 сек, ожидание завершения процесса после CDP — 8 сек, signal fallback — 5 сек. Ошибка, отсутствие CDP-порта или уже завершившийся процесс не завешивают shutdown и приводят к быстрому fallback.
+  - При таймауте — graceful-сигнал: Unix `SIGTERM` (tree-kill), Windows `taskkill /PID <pid> /T` без `/F` (безопасный `spawn` с числовым PID, не shell-конкатенация; Windows-реализация `tree-kill` всегда добавляет `/F` и не используется). Если процесс не завершился — force kill: Unix `SIGKILL`, Windows `taskkill /PID <pid> /T /F`.
+  - На Windows после `taskkill` без `/F` всегда выдерживается фиксированное ожидание 2.5 сек (Chromium может игнорировать WM_CLOSE), затем выполняется force kill; полный signal timeout не ждётся.
+  - Ожидаемые сообщения закрытого WebSocket (`WebSocket was closed`, `Connection closed`) после принятия `Browser.close` не логируются как warning; настоящая ошибка подключения/отправки CDP логируется и не блокирует fallback.
+  - Повторный stop/shutdown для одного профиля блокируется через `Map` `stoppingProfiles` (по аналогии с `runningProfiles`).
+  - API-контракт endpoint-ов, схема БД, зависимости и версия проекта не менялись; secrets не логируются.
+  ✅ `src/api/browser.js`, `tests/unit/browser-shutdown.test.js`, `docs/API.md`, `docs/API.en.md`, `docs/API.zh.md`, `TS.md`
+
 ### Прокси / Распределение
 
 - **[FEAT] Нормализация и дедупликация прокси при создании/импорте/обновлении.**

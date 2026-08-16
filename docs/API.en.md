@@ -537,7 +537,14 @@ Start browser. Automatically checks proxy if assigned. Browser launches with ant
 
 ### POST /api/browser/:id/stop
 
-Stop browser. Force-kills after 5 seconds if not terminated.
+Stop browser. Graceful shutdown via CDP:
+
+1. `Browser.close` on a browser-level WebSocket (2 s timeout) — Chromium itself closes tabs and flushes persistent storage (including SQLite WAL).
+2. Wait for process exit up to 8 seconds.
+3. On timeout — graceful signal: Unix `SIGTERM`, Windows `taskkill /PID <pid> /T` without `/F`.
+4. If the process is still running — force kill: Unix `SIGKILL`, Windows `taskkill /PID <pid> /T /F`.
+
+On Windows a short fixed wait (2–3 s) is always applied after `taskkill` without `/F`: Chromium may ignore WM_CLOSE, so a force kill follows. Unavailable CDP or a `Browser.close` error does not block the fallback termination. A repeated stop/shutdown for the same profile is ignored (`stoppingProfiles`).
 
 **Response (200):**
 ```json
@@ -550,7 +557,7 @@ Stop browser. Force-kills after 5 seconds if not terminated.
 
 ### POST /api/browser/shutdown
 
-Mass stop all running browsers. Graceful shutdown: SIGTERM → wait → SIGKILL.
+Mass stop all running browsers. Each profile is stopped via CDP graceful shutdown: `Browser.close` → wait for process exit → graceful signal (`SIGTERM` / `taskkill /T`) → force kill (`SIGKILL` / `taskkill /T /F`).
 
 **Response (200):**
 ```json

@@ -48,6 +48,39 @@ function setCookieInjectForTesting(mod) {
   cookieInject = mod == null ? originalCookieInject : mod;
 }
 
+// Запуск Windows taskkill через безопасный spawn с числовым PID (без
+// конкатенации в shell-команду). resolve(err|null): taskkill не бросает в
+// gracefulCloseBrowser, ошибка пишется в лог как warning.
+function defaultTaskkill(pid, force) {
+  return new Promise((resolve) => {
+    let proc;
+    try {
+      proc = spawn('taskkill', ['/PID', String(pid), '/T'].concat(force ? ['/F'] : []), { stdio: 'ignore' });
+    } catch (err) {
+      resolve(err);
+      return;
+    }
+    let settled = false;
+    const finish = (err) => {
+      if (!settled) {
+        settled = true;
+        resolve(err || null);
+      }
+    };
+    proc.on('error', finish);
+    proc.on('exit', (code) => {
+      if (code === 0) finish(null);
+      else finish(new Error(`taskkill exited with code ${code}`));
+    });
+  });
+}
+
+let taskkillFn = defaultTaskkill;
+
+function setTaskkillForTesting(fn) {
+  taskkillFn = fn == null ? defaultTaskkill : fn;
+}
+
 function toPSEncoded(script) {
   return Buffer.from(script, 'utf16le').toString('base64');
 }
@@ -119,7 +152,11 @@ if ($found) { $found }
 const runningProfiles = new Map();
 const profileWindows = new Map();
 const cdpPorts = new Map();
-const SHUTDOWN_TIMEOUT_MS = 8000;
+const stoppingProfiles = new Map();
+const CDP_CLOSE_TIMEOUT_MS = 2000;
+const PROCESS_EXIT_TIMEOUT_MS = 8000;
+const SIGNAL_FALLBACK_TIMEOUT_MS = 5000;
+const WINDOWS_SIGNAL_WAIT_MS = 2500;
 const HEALTH_CHECK_INTERVAL_MS = 5000;
 const CDP_READY_TIMEOUT_MS = 15000;
 let healthCheckTimer = null;
@@ -794,40 +831,145 @@ router.get('/profile-windows', (req, res) => {
   res.json(result);
 });
 
-async function gracefulCloseBrowser(child, profileId, profileLogger, logQueries) {
+// Сообщения закрытого WebSocket, которые Chromium порождает после принятия
+// CDP Browser.close. Такие ошибки не должны логироваться как warning.
+function isExpectedShutdownWsError(err) {
+  if (!err || !err.message) return false;
+  const msg = String(err.message);
+  return msg.includes('WebSocket was closed') || msg.includes('Connection closed');
+}
+
+// Отправить CDP Browser.close на browser-level WebSocket (без sessionId).
+// Ответ не обязателен: Chromium может закрыть WebSocket сразу после команды.
+async function sendCdpBrowserClose(port) {
+  const wsUrl = await cdpClient.discoverWsUrl(port);
+  const ws = await cdpClient.connect(wsUrl, { timeout: CDP_CLOSE_TIMEOUT_MS });
+  try {
+    cdpClient.send(ws, 'Browser.close');
+  } finally {
+    try {
+      ws.close();
+    } catch {
+      // WebSocket уже закрыт — не критично.
+    }
+  }
+}
+
+// Дождаться события exit процесса (или констатировать его завершение), но не
+// дольше timeoutMs. Возвращает true, если процесс завершился.
+function waitForProcessExit(child, exitedPromise, timeoutMs) {
   return new Promise((resolve) => {
-    let resolved = false;
-    const done = () => {
-      if (!resolved) {
-        resolved = true;
-        resolve();
-      }
-    };
-
+    if (!child || !child.pid || !isProcessAlive(child.pid)) {
+      resolve(true);
+      return;
+    }
+    let settled = false;
     const timer = setTimeout(() => {
-      logQueries.add(profileId, 'warn', 'Graceful shutdown timeout, force killing');
-      kill(child.pid, 'SIGKILL', (err) => {
-        if (err) logQueries.add(profileId, 'warn', `Force kill failed: ${err.message}`);
-        done();
-      });
-    }, SHUTDOWN_TIMEOUT_MS);
-
-    child.on('exit', () => {
-      clearTimeout(timer);
-      done();
-    });
-
-    kill(child.pid, 'SIGTERM', (err) => {
-      if (err) {
+      if (!settled) {
+        settled = true;
+        resolve(false);
+      }
+    }, timeoutMs);
+    exitedPromise.then(() => {
+      if (!settled) {
+        settled = true;
         clearTimeout(timer);
-        logQueries.add(profileId, 'warn', `SIGTERM failed (process may be dead): ${err.message}`);
-        kill(child.pid, 'SIGKILL', (err2) => {
-          if (err2) logQueries.add(profileId, 'warn', `SIGKILL failed (process may be dead): ${err2.message}`);
-          done();
-        });
+        resolve(true);
       }
     });
   });
+}
+
+function sendUnixSignal(pid, signal, profileId, logQueries) {
+  return new Promise((resolve) => {
+    kill(pid, signal, (err) => {
+      if (err) {
+        logQueries.add(profileId, 'warn', `${signal} failed (process may be dead): ${err.message}`);
+      }
+      resolve();
+    });
+  });
+}
+
+async function runWindowsTaskkill(pid, force, profileId, logQueries) {
+  const label = force ? 'Force taskkill failed' : 'taskkill failed (process may be dead)';
+  try {
+    const err = await taskkillFn(pid, force);
+    if (err) {
+      logQueries.add(profileId, 'warn', `${label}: ${err.message}`);
+    }
+  } catch (err) {
+    logQueries.add(profileId, 'warn', `${label}: ${err.message}`);
+  }
+}
+
+// Graceful shutdown браузера через CDP:
+//   Browser.close → ожидание exit (8 сек) → graceful-сигнал → force kill.
+// Ошибка/отсутствие CDP, битый порт или уже завершившийся процесс не должны
+// препятствовать fallback-завершению процесса. Повторный shutdown для того же
+// профиля блокируется через stoppingProfiles.
+async function gracefulCloseBrowser(child, profileId, profileLogger, logQueries) {
+  if (!child || !child.pid) return;
+
+  if (stoppingProfiles.has(profileId)) {
+    logQueries.add(profileId, 'warn', 'Shutdown already in progress for this profile');
+    return;
+  }
+  stoppingProfiles.set(profileId, true);
+
+  let resolveExit;
+  const exited = new Promise((r) => { resolveExit = r; });
+  const onExit = () => resolveExit(true);
+  child.once('exit', onExit);
+
+  try {
+    const pid = child.pid;
+
+    if (!isProcessAlive(pid)) return;
+
+    // Порт берём до любых операций, способных удалить его из cdpPorts.
+    const port = cdpPorts.get(profileId) || null;
+
+    // 1. CDP Browser.close — до любого SIGTERM/taskkill/SIGKILL.
+    if (port) {
+      try {
+        await sendCdpBrowserClose(port);
+      } catch (err) {
+        if (!isExpectedShutdownWsError(err)) {
+          logQueries.add(profileId, 'warn', `CDP Browser.close failed: ${err.message}`);
+          profileLogger.warn({ profileId, error: err.message }, 'CDP Browser.close failed');
+        }
+      }
+    }
+
+    // 2. Ожидание завершения процесса после CDP-попытки.
+    if (await waitForProcessExit(child, exited, PROCESS_EXIT_TIMEOUT_MS)) return;
+
+    logQueries.add(profileId, 'warn', 'Browser did not exit after CDP Browser.close, sending graceful signal');
+
+    const isWindows = process.platform === 'win32';
+
+    // 3. Graceful-сигнал.
+    if (isWindows) {
+      await runWindowsTaskkill(pid, false, profileId, logQueries);
+      // На Windows taskkill без /F (WM_CLOSE) может игнорироваться Chromium:
+      // ждём только короткий фиксированный интервал, не полный signal timeout.
+      if (await waitForProcessExit(child, exited, WINDOWS_SIGNAL_WAIT_MS)) return;
+    } else {
+      await sendUnixSignal(pid, 'SIGTERM', profileId, logQueries);
+      if (await waitForProcessExit(child, exited, SIGNAL_FALLBACK_TIMEOUT_MS)) return;
+    }
+
+    // 4. Force kill.
+    if (isWindows) {
+      await runWindowsTaskkill(pid, true, profileId, logQueries);
+    } else {
+      await sendUnixSignal(pid, 'SIGKILL', profileId, logQueries);
+    }
+  } finally {
+    child.removeListener('exit', onExit);
+    stoppingProfiles.delete(profileId);
+  }
 }
 
 async function createCdpSession(port) {
@@ -1154,3 +1296,6 @@ module.exports.setCdpClientForTesting = setCdpClientForTesting;
 module.exports.setExtensionsApiForTesting = setExtensionsApiForTesting;
 module.exports.setCookieInjectForTesting = setCookieInjectForTesting;
 module.exports.setCdpPortForTesting = setCdpPortForTesting;
+module.exports.setTaskkillForTesting = setTaskkillForTesting;
+module.exports.gracefulCloseBrowser = gracefulCloseBrowser;
+module.exports.stoppingProfiles = stoppingProfiles;

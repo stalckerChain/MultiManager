@@ -185,8 +185,8 @@ GUI передаёт порт бэкенду через **env-переменну
 
 ### 4.9. Anti-Zombie контроль процессов ✅ РЕАЛИЗОВАНО
 - PID сохраняется в БД при старте. Health-check каждые 5 сек (`process.kill(pid, 0)`). ✅ `src/api/browser.js:71-78,98-115`
-- Graceful shutdown: SIGTERM → ожидание 8 сек → SIGKILL (tree-kill). ✅ `src/api/browser.js:497-531`
-- `POST /api/browser/shutdown` — массовая остановка. ✅ `src/api/browser.js:533-564`
+- Graceful shutdown через CDP: `Browser.close` (таймаут 2 сек) → ожидание exit 8 сек → graceful-сигнал (Unix `SIGTERM` / Windows `taskkill /T` без `/F`) → force kill (Unix `SIGKILL` / Windows `taskkill /T /F`). Ошибка/отсутствие CDP не блокирует fallback. Повторный shutdown профиля блокируется `stoppingProfiles`. ✅ `src/api/browser.js`
+- `POST /api/browser/shutdown` — массовая остановка. ✅ `src/api/browser.js`
 - **Антидетект-аргументы:** `--fingerprint=<seed>` (документированный CloakBrowser master seed для WebGL/GPU/Audio/Canvas/fonts/hardware/screen, вместо несуществующего `--fingerprint-seed`), `--resolution`, `--cores`, `--memory`, `--fingerprint-timezone` (timezone из GeoIP прокси, фоллбэк — профиль), `--lang=en-US`, `--no-first-run`, `--no-default-browser-check`, `--disable-session-crashed-bubble` (скрывает стандартное уведомление `Restore pages?`). Ручной `--user-agent` не передаётся — UA формирует сам движок. Timezone передаётся через бинарный флаг движка CloakBrowser, а НЕ через CDP `Emulation.setTimezoneOverride` (обнаруживается детекторами). ✅ `src/api/browser.js:301-313`
 - **GeoIP timezone:** при запуске браузера с прокси — timezone определяется автоматически по `last_ip` через `ip-api.com`. Фоллбэк — timezone из профиля. ✅ `src/api/browser.js`
 - **Динамический User-Agent:** UA генерируется на основе реальной версии CloakBrowser. Приоритет: (1) ручная настройка в Settings, (2) авто-определение из `~/.cloakbrowser/`, (3) дефолт. Генерация — только Chrome-шаблоны для `windows`/`macos`/`linux` (Firefox/Safari исключены). ✅ `src/core/cloakbrowser-version.js`, `src/fingerprint/index.js`
@@ -322,7 +322,7 @@ Python: `connect_over_cdp("http://127.0.0.1:9331")`.
 - **SSRF protection:** валидация scheme + блокировка private/local адресов в proxy rotation. ✅ §4.2
 
 ### Доступность
-- **Graceful shutdown:** SIGTERM → ожидание 8 сек → SIGKILL (tree-kill). ✅ §4.9
+- **Graceful shutdown:** CDP `Browser.close` → ожидание exit 8 сек → graceful-сигнал (`SIGTERM` / `taskkill /T`) → force kill (`SIGKILL` / `taskkill /T /F`). ✅ §4.9
 - **Error recovery:** heartbeat каждые 5 сек (PID check), health-check при запуске. ✅ §4.9
 - **Mutex при старте:** duplicate start → 409 Conflict. ✅ §4.1
 

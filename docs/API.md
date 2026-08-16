@@ -564,7 +564,14 @@ Backend повторно валидирует, что все переданны�
 
 ### POST /api/browser/:id/stop
 
-Остановить браузер. Если процесс не завершается за 5 секунд, происходит принудительное завершение.
+Остановить браузер. Graceful shutdown через CDP:
+
+1. `Browser.close` на browser-level WebSocket (таймаут 2 сек) — Chromium сам корректно закрывает вкладки и сбрасывает persistent storage (включая WAL-журналы SQLite).
+2. Ожидание завершения процесса до 8 секунд.
+3. При таймауте — graceful-сигнал: Unix `SIGTERM`, Windows `taskkill /PID <pid> /T` без `/F`.
+4. Если процесс не завершился — force kill: Unix `SIGKILL`, Windows `taskkill /PID <pid> /T /F`.
+
+На Windows после `taskkill` без `/F` всегда выдерживается короткое фиксированное ожидание (2–3 сек): Chromium может игнорировать WM_CLOSE, поэтому далее выполняется force kill. Недоступный CDP или ошибка `Browser.close` не блокируют fallback-завершение процесса. Повторный stop/shutdown для одного профиля игнорируется (`stoppingProfiles`).
 
 **Ответ (200):**
 ```json
@@ -577,7 +584,7 @@ Backend повторно валидирует, что все переданны�
 
 ### POST /api/browser/shutdown
 
-Массовая остановка всех запущенных браузеров. Graceful shutdown: SIGTERM → ожидание → SIGKILL.
+Массовая остановка всех запущенных браузеров. Для каждого профиля выполняется graceful shutdown через CDP: `Browser.close` → ожидание завершения процесса → graceful-сигнал (`SIGTERM` / `taskkill /T`) → force kill (`SIGKILL` / `taskkill /T /F`).
 
 **Ответ (200):**
 ```json
