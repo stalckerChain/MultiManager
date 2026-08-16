@@ -1678,7 +1678,7 @@ Start run execution. Only for `pending` status.
 
 ### POST /api/runs/:id/cancel
 
-Cancel run execution. Kills active processes, marks all running/pending tasks as `failed`.
+Cancel run execution. For each profile with an already running Python process, the browser is first stopped through the MultiManager lifecycle (`POST /api/browser/:id/stop` — CDP graceful shutdown), then the Python process is forcibly terminated. A repeated stop of one profile (simultaneous cancel and regular `close()` from stAuto0) does not create a second shutdown flow — protected by `stoppingProfiles`. Marks all running/pending tasks as `failed` and sets the run status to `cancelled`.
 
 **Response (200):**
 ```json

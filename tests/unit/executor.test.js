@@ -150,6 +150,101 @@ describe('RunExecutor', () => {
   });
 });
 
+describe('RunExecutor.cancel — остановка браузеров профилей через MM lifecycle', () => {
+  function createLiveExecutor(profileIds, overrides = {}) {
+    const spawn = vi.fn(() => {
+      const proc = new EventEmitter();
+      proc.stdout = mockStream();
+      proc.stderr = mockStream();
+      proc.pid = Math.floor(10000 + Math.random() * 90000);
+      proc.kill = vi.fn();
+      return proc;
+    });
+
+    const tasks = profileIds.flatMap((pid, i) => [
+      { id: i * 2 + 1, project_name: 'concrete', profile_id: pid, status: 'pending' },
+      { id: i * 2 + 2, project_name: 'allscale', profile_id: pid, status: 'pending' },
+    ]);
+
+    const stopProfile = vi.fn().mockResolvedValue({ status: 'stopped' });
+    const updateRun = vi.fn();
+
+    const exec = new RunExecutor(
+      { id: 'run-cancel', status: 'running', parallel_limit: 4 },
+      {
+        stAuto0Path: 'C:\\stAuto0',
+        pythonPath: 'python',
+        apiToken: 'tok',
+        mmPort: 3000,
+        spawn,
+        getRunTasks: () => Promise.resolve(tasks),
+        updateRunTaskStatus: vi.fn(),
+        updateRun,
+        getProfileById: () => Promise.resolve({ id: 'p1', name: 'auto_001' }),
+        stopProfile,
+        ...overrides,
+      }
+    );
+    return { exec, spawn, stopProfile, updateRun };
+  }
+
+  it('cancel вызывает stopProfile для каждого профиля с запущенным Python-процессом', async () => {
+    const { exec, spawn, stopProfile } = createLiveExecutor(['p1', 'p2']);
+    exec.start();
+    await new Promise(r => setTimeout(r, 30));
+
+    expect(spawn).toHaveBeenCalledTimes(2);
+    expect(exec.processes.size).toBe(2);
+
+    await exec.cancel();
+    expect(stopProfile).toHaveBeenCalledTimes(2);
+    expect(stopProfile).toHaveBeenCalledWith('p1');
+    expect(stopProfile).toHaveBeenCalledWith('p2');
+  });
+
+  it('cancel инициирует остановку браузера ДО принудительного child.kill()', async () => {
+    const { exec, spawn, stopProfile } = createLiveExecutor(['p1']);
+    exec.start();
+    await new Promise(r => setTimeout(r, 30));
+
+    const child = exec.processes.get('p1');
+    await exec.cancel();
+
+    expect(stopProfile).toHaveBeenCalledWith('p1');
+    expect(child.kill).toHaveBeenCalled();
+  });
+
+  it('cancel завершает Python-процессы и очищает this.processes', async () => {
+    const { exec, spawn } = createLiveExecutor(['p1', 'p2']);
+    exec.start();
+    await new Promise(r => setTimeout(r, 30));
+
+    await exec.cancel();
+    expect(exec.processes.size).toBe(0);
+  });
+
+  it('cancel сохраняет статус run (cancelled)', async () => {
+    const { exec, updateRun } = createLiveExecutor(['p1']);
+    exec.start();
+    await new Promise(r => setTimeout(r, 30));
+
+    await exec.cancel();
+    expect(updateRun).toHaveBeenCalledWith('run-cancel', 'cancelled');
+  });
+
+  it('cancel переживает ошибку stopProfile одного профиля и продолжает остальные', async () => {
+    const stopProfile = vi.fn()
+      .mockResolvedValueOnce({ status: 'stopped' })
+      .mockRejectedValueOnce(new Error('MM API down'));
+    const { exec, spawn } = createLiveExecutor(['p1', 'p2'], { stopProfile });
+    exec.start();
+    await new Promise(r => setTimeout(r, 30));
+
+    await expect(exec.cancel()).resolves.toBeDefined();
+    expect(stopProfile).toHaveBeenCalledTimes(2);
+  });
+});
+
 // --- ZERION_ID: runtime ID resolution regression tests ---
 
 const EXECUTOR_JS = new URL('../../src/executor/index.js', import.meta.url);

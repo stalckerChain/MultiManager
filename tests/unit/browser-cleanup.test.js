@@ -26,11 +26,13 @@ describe('Browser — lifecycle cleanup (source-level)', () => {
     expect(errorBlock).toContain("broadcastStatus(req.params.id, 'stopped')");
   });
 
-  it('stop endpoint clears all three maps after graceful shutdown', () => {
-    const stopBlock = content.slice(content.indexOf("router.post('/:id/stop'"));
-    expect(stopBlock).toContain('runningProfiles.delete(req.params.id)');
-    expect(stopBlock).toContain('profileWindows.delete(req.params.id)');
-    expect(stopBlock).toContain('cdpPorts.delete(req.params.id)');
+  it('stop endpoint and stopProfile clear all three maps after graceful shutdown', () => {
+    const stopFnBlock = content.slice(content.indexOf('async function stopProfile'));
+    expect(stopFnBlock).toContain('runningProfiles.delete(profileId)');
+    expect(stopFnBlock).toContain('profileWindows.delete(profileId)');
+    expect(stopFnBlock).toContain('cdpPorts.delete(profileId)');
+    const stopEndpointBlock = content.slice(content.indexOf("router.post('/:id/stop'"));
+    expect(stopEndpointBlock).toContain('stopProfile(req.params.id)');
   });
 
   it('cleanupProfile clears all three maps', () => {

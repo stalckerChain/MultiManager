@@ -5,6 +5,7 @@ const os = require('os');
 const { getDatabase } = require('../db');
 const { createRunQueries, createRunTaskQueries, createMatrixQueries, createSystemConfigQueries, createProfileQueries } = require('../db/queries');
 const { RunExecutor } = require('../executor');
+const { stopProfile } = require('./browser');
 const { validate, runCreateSchema } = require('./validate');
 const { logger } = require('../logger');
 
@@ -105,6 +106,7 @@ function createRunsRouter(opts = {}) {
       updateRun: (id, status, completedAt) => getRuns().updateStatus(id, status, null, completedAt),
       incrementRun: (id, success) => getRuns().incrementCompleted(id, success),
       getProfileById: (id) => Promise.resolve(profileQueries.getById(id)),
+      stopProfile: (profileId) => stopProfile(profileId),
     });
 
     RunExecutor.instances.set(run.id, executor);

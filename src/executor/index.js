@@ -275,6 +275,26 @@ class RunExecutor {
 
   cancel() {
     this._cancelled = true;
+
+    // Профили с уже запущенными Python-процессами: инициируем остановку их
+    // браузеров через MultiManager lifecycle ДО принудительного завершения
+    // child. child.kill() на Windows может завершить Python без выполнения
+    // finally, поэтому браузер останавливается со стороны MultiManager.
+    const stopPromises = [];
+    if (this.options.stopProfile) {
+      for (const profileId of this.processes.keys()) {
+        stopPromises.push(
+          Promise.resolve()
+            .then(() => this.options.stopProfile(profileId))
+            .catch((err) => {
+              if (this.options.logger) {
+                this.options.logger.warn({ err: err.message, profileId }, 'Failed to stop profile on cancel');
+              }
+            })
+        );
+      }
+    }
+
     for (const [, child] of this.processes) {
       try {
         child.kill();
@@ -286,6 +306,7 @@ class RunExecutor {
     if (this.options.updateRun) {
       this.options.updateRun(this.run.id, 'cancelled');
     }
+    return Promise.all(stopPromises);
   }
 }
 

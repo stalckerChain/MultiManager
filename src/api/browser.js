@@ -748,36 +748,52 @@ router.post('/:id/start', asyncHandler(async (req, res) => {
   });
 }));
 
-router.post('/:id/stop', asyncHandler(async (req, res) => {
+// Остановка профиля через MultiManager lifecycle: та же последовательность, что
+// и POST /:id/stop — graceful shutdown через CDP (Browser.close → ожидание exit →
+// graceful fallback → force fallback при необходимости). Используется и
+// REST-эндпоинтом, и отменой automation-run (RunExecutor.cancel), чтобы браузер
+// останавливался до принудительного завершения Python-процесса.
+async function stopProfile(profileId) {
   const db = getDatabase();
   const profileQueries = createProfileQueries(db);
   const logQueries = createLogQueries(db);
-  
-  const profile = profileQueries.getById(req.params.id);
+
+  const profile = profileQueries.getById(profileId);
   if (!profile) {
-    throw notFound('Профиль');
+    return { status: 'not_found' };
   }
 
   if (profile.status === 'stopped') {
+    return { status: 'already_stopped' };
+  }
+
+  const child = runningProfiles.get(profileId);
+
+  if (child && child.pid) {
+    logQueries.add(profileId, 'info', `Остановка процесса PID: ${child.pid}`);
+
+    const profileLogger = createProfileLogger(profileId);
+    await gracefulCloseBrowser(child, profileId, profileLogger, logQueries);
+  }
+
+  profileQueries.updateStatus(profileId, 'stopped');
+  broadcastStatus(profileId, 'stopped');
+  profileQueries.updatePid(profileId, null);
+  runningProfiles.delete(profileId);
+  profileWindows.delete(profileId);
+  cdpPorts.delete(profileId);
+
+  return { status: 'stopped' };
+}
+
+router.post('/:id/stop', asyncHandler(async (req, res) => {
+  const result = await stopProfile(req.params.id);
+  if (result.status === 'not_found') {
+    throw notFound('Профиль');
+  }
+  if (result.status === 'already_stopped') {
     throw conflict('Профиль уже остановлен');
   }
-
-  const child = runningProfiles.get(req.params.id);
-  
-  if (child && child.pid) {
-    logQueries.add(req.params.id, 'info', `Остановка процесса PID: ${child.pid}`);
-    
-    const profileLogger = createProfileLogger(req.params.id);
-    await gracefulCloseBrowser(child, req.params.id, profileLogger, logQueries);
-  }
-
-  profileQueries.updateStatus(req.params.id, 'stopped');
-  broadcastStatus(req.params.id, 'stopped');
-  profileQueries.updatePid(req.params.id, null);
-  runningProfiles.delete(req.params.id);
-  profileWindows.delete(req.params.id);
-  cdpPorts.delete(req.params.id);
-
   res.json({ status: 'stopped' });
 }));
 
@@ -1299,3 +1315,4 @@ module.exports.setCdpPortForTesting = setCdpPortForTesting;
 module.exports.setTaskkillForTesting = setTaskkillForTesting;
 module.exports.gracefulCloseBrowser = gracefulCloseBrowser;
 module.exports.stoppingProfiles = stoppingProfiles;
+module.exports.stopProfile = stopProfile;

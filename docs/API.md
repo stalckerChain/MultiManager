@@ -1792,7 +1792,7 @@ Batch-обновление отметок матрицы. Транзакция: 
 
 ### POST /api/runs/:id/cancel
 
-Отменить выполнение run. Убивает активные процессы (SIGTERM → SIGKILL), помечает все running/pending задачи как `failed`, устанавливает статус run = `cancelled`.
+Отменить выполнение run. Для каждого профиля с уже запущенным Python-процессом сначала инициируется остановка браузера через MultiManager lifecycle (`POST /api/browser/:id/stop` — CDP graceful shutdown), затем Python-процесс принудительно завершается. Повторная остановка одного профиля (одновременный cancel и штатный `close` из stAuto0) не создаёт второй shutdown-flow — защита `stoppingProfiles`. Помечает все running/pending задачи как `failed`, устанавливает статус run = `cancelled`.
 
 **Ответ (200):**
 ```json

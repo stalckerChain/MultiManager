@@ -2,6 +2,19 @@
 
 ## v1.5.1
 
+### Интеграция / Automation shutdown
+
+- **[FEAT] Корректное завершение браузера в MM-automation.**
+  Гарантировано, что браузер, запущенный через MultiManager для automation из `stAuto0`, корректно завершается во всех сценариях: штатное завершение проекта, ошибка проекта/другого участка выполнения, `KeyboardInterrupt`/остановка CLI, отмена automation-run, недоступность/ошибка MM API. Штатный shutdown использует существующую последовательность `POST /api/browser/:id/stop` → `Browser.close` через CDP → ожидание exit → graceful fallback → force fallback только при необходимости.
+  - stAuto0 `main.py`: введён `mm_mode_active` (фактически определённый MM-режим) и `run_main()`. В MM-режиме верхнеуровневые обработчики (`KeyboardInterrupt`, `SystemExit`, общее исключение) **не** вызывают глобальный `kill_chrome_processes()` (`taskkill /F /IM chrome.exe|node.exe`), который мог завершить сам MultiManager; legacy-режим сохраняет прежний аварийный cleanup. Основной flow `main()` обёрнут в `try/finally` — HTTP-сессия `mm_client` (`__aexit__`) закрывается и при исключении до штатного закрытия.
+  - stAuto0 `Core/browser.py`: `BaseBrowser.close()` в MM-режиме идемпотентен (флаг `_closed` ставится на входе, повторный вызов из `finally`/аварийного пути не вызывает `stop_browser()` повторно); порядок — сначала `stop_browser(profile_id)` (через MultiManager lifecycle), затем остановка Playwright CDP-сессии; при ошибке/таймауте MM API Playwright-сессия всё равно закрывается и не создаётся неконтролируемый orphan Chromium; `_kill_chrome_for_profile()` в MM-режиме не используется.
+  - `src/api/browser.js`: остановка профиля вынесена в `stopProfile(profileId)` (та же последовательность graceful shutdown, что и `POST /:id/stop`); используется и REST-эндпоинтом, и отменой run. Публичный API-контракт endpoint-ов не изменён.
+  - `src/executor/index.js`: `RunExecutor.cancel()` сначала инициирует остановку браузеров профилей с уже запущенными Python-процессами через MM lifecycle (`stopProfile`), затем принудительно завершает child и очищает `this.processes`. `child.kill()` на Windows может завершить Python без выполнения `finally`, поэтому остановка браузера инициируется до убийства child. Повторная остановка одного профиля (одновременный cancel и штатный `close()`) не создаёт второй shutdown-flow — защита `stoppingProfiles`. Статусы run/task и API-ответ `POST /api/runs/:id/cancel` сохранены.
+  - `src/api/runs.js`: в опции executor'а передан callback `stopProfile`.
+  - Тесты: `tests/unit/executor.test.js` (+5 тестов cancel: stopProfile для каждого профиля, kill после инициирования остановки, очистка `processes`, статус `cancelled`, переживание ошибки stopProfile), `tests/unit/browser-cleanup.test.js` (обновлён на `stopProfile`); stAuto0 `tests/test_browser.py` (+5: идемпотентность, `_pw.stop()` при ошибке stop_browser, отсутствие глобального cleanup), `tests/test_main.py` (+17: `run_main` MM/legacy/undefined, закрытие `mm_client` при успехе/исключении).
+  - API-контракты, схема БД, зависимости и версия не менялись; secrets не логируются.
+  ✅ `src/api/browser.js`, `src/api/runs.js`, `src/executor/index.js`, `tests/unit/executor.test.js`, `tests/unit/browser-cleanup.test.js`, `docs/API.md`, `docs/API.en.md`, `docs/API.zh.md`, `TS.md`, `README.md`; stAuto0 `main.py`, `Core/browser.py`, `tests/test_browser.py`, `tests/test_main.py`, `docs/README.md`, `docs/browser.md`
+
 ### GUI / Профили
 
 - **[FEAT] Сохранение сгенерированного fingerprint при редактировании профиля.**

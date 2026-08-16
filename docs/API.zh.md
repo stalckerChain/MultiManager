@@ -1636,7 +1636,7 @@ Authorization: Bearer <token>
 
 ### POST /api/runs/:id/cancel
 
-取消运行执行。终止活动进程，将所有运行中/待处理任务标记为 `failed`。
+取消运行执行。对于每个已启动 Python 进程的配置文件，首先通过 MultiManager 生命周期（`POST /api/browser/:id/stop` — CDP 优雅关闭）停止其浏览器，然后强制终止 Python 进程。对同一配置文件的重复停止（同时取消与 stAuto0 的常规 `close()`）不会创建第二个关闭流程 — 由 `stoppingProfiles` 保护。将所有运行中/待处理任务标记为 `failed`，并将运行状态设置为 `cancelled`。
 
 **响应 (200)：**
 ```json
