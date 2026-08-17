@@ -109,6 +109,27 @@ async function closeTab(profileId, targetId) {
 }
 
 /**
+ * Дождаться, пока в списке page-targets останется только targetId,
+ * или до истечения timeoutMs. Возвращает таргеты, которые ещё остались.
+ * URL не логируются.
+ *
+ * @param {WebSocket} ws
+ * @param {string} targetId
+ * @param {number} timeoutMs
+ * @returns {Promise<Array<{targetId: string, url: string, type: string}>>}
+ */
+async function waitUntilSinglePageTarget(ws, targetId, timeoutMs) {
+  const deadline = Date.now() + timeoutMs;
+  while (Date.now() < deadline) {
+    const targets = await listPageTargets(ws);
+    const others = targets.filter((t) => t.targetId !== targetId);
+    if (others.length === 0) return [];
+    await new Promise((resolve) => setTimeout(resolve, 200));
+  }
+  return (await listPageTargets(ws)).filter((t) => t.targetId !== targetId);
+}
+
+/**
  * Привести профиль к состоянию с одной чистой вкладкой `about:blank`.
  *
  * Вся операция выполняется внутри одного вызова `withProfileSession`, чтобы
@@ -145,6 +166,19 @@ async function resetToSingleBlankTab(profileId) {
       }
     }
 
+    // Ожидание фактического удаления закрытых вкладок: Target.closeTarget
+    // подтверждает только приём команды, уничтожение таргета асинхронно.
+    // Если следующий шаг (например, открытие информационной вкладки) увидит
+    // ещё живую старую about:blank, он может навигировать вкладку, которая
+    // вот-вот закроется, и итоговая страница останется пустой.
+    const remaining = await waitUntilSinglePageTarget(ws, blankId, DEFAULT_WS_TIMEOUT);
+    if (remaining.length > 0) {
+      for (const target of remaining) {
+        if (target.targetId === blankId) continue;
+        errors.push({ targetId: target.targetId, error: 'target not destroyed within timeout' });
+      }
+    }
+
     return { closed, kept: 1, errors };
   });
 }
@@ -158,6 +192,7 @@ module.exports = {
   createTab,
   closeTab,
   resetToSingleBlankTab,
+  waitUntilSinglePageTarget,
   setCdpClientForTesting,
   setCdpPortProviderForTesting,
 };

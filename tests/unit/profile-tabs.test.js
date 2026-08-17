@@ -22,13 +22,17 @@ function installCdpMocks({ targetInfos, createTargetResult, closeTargetImpl, cal
   portProvider.mockReturnValue(9222);
   cdpMock.discoverWsUrl.mockResolvedValue('ws://127.0.0.1:9222/devtools/browser');
   cdpMock.connect.mockResolvedValue(ws);
+  let getTargetsCalls = 0;
   cdpMock.call.mockImplementation(async (w, method, params) => {
     if (callImpl) return callImpl(w, method, params);
     if (method === 'Target.createTarget') {
       return createTargetResult || { targetId: 'blank-1' };
     }
     if (method === 'Target.getTargets') {
-      return { targetInfos };
+      getTargetsCalls++;
+      if (getTargetsCalls === 1) return { targetInfos };
+      const blankId = (createTargetResult && createTargetResult.targetId) || 'blank-1';
+      return { targetInfos: [{ targetId: blankId, type: 'page', url: 'about:blank' }] };
     }
     if (method === 'Target.closeTarget') {
       if (closeTargetImpl) return closeTargetImpl(params);
@@ -65,6 +69,12 @@ describe('profile-tabs.js — resetToSingleBlankTab (source-level)', () => {
   it('гарантирует закрытие WebSocket через withProfileSession (finally)', () => {
     expect(content).toMatch(/function withProfileSession/);
     expect(content).toMatch(/finally\s*\{[\s\S]*if \(ws\) ws\.close\(\)/);
+  });
+
+  it('ждёт асинхронного уничтожения закрытых вкладок перед возвратом', () => {
+    expect(content).toMatch(/подтверждает только приём команды/);
+    expect(content).toMatch(/waitUntilSinglePageTarget/);
+    expect(content).not.toMatch(/logger\.(info|debug|error|warn)\(\{[^}]*url/i);
   });
 });
 
@@ -168,5 +178,64 @@ describe('profile-tabs.js — resetToSingleBlankTab (functional)', () => {
 
     await expect(profileTabs.resetToSingleBlankTab('p1')).rejects.toThrow('CDP port is unavailable');
     expect(cdpMock.connect).not.toHaveBeenCalled();
+  });
+
+  it('ждёт асинхронного уничтожения закрытых вкладок (getTargets возвращает остаток)', async () => {
+    const initial = [
+      { targetId: 't1', type: 'page', url: 'https://a.example' },
+      { targetId: 't2', type: 'page', url: 'https://b.example' },
+    ];
+    let getTargetsCount = 0;
+    installCdpMocks({
+      targetInfos: initial,
+      callImpl: async (w, method, params) => {
+        if (method === 'Target.createTarget') return { targetId: 'blank-1' };
+        if (method === 'Target.getTargets') {
+          getTargetsCount++;
+          if (getTargetsCount <= 3) return { targetInfos: initial.concat([{ targetId: 'blank-1', type: 'page', url: 'about:blank' }]) };
+          return { targetInfos: [{ targetId: 'blank-1', type: 'page', url: 'about:blank' }] };
+        }
+        if (method === 'Target.closeTarget') return { success: true };
+        return {};
+      },
+    });
+
+    const result = await profileTabs.resetToSingleBlankTab('p1');
+
+    expect(result).toEqual({ closed: 2, kept: 1, errors: [] });
+    expect(getTargetsCount).toBeGreaterThan(1);
+  });
+
+  it('сообщает об ошибке, если закрытые вкладки не удаляются до таймаута', async () => {
+    vi.useFakeTimers();
+    try {
+      installCdpMocks({
+        targetInfos: [
+          { targetId: 't1', type: 'page', url: 'https://a.example' },
+          { targetId: 't2', type: 'page', url: 'https://b.example' },
+        ],
+        callImpl: async (w, method, params) => {
+          if (method === 'Target.createTarget') return { targetId: 'blank-1' };
+          if (method === 'Target.getTargets') {
+            return { targetInfos: [
+              { targetId: 'blank-1', type: 'page', url: 'about:blank' },
+              { targetId: 't2', type: 'page', url: 'https://b.example' },
+            ] };
+          }
+          if (method === 'Target.closeTarget') return { success: true };
+          return {};
+        },
+      });
+
+      const promise = profileTabs.resetToSingleBlankTab('p1');
+      await vi.advanceTimersByTimeAsync(10000);
+      const result = await promise;
+
+      expect(result.errors).toEqual([
+        { targetId: 't2', error: 'target not destroyed within timeout' },
+      ]);
+    } finally {
+      vi.useRealTimers();
+    }
   });
 });
