@@ -2,6 +2,17 @@
 
 ## v1.5.1
 
+### Синхронизатор / Окна
+
+- **[FEAT] Отображение имени профиля в `Window Preview` и `Detected Windows`.**
+  Вместо системного заголовка окна Chromium (`Untitled - Chromium`) теперь показывается имя профиля из MultiManager.
+  - `src/api/window-arranger.js`: `buildProfileNameByPid(runningProfiles)` строит lookup `PID -> name` по запущенным профилям (`profiles.name`, при пустом имени — `profiles.id`); фильтрация running-профилей выполняется один раз в `getRunningWindows`, в lookup передаётся уже отфильтрованный список (двойной фильтр устранён).
+  - `parseWindowLine(parts, profileNameByPid)` для окна возвращает `{ id, windowTitle, name, x, y, width, height }`: `id` — HWND (не изменён, используется `Focus`/`Grid`/`Cascade`), `windowTitle` — исходный Win32-заголовок, `name` — имя профиля по PID окна из PowerShell-скрипта, при отсутствии сопоставления — `windowTitle`. Поля `pid`, `profileId` и `profileName` в ответ не добавляются. JSDoc фиксирует предусловие `parts.length >= 7`.
+  - Linux/macOS поведение не изменено (fallback системного имени); PowerShell-скрипт и фильтры crash/restore и минимального размера сохранены.
+  - `WindowArranger.vue` не изменялся: preview и таблица уже отображают `win.name`.
+  - Тесты: `tests/unit/window-arranger.test.js` (+10 тестов: lookup по running-профилям и fallback имени на id, преобразование строки PowerShell с сохранением HWND/координат/размеров, `name`/`windowTitle` при совпадении и отсутствии PID, отсутствие `pid`/`profileId`/`profileName`, JSDoc-предусловие `parts.length >= 7`, source-code инварианты: lookup по `running`, HWND в Grid/Cascade/Focus, сохранение фильтров).
+  ✅ `src/api/window-arranger.js`, `tests/unit/window-arranger.test.js`, `docs/API.md`, `docs/API.en.md`, `docs/API.zh.md`, `TASK.md`
+
 ### Браузер / Информационная вкладка
 
 - **[FEAT] Информационная вкладка профиля при запуске.**

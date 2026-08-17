@@ -197,20 +197,71 @@ $pidOnly = @@PIDONLY@@
 [WinHelper]::FindWindows($pids, $pidOnly)
 `;
 
+// Строит lookup PID -> имя профиля. Ожидает уже отфильтрованный список
+// запущенных профилей (running) из getRunningWindows, поэтому повторная
+// фильтрация по статусу здесь не выполняется. Имя берётся из profiles.name
+// с fallback на profiles.id при пустом имени.
+function buildProfileNameByPid(runningProfiles) {
+  const lookup = new Map();
+  for (const p of runningProfiles) {
+    if (p.pid) {
+      lookup.set(String(p.pid), p.name || p.id);
+    }
+  }
+  return lookup;
+}
+
+/**
+ * Преобразует строку результата PowerShell (HWND|PID|title|x|y|w|h) в объект
+ * окна.
+ *
+ * Предусловие: parts.length >= 7 (проверяется вызывающим кодом перед вызовом).
+ *
+ * windowTitle — исходный Win32-заголовок; name — имя профиля из lookup
+ * (fallback на windowTitle при отсутствии сопоставления PID). id остаётся
+ * HWND, поэтому Focus/Grid/Cascade продолжают работать с неизменным id.
+ *
+ * @param {string[]} parts Элементы строки PowerShell, разделённые `|`.
+ * @param {Map<string, string>} profileNameByPid Lookup PID -> имя профиля.
+ * @returns {{
+ *   id: string,
+ *   windowTitle: string,
+ *   name: string,
+ *   x: number,
+ *   y: number,
+ *   width: number,
+ *   height: number,
+ * }} Объект окна.
+ */
+function parseWindowLine(parts, profileNameByPid) {
+  const windowTitle = parts[2];
+  const profileName = profileNameByPid.get(parts[1]);
+  return {
+    id: parts[0],
+    windowTitle,
+    name: profileName || windowTitle,
+    x: parseInt(parts[3]) || 0,
+    y: parseInt(parts[4]) || 0,
+    width: parseInt(parts[5]) || 800,
+    height: parseInt(parts[6]) || 600,
+  };
+}
+
 async function getRunningWindows() {
   const platform = process.platform;
   let windows = [];
 
   try {
     let targetPids = [];
+    let profileNameByPid = new Map();
     try {
       const db = getDatabase();
       const profileQueries = createProfileQueries(db);
       const profiles = profileQueries.getAll();
-      targetPids = profiles
-        .filter(p => p.pid && p.status === 'running')
-        .map(p => p.pid);
-      logger.info({ targetPids, runningCount: profiles.filter(p => p.status === 'running').length }, 'Window arranger: profiles query');
+      const running = profiles.filter(p => p.pid && p.status === 'running');
+      targetPids = running.map(p => p.pid);
+      profileNameByPid = buildProfileNameByPid(running);
+      logger.info({ targetPids, runningCount: running.length }, 'Window arranger: profiles query');
     } catch (err) {
       logger.error({ err: err.message }, 'Window arranger: failed to query profiles');
     }
@@ -250,14 +301,7 @@ async function getRunningWindows() {
           for (const line of lines) {
             const parts = line.split('|');
             if (parts.length >= 7) {
-              windows.push({
-                id: parts[0],
-                name: parts[2],
-                x: parseInt(parts[3]) || 0,
-                y: parseInt(parts[4]) || 0,
-                width: parseInt(parts[5]) || 800,
-                height: parseInt(parts[6]) || 600,
-              });
+              windows.push(parseWindowLine(parts, profileNameByPid));
             }
           }
         }
@@ -610,3 +654,5 @@ module.exports.closeAllTabsFor = closeAllTabsFor;
 module.exports.openLinksFor = openLinksFor;
 module.exports.getRunningProfiles = getRunningProfiles;
 module.exports.setProfileTabsForTesting = setProfileTabsForTesting;
+module.exports.buildProfileNameByPid = buildProfileNameByPid;
+module.exports.parseWindowLine = parseWindowLine;

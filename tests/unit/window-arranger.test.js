@@ -252,6 +252,55 @@ describe('Window Arranger', () => {
     });
   });
 
+  describe('profile name lookup and window conversion', () => {
+    it('buildProfileNameByPid строит lookup по запущенным профилям (name с fallback на id)', () => {
+      const running = [
+        { id: 'p1', pid: '101', name: 'Profile One', status: 'running' },
+        { id: 'p2', pid: '202', name: '', status: 'running' },
+        { id: 'p4', pid: null, name: 'No pid', status: 'running' },
+      ];
+      const lookup = windowArranger.buildProfileNameByPid(running);
+      expect(lookup.get('101')).toBe('Profile One');
+      expect(lookup.get('202')).toBe('p2');
+      expect(lookup.has('null')).toBe(false);
+    });
+
+    it('parseWindowLine сохраняет HWND как id, координаты и размеры без изменения назначения', () => {
+      const lookup = new Map([['1234', 'My Profile']]);
+      const win = windowArranger.parseWindowLine(
+        ['98765', '1234', 'Untitled - Chromium', '10', '20', '800', '600'],
+        lookup
+      );
+      expect(win.id).toBe('98765');
+      expect(win.windowTitle).toBe('Untitled - Chromium');
+      expect(win.name).toBe('My Profile');
+      expect(win.x).toBe(10);
+      expect(win.y).toBe(20);
+      expect(win.width).toBe(800);
+      expect(win.height).toBe(600);
+    });
+
+    it('name выбирает имя профиля при совпадении PID, windowTitle при отсутствии', () => {
+      const lookup = new Map([['1234', 'My Profile']]);
+      const matched = windowArranger.parseWindowLine(['1', '1234', 'Untitled - Chromium', '0', '0', '800', '600'], lookup);
+      expect(matched.name).toBe('My Profile');
+      expect(matched.windowTitle).toBe('Untitled - Chromium');
+
+      const unmatched = windowArranger.parseWindowLine(['2', '9999', 'Untitled - Chromium', '0', '0', '800', '600'], lookup);
+      expect(unmatched.name).toBe('Untitled - Chromium');
+      expect(unmatched.windowTitle).toBe('Untitled - Chromium');
+    });
+
+    it('ответ окна не добавляет pid, profileId и profileName', () => {
+      const lookup = new Map([['1234', 'My Profile']]);
+      const win = windowArranger.parseWindowLine(['98765', '1234', 'Untitled - Chromium', '0', '0', '800', '600'], lookup);
+      expect(win).not.toHaveProperty('pid');
+      expect(win).not.toHaveProperty('profileId');
+      expect(win).not.toHaveProperty('profileName');
+      expect(Object.keys(win).sort()).toEqual(['height', 'id', 'name', 'width', 'windowTitle', 'x', 'y']);
+    });
+  });
+
   describe('Source code checks (no mocking needed)', () => {
     it('использует spawn + -EncodedCommand (Base64 UTF-16LE), не -File/-Command-', () => {
       const content = readFileSync(
@@ -379,6 +428,65 @@ describe('Window Arranger', () => {
         'utf-8'
       );
       expect(content).not.toMatch(/logger\.[a-z]+\(\{[^}]*links/i);
+    });
+
+    it('getRunningWindows строит lookup только по запущенным профилям (pid + status running)', () => {
+      const content = readFileSync(
+        new URL('../../src/api/window-arranger.js', import.meta.url),
+        'utf-8'
+      );
+      expect(content).toContain("const running = profiles.filter(p => p.pid && p.status === 'running')");
+      expect(content).toContain('buildProfileNameByPid(running)');
+      expect(content).toContain('p.name || p.id');
+      expect(content).toContain('profileNameByPid.get(parts[1])');
+    });
+
+    it('windowTitle равен исходному Win32 title, name — lookup или windowTitle', () => {
+      const content = readFileSync(
+        new URL('../../src/api/window-arranger.js', import.meta.url),
+        'utf-8'
+      );
+      expect(content).toContain('const windowTitle = parts[2];');
+      expect(content).toContain('windowTitle,');
+      expect(content).toContain('name: profileName || windowTitle');
+    });
+
+    it('JSDoc parseWindowLine фиксирует предусловие parts.length >= 7', () => {
+      const content = readFileSync(
+        new URL('../../src/api/window-arranger.js', import.meta.url),
+        'utf-8'
+      );
+      expect(content).toContain('@param {string[]} parts');
+      expect(content).toContain('Предусловие: parts.length >= 7');
+    });
+
+    it('Grid и Cascade продолжают использовать HWND из id (id: parts[0], windows[i].id)', () => {
+      const content = readFileSync(
+        new URL('../../src/api/window-arranger.js', import.meta.url),
+        'utf-8'
+      );
+      expect(content).toContain('id: parts[0]');
+      expect(content).toContain('windows[i].id');
+    });
+
+    it('focus использует id окна как HWND', () => {
+      const content = readFileSync(
+        new URL('../../src/api/window-arranger.js', import.meta.url),
+        'utf-8'
+      );
+      expect(content).toContain('req.params.windowId');
+      expect(content).toContain('parseInt(windowId)');
+    });
+
+    it('PS-скрипт сохраняет фильтры crash/restore и минимального размера', () => {
+      const content = readFileSync(
+        new URL('../../src/api/window-arranger.js', import.meta.url),
+        'utf-8'
+      );
+      expect(content).toContain('lowerTitle.Contains("restore")');
+      expect(content).toContain('lowerTitle.Contains("crashed")');
+      expect(content).toContain('w < 300');
+      expect(content).toContain('h < 200');
     });
   });
 

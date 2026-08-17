@@ -178,6 +178,7 @@ GUI передаёт порт бэкенду через **env-переменну
 
 ### 4.7. Управление окнами (Window Arranger) ⚠️ ЧАСТИЧНО
 - `GET /api/window-arranger/windows`, `/grid`, `/cascade`, `/focus/:windowId`. ✅ `src/api/window-arranger.js`
+- В `Window Preview` / `Detected Windows` отображается имя профиля: для Windows lookup `PID -> name` по запущенным профилям (`profiles.name`, fallback — `profiles.id`), ответ окна содержит `name` (имя профиля, fallback — `windowTitle`) и `windowTitle` (исходный Win32-заголовок); `id` остаётся HWND. ✅ `src/api/window-arranger.js`
 - PowerShell-зависимость (только Windows). ❌ Cross-platform замена (ToDo.md §4).
 - Группировка по профилям в GUI. ❌ (ToDo.md §3)
 

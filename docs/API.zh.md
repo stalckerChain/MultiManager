@@ -1102,7 +1102,8 @@ Authorization: Bearer <token>
 [
   {
     "id": "12345",
-    "name": "CloakBrowser - Profile 1",
+    "name": "我的配置",
+    "windowTitle": "Untitled - Chromium",
     "x": 0,
     "y": 0,
     "width": 1920,
@@ -1110,6 +1111,13 @@ Authorization: Bearer <token>
   }
 ]
 ```
+
+窗口字段：
+
+- `id` — 窗口 HWND（供 `Focus`、`Grid`、`Cascade` 操作使用的标识符）；
+- `name` — 当窗口 PID 与正在运行的配置匹配时的 MultiManager 配置名称（名称为空时回退到配置 `id`）；无匹配时使用系统窗口标题；
+- `windowTitle` — Windows 原始窗口标题（诊断回退）；
+- `x`、`y`、`width`、`height` — 窗口位置和大小。
 
 ---
 

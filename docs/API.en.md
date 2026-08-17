@@ -1157,7 +1157,8 @@ Get list of current windows on screen.
 [
   {
     "id": "12345",
-    "name": "CloakBrowser - Profile 1",
+    "name": "My Profile",
+    "windowTitle": "Untitled - Chromium",
     "x": 0,
     "y": 0,
     "width": 1920,
@@ -1165,6 +1166,15 @@ Get list of current windows on screen.
   }
 ]
 ```
+
+Window fields:
+
+- `id` — window HWND (identifier used by `Focus`, `Grid`, and `Cascade`);
+- `name` — MultiManager profile name when the window PID matches a running
+  profile (falls back to the profile `id` when the name is empty); otherwise
+  the system window title;
+- `windowTitle` — original Windows window title (diagnostic fallback);
+- `x`, `y`, `width`, `height` — window position and size.
 
 ---
 
