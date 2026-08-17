@@ -27,6 +27,49 @@ Check server health.
 
 ---
 
+## Profile Info (public loopback)
+
+### GET /profile-info/:profileId
+
+Public local HTML endpoint (no auth, loopback only). On profile launch a new
+tab opens in the browser with URL
+`http://127.0.0.1:<port>/profile-info/<profileId>` — a page with account
+information. The tab title (`<title>`) equals the account name.
+
+The endpoint reads the profile and its linked proxy from the existing query
+objects and returns HTML with only the agreed fields:
+
+- `name` — account name (tab and page title);
+- `email`;
+- `wallet_evm_address`;
+- `wallet_sol_address`;
+- `twitter_username` — shown as X username;
+- `discord_username`;
+- proxy `last_ip` (proxy IP);
+- proxy `location` (proxy location).
+
+Missing values are shown with a uniform safe placeholder `Не указано`. All
+user values are escaped before being inserted into the HTML.
+
+Secret fields are never included in the HTML: `email_password`,
+`wallet_password`, `twitter_password`, `twitter_auth_token`, `twitter_email`,
+`discord_password`, `discord_token`, `discord_email`, proxy username/password,
+fingerprint seed.
+
+Limitations:
+
+- No auth by agreement. Even when bound to `127.0.0.1`, any local process that
+  knows the profile UUID can read the displayed account data. The profile UUID
+  must not be treated as an authorization mechanism.
+- No dedicated rate limiter for `/profile-info/:profileId` (loopback only, the
+  endpoint is outside `/api/`).
+- The info tab URL is never logged.
+
+**Response (200):** HTML page, `Content-Type: text/html`
+**Response (404):** `{ "error": "Профиль не найден" }`
+
+---
+
 ## Profiles
 
 ### POST /api/profiles
@@ -511,6 +554,15 @@ Start browser. Automatically checks proxy if assigned. Browser launches with ant
 - A login error does not stop the browser: it is written to the profile log without the password, EVM address, or URLs; the launch returns a successful state.
 - Manual auto-login is never triggered for automation requests that include `run_id`.
 - Password, EVM address, and URLs are never logged.
+
+**Info tab:** at the very end of the launch (after extension loading and manual
+auto-login, before the response) a new tab opens with URL
+`http://127.0.0.1:<port>/profile-info/<profileId>`, where `<port>` is the actual
+MultiManager server port that accepted the start request
+(`req.socket.localPort`). The page is accessible without auth on loopback only
+(see the "Profile Info" section). A failure to create the tab does not stop an
+already successful launch: it is logged safely (only `profileId` and an error
+category); the tab URL is never logged.
 
 **Response (200):**
 ```json

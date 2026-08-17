@@ -27,6 +27,39 @@ Authorization: Bearer <token>
 
 ---
 
+## 配置信息（public loopback）
+
+### GET /profile-info/:profileId
+
+公共本地 HTML 端点（无需授权，仅 loopback）。启动配置文件时，浏览器中会打开一个新标签页，URL 为
+`http://127.0.0.1:<port>/profile-info/<profileId>`，显示账户信息页面。标签页标题（`<title>`）等于账户名称。
+
+端点从现有查询对象中读取配置文件及其关联的代理，仅返回已约定的字段的 HTML：
+
+- `name` — 账户名称（标签页和页面标题）；
+- `email`；
+- `wallet_evm_address`；
+- `wallet_sol_address`；
+- `twitter_username` — 显示为 X username；
+- `discord_username`；
+- 代理的 `last_ip`（代理 IP）；
+- 代理的 `location`（代理位置）。
+
+缺失的值统一显示为安全的占位符 `Не указано`。所有用户输入在插入 HTML 之前都会进行转义。
+
+以下敏感字段绝不会包含在 HTML 中：`email_password`、`wallet_password`、`twitter_password`、`twitter_auth_token`、`twitter_email`、`discord_password`、`discord_token`、`discord_email`、代理的用户名/密码、指纹种子。
+
+限制：
+
+- 根据约定无授权。即使绑定到 `127.0.0.1`，任何知道配置文件 UUID 的本地进程都可以读取显示的账户数据。不应将配置文件 UUID 视为授权机制。
+- 不为 `/profile-info/:profileId` 添加单独的限流器（仅 loopback，端点不在 `/api/` 下）。
+- 信息标签页的 URL 永远不会被记录到日志。
+
+**响应（200）：** HTML 页面，`Content-Type: text/html`
+**响应（404）：** `{ "error": "Профиль не найден" }`
+
+---
+
 ## 配置文件
 
 ### POST /api/profiles
@@ -498,6 +531,8 @@ Authorization: Bearer <token>
 - 登录错误不会停止浏览器：会写入配置文件日志，不包含密码、EVM 地址和 URL；启动仍返回成功状态。
 - 带 `run_id` 的自动化请求不会触发手动自动登录。
 - 密码、EVM 地址和 URL 不会被记录到日志。
+
+**信息标签页：** 在启动流程的最末尾（加载扩展和手动自动登录之后、返回响应之前），会打开一个新标签页，URL 为 `http://127.0.0.1:<port>/profile-info/<profileId>`，其中 `<port>` 是接收启动请求的 MultiManager 服务器的实际端口（`req.socket.localPort`）。该页面仅在 loopback 上无需授权即可访问（参见“配置信息”一节）。创建标签页失败不会中断已成功的启动：只安全记录 `profileId` 和错误类别，标签页 URL 不会被记录到日志。
 
 **响应 (200)：**
 ```json

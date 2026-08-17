@@ -4,6 +4,7 @@ const { authMiddleware } = require('../api/auth');
 const { logger } = require('../logger');
 const { ApiError } = require('../api/errors');
 
+const profileInfoRouter = require('../api/profile-info');
 const profilesRouter = require('../api/profiles');
 const proxiesRouter = require('../api/proxies');
 const cookiesRouter = require('../api/cookies');
@@ -35,6 +36,9 @@ const apiLimiter = rateLimit({
 });
 
 app.use('/api/', apiLimiter);
+// Публичный локальный endpoint (loopback-only) подключается до общего
+// authMiddleware: он предназначен только для локального браузера MultiManager.
+app.use('/profile-info', profileInfoRouter);
 app.use(authMiddleware);
 
 app.get('/health', (req, res) => {

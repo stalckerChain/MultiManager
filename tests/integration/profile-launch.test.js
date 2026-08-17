@@ -4,7 +4,7 @@ import fs from 'fs';
 import os from 'os';
 import { spawn } from 'child_process';
 import kill from 'tree-kill';
-import { initDatabase, createProfileQueries, createCookieQueries } from '../../src/db';
+import { initDatabase, createProfileQueries, createCookieQueries, createLogQueries } from '../../src/db';
 import { generateFingerprint } from '../../src/fingerprint';
 import { getBrowserDataDir } from '../../src/core/profile-path';
 import { createProfileLogger, getAppDir } from '../../src/logger';
@@ -391,4 +391,51 @@ describe.skipIf(!isCloakOptIn)('CloakBrowser real lifecycle (opt-in: CLOAKBROWSE
       checkWs.close();
     }
   }, 60000);
+
+  it('создаёт информационную вкладку профиля и страница доступна по HTTP', async () => {
+    // eslint-disable-next-line global-require
+    const express = require('express');
+    // eslint-disable-next-line global-require
+    const request = require('supertest');
+    // eslint-disable-next-line global-require
+    const profileInfoRouter = require('../../src/api/profile-info.js');
+    // eslint-disable-next-line global-require
+    const browserApi = require('../../src/api/browser.js');
+
+    const app = express();
+    app.use('/profile-info', profileInfoRouter);
+    const server = await new Promise((resolve) => {
+      const s = app.listen(0, '127.0.0.1', () => resolve(s));
+    });
+    const serverPort = server.address().port;
+
+    const profileLogger = createProfileLogger(profile.id);
+    const logQueries = createLogQueries(db);
+
+    try {
+      await browserApi.openProfileInfoTab(profile.id, cdpPort, serverPort, profileLogger, logQueries);
+
+      // Вкладка реально появилась с URL информационной страницы именно этого профиля.
+      const checkWs = await cdp.connect(await cdp.discoverWsUrl(cdpPort));
+      let found = false;
+      try {
+        const { targetInfos } = await cdp.call(checkWs, 'Target.getTargets');
+        found = targetInfos.some(
+          (t) => t.type === 'page' && t.url === `http://127.0.0.1:${serverPort}/profile-info/${profile.id}`
+        );
+      } finally {
+        checkWs.close();
+      }
+      expect(found).toBe(true);
+
+      // Страница доступна по HTTP, заголовок равен имени аккаунта.
+      const page = await request(server).get(`/profile-info/${profile.id}`);
+      expect(page.status).toBe(200);
+      expect(page.headers['content-type']).toMatch(/text\/html/);
+      expect(page.text).toContain(`<title>${profile.name}</title>`);
+    } finally {
+      server.close();
+      if (typeof server.closeAllConnections === 'function') server.closeAllConnections();
+    }
+  }, 30000);
 });

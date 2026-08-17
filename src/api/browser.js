@@ -465,6 +465,50 @@ async function loadExtensionsViaCDP(profileId, runId, extPaths, logQueries, prof
   }
 }
 
+// Открытие информационной вкладки профиля в конце запуска браузера.
+//
+// Вкладка загружает публичный локальный HTML endpoint MultiManager:
+//   http://127.0.0.1:<mmPort>/profile-info/<profileId>
+// mmPort — фактический порт HTTP-сервера, принявшего start-запрос
+// (req.socket.localPort), без хардкода 3000 и без передачи порта через
+// spawnBrowserWithCdp.
+//
+// Ошибка создания вкладки не останавливает уже успешный запуск: она логируется
+// безопасно (только profileId и категория ошибки) без URL, stack trace,
+// содержимого страницы и имени аккаунта. URL не логируется ни при успехе, ни
+// при ошибке.
+async function openProfileInfoTab(profileId, cdpPort, mmPort, profileLogger, logQueries) {
+  if (!cdpPort) {
+    logQueries.add(profileId, 'warn', 'Информационная вкладка не создана: CDP порт недоступен');
+    profileLogger.warn({ profileId }, 'Информационная вкладка не создана: CDP порт недоступен');
+    return;
+  }
+
+  if (!mmPort) {
+    logQueries.add(profileId, 'warn', 'Информационная вкладка не создана: порт сервера недоступен');
+    profileLogger.warn({ profileId }, 'Информационная вкладка не создана: порт сервера недоступен');
+    return;
+  }
+
+  let ws;
+  try {
+    const wsUrl = await cdpClient.discoverWsUrl(cdpPort);
+    ws = await cdpClient.connect(wsUrl);
+    await cdpClient.call(ws, 'Target.createTarget', {
+      url: `http://127.0.0.1:${mmPort}/profile-info/${encodeURIComponent(profileId)}`,
+    });
+    logQueries.add(profileId, 'info', 'Информационная вкладка профиля создана');
+    profileLogger.info({ profileId }, 'Информационная вкладка профиля создана');
+  } catch {
+    logQueries.add(profileId, 'warn', 'Информационная вкладка не создана: ошибка CDP');
+    profileLogger.warn({ profileId, error: 'Target.createTarget' }, 'Информационная вкладка не создана');
+  } finally {
+    if (ws) {
+      try { ws.close(); } catch { /* ignore */ }
+    }
+  }
+}
+
 router.post('/:id/start', asyncHandler(async (req, res) => {
   const db = getDatabase();
   const profileQueries = createProfileQueries(db);
@@ -738,6 +782,11 @@ router.post('/:id/start', asyncHandler(async (req, res) => {
     profileWindows.delete(req.params.id);
     cdpPorts.delete(req.params.id);
   });
+
+  // Информационная вкладка создаётся в самом конце запуска: после загрузки
+  // расширений и ручного автологина, чтобы preflight не удалил новую вкладку.
+  // Порт сервера — req.socket.localPort start-запроса (не GET-запроса страницы).
+  await openProfileInfoTab(req.params.id, cdpPort, req.socket.localPort, profileLogger, logQueries);
 
   res.json({
     status: 'success',
@@ -1307,6 +1356,7 @@ module.exports.getProfileWindows = () => profileWindows;
 module.exports.applyProfileCookies = applyProfileCookies;
 module.exports.getProfileCookiesViaCdp = getProfileCookiesViaCdp;
 module.exports.runManualAutologin = runManualAutologin;
+module.exports.openProfileInfoTab = openProfileInfoTab;
 module.exports.setProfileTabsForTesting = setProfileTabsForTesting;
 module.exports.setCdpClientForTesting = setCdpClientForTesting;
 module.exports.setExtensionsApiForTesting = setExtensionsApiForTesting;
