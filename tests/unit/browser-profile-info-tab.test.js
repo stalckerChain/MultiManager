@@ -21,7 +21,15 @@ describe('openProfileInfoTab — functional', () => {
     vi.clearAllMocks();
     ws = { close: vi.fn() };
     cdpMock = {
-      call: vi.fn().mockResolvedValue({ targetId: 'info-tab-1' }),
+      call: vi.fn(async (w, method) => {
+        if (method === 'Target.getTargets') {
+          return { targetInfos: [] };
+        }
+        if (method === 'Target.attachToTarget') {
+          return { sessionId: 'sess-1' };
+        }
+        return { targetId: 'info-tab-1' };
+      }),
       connect: vi.fn().mockResolvedValue(ws),
       discoverWsUrl: vi.fn().mockResolvedValue('ws://127.0.0.1:9222/devtools/browser'),
     };
@@ -60,7 +68,7 @@ describe('openProfileInfoTab — functional', () => {
     expect(profileLogger.warn).toHaveBeenCalled();
   });
 
-  it('does not break on Target.createTarget failure and logs only a safe category', async () => {
+  it('does not break on CDP failure and logs only a safe category', async () => {
     cdpMock.call.mockRejectedValue(new Error('some CDP error containing http://127.0.0.1:3000/profile-info/p1'));
 
     await expect(
@@ -99,6 +107,72 @@ describe('openProfileInfoTab — functional', () => {
       { url: 'http://127.0.0.1:3000/profile-info/id%20with%20spaces' }
     );
   });
+
+  it('navigates an existing blank tab instead of creating a new one', async () => {
+    cdpMock.call.mockImplementation(async (w, method) => {
+      if (method === 'Target.getTargets') {
+        return { targetInfos: [{ targetId: 'blank-1', type: 'page', url: 'about:blank' }] };
+      }
+      if (method === 'Target.attachToTarget') {
+        return { sessionId: 'sess-1' };
+      }
+      return { targetId: 'info-tab-1' };
+    });
+
+    await browserApi.openProfileInfoTab('p1', 9222, 3000, profileLogger, logQueries);
+
+    expect(cdpMock.call).toHaveBeenCalledWith(ws, 'Target.getTargets');
+    expect(cdpMock.call).toHaveBeenCalledWith(ws, 'Target.attachToTarget', { targetId: 'blank-1', flatten: true });
+    expect(cdpMock.call).toHaveBeenCalledWith(
+      ws,
+      'Page.navigate',
+      { url: 'http://127.0.0.1:3000/profile-info/p1' },
+      { sessionId: 'sess-1' }
+    );
+    expect(cdpMock.call).not.toHaveBeenCalledWith(ws, 'Target.createTarget', expect.anything());
+    expect(logQueries.add).toHaveBeenCalledWith('p1', 'info', expect.stringContaining('в существующей вкладке'));
+    expect(ws.close).toHaveBeenCalled();
+  });
+
+  it('matches a blank tab with a hash suffix (about:blank#... )', async () => {
+    cdpMock.call.mockImplementation(async (w, method) => {
+      if (method === 'Target.getTargets') {
+        return { targetInfos: [{ targetId: 'blank-2', type: 'page', url: 'about:blank#frag' }] };
+      }
+      if (method === 'Target.attachToTarget') {
+        return { sessionId: 'sess-2' };
+      }
+      return { targetId: 'info-tab-1' };
+    });
+
+    await browserApi.openProfileInfoTab('p1', 9222, 3000, profileLogger, logQueries);
+
+    expect(cdpMock.call).toHaveBeenCalledWith(ws, 'Target.attachToTarget', { targetId: 'blank-2', flatten: true });
+    expect(cdpMock.call).not.toHaveBeenCalledWith(ws, 'Target.createTarget', expect.anything());
+  });
+
+  it('falls back to Target.createTarget when only non-blank pages exist', async () => {
+    cdpMock.call.mockImplementation(async (w, method) => {
+      if (method === 'Target.getTargets') {
+        return {
+          targetInfos: [
+            { targetId: 'page-1', type: 'page', url: 'https://example.com' },
+            { targetId: 'dev-1', type: 'page', url: 'devtools://devtools/bundled/inspector.html' },
+          ],
+        };
+      }
+      return { targetId: 'info-tab-1' };
+    });
+
+    await browserApi.openProfileInfoTab('p1', 9222, 3000, profileLogger, logQueries);
+
+    expect(cdpMock.call).toHaveBeenCalledWith(
+      ws,
+      'Target.createTarget',
+      { url: 'http://127.0.0.1:3000/profile-info/p1' }
+    );
+    expect(cdpMock.call).not.toHaveBeenCalledWith(ws, 'Page.navigate', expect.anything());
+  });
 });
 
 describe('openProfileInfoTab — source-level safety', () => {
@@ -113,7 +187,19 @@ describe('openProfileInfoTab — source-level safety', () => {
   it('uses the existing CDP client primitives (no new connection mechanism)', () => {
     expect(block).toContain('cdpClient.discoverWsUrl');
     expect(block).toContain('cdpClient.connect');
+    expect(block).toContain('Target.getTargets');
+    expect(block).toContain('Target.attachToTarget');
+    expect(block).toContain('Page.navigate');
     expect(block).toContain('Target.createTarget');
+  });
+
+  it('reuses an existing blank tab when present and falls back to a new target', () => {
+    const blankIdx = block.indexOf('about:blank');
+    expect(blankIdx).toBeGreaterThan(-1);
+    const afterBlank = block.slice(blankIdx);
+    expect(afterBlank).toMatch(/if \(blankTarget\)/);
+    expect(afterBlank).toMatch(/Page\.navigate/);
+    expect(afterBlank).toMatch(/Target\.createTarget/);
   });
 
   it('checks cdpPort before touching CDP', () => {

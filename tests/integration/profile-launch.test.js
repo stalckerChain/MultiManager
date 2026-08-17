@@ -415,14 +415,21 @@ describe.skipIf(!isCloakOptIn)('CloakBrowser real lifecycle (opt-in: CLOAKBROWSE
     try {
       await browserApi.openProfileInfoTab(profile.id, cdpPort, serverPort, profileLogger, logQueries);
 
-      // Вкладка реально появилась с URL информационной страницы именно этого профиля.
+      // Вкладка реально появилась (или существующая about:blank перенаправлена) с
+      // URL информационной страницы именно этого профиля. Навигация через
+      // Page.navigate применяется асинхронно — опрашиваем target до появления URL.
+      const expectedUrl = `http://127.0.0.1:${serverPort}/profile-info/${profile.id}`;
       const checkWs = await cdp.connect(await cdp.discoverWsUrl(cdpPort));
       let found = false;
       try {
-        const { targetInfos } = await cdp.call(checkWs, 'Target.getTargets');
-        found = targetInfos.some(
-          (t) => t.type === 'page' && t.url === `http://127.0.0.1:${serverPort}/profile-info/${profile.id}`
-        );
+        const deadline = Date.now() + 10000;
+        while (Date.now() < deadline && !found) {
+          const { targetInfos } = await cdp.call(checkWs, 'Target.getTargets');
+          found = targetInfos.some(
+            (t) => t.type === 'page' && t.url === expectedUrl
+          );
+          if (!found) await new Promise((r) => setTimeout(r, 200));
+        }
       } finally {
         checkWs.close();
       }

@@ -473,7 +473,13 @@ async function loadExtensionsViaCDP(profileId, runId, extPaths, logQueries, prof
 // (req.socket.localPort), без хардкода 3000 и без передачи порта через
 // spawnBrowserWithCdp.
 //
-// Ошибка создания вкладки не останавливает уже успешный запуск: она логируется
+// Если после стартовых операций (автологин/нормализация вкладок) в браузере уже
+// есть пустая вкладка about:blank — страница открывается в ней (Target.attachToTarget
+// + Page.navigate), а не в новой вкладке. Если пустой вкладки нет (например, при
+// automation/MM-запуске без нормализации) — создаётся новый target
+// (Target.createTarget). URL передаётся только параметром CDP.
+//
+// Ошибка открытия вкладки не останавливает уже успешный запуск: она логируется
 // безопасно (только profileId и категория ошибки) без URL, stack trace,
 // содержимого страницы и имени аккаунта. URL не логируется ни при успехе, ни
 // при ошибке.
@@ -494,14 +500,30 @@ async function openProfileInfoTab(profileId, cdpPort, mmPort, profileLogger, log
   try {
     const wsUrl = await cdpClient.discoverWsUrl(cdpPort);
     ws = await cdpClient.connect(wsUrl);
-    await cdpClient.call(ws, 'Target.createTarget', {
-      url: `http://127.0.0.1:${mmPort}/profile-info/${encodeURIComponent(profileId)}`,
-    });
-    logQueries.add(profileId, 'info', 'Информационная вкладка профиля создана');
-    profileLogger.info({ profileId }, 'Информационная вкладка профиля создана');
+
+    const infoUrl = `http://127.0.0.1:${mmPort}/profile-info/${encodeURIComponent(profileId)}`;
+
+    const { targetInfos = [] } = await cdpClient.call(ws, 'Target.getTargets');
+    const blankTarget = targetInfos.find(
+      (t) => t.type === 'page' && (t.url || '').split('#')[0] === 'about:blank'
+    );
+
+    if (blankTarget) {
+      const { sessionId } = await cdpClient.call(ws, 'Target.attachToTarget', {
+        targetId: blankTarget.targetId,
+        flatten: true,
+      });
+      await cdpClient.call(ws, 'Page.navigate', { url: infoUrl }, { sessionId });
+      logQueries.add(profileId, 'info', 'Информационная вкладка профиля открыта в существующей вкладке');
+      profileLogger.info({ profileId }, 'Информационная вкладка профиля открыта в существующей вкладке');
+    } else {
+      await cdpClient.call(ws, 'Target.createTarget', { url: infoUrl });
+      logQueries.add(profileId, 'info', 'Информационная вкладка профиля создана');
+      profileLogger.info({ profileId }, 'Информационная вкладка профиля создана');
+    }
   } catch {
     logQueries.add(profileId, 'warn', 'Информационная вкладка не создана: ошибка CDP');
-    profileLogger.warn({ profileId, error: 'Target.createTarget' }, 'Информационная вкладка не создана');
+    profileLogger.warn({ profileId, error: 'CDP' }, 'Информационная вкладка не создана');
   } finally {
     if (ws) {
       try { ws.close(); } catch { /* ignore */ }

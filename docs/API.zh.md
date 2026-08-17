@@ -532,7 +532,7 @@ Authorization: Bearer <token>
 - 带 `run_id` 的自动化请求不会触发手动自动登录。
 - 密码、EVM 地址和 URL 不会被记录到日志。
 
-**信息标签页：** 在启动流程的最末尾（加载扩展和手动自动登录之后、返回响应之前），会打开一个新标签页，URL 为 `http://127.0.0.1:<port>/profile-info/<profileId>`，其中 `<port>` 是接收启动请求的 MultiManager 服务器的实际端口（`req.socket.localPort`）。该页面仅在 loopback 上无需授权即可访问（参见“配置信息”一节）。创建标签页失败不会中断已成功的启动：只安全记录 `profileId` 和错误类别，标签页 URL 不会被记录到日志。
+**信息标签页：** 在启动流程的最末尾（加载扩展和手动自动登录之后、返回响应之前），会打开一个标签页，URL 为 `http://127.0.0.1:<port>/profile-info/<profileId>`，其中 `<port>` 是接收启动请求的 MultiManager 服务器的实际端口（`req.socket.localPort`）。如果启动操作（自动登录/标签页归一化）之后浏览器中留有空白 `about:blank` 标签页，则页面在该标签页中打开（`Target.attachToTarget` + `Page.navigate`）；如果没有空白标签页（例如 automation/MM 启动），则创建新标签页（`Target.createTarget`）。该页面仅在 loopback 上无需授权即可访问（参见“配置信息”一节）。打开标签页失败不会中断已成功的启动：只安全记录 `profileId` 和错误类别，标签页 URL 不会被记录到日志。
 
 **响应 (200)：**
 ```json

@@ -556,13 +556,16 @@ Start browser. Automatically checks proxy if assigned. Browser launches with ant
 - Password, EVM address, and URLs are never logged.
 
 **Info tab:** at the very end of the launch (after extension loading and manual
-auto-login, before the response) a new tab opens with URL
+auto-login, before the response) a tab opens with URL
 `http://127.0.0.1:<port>/profile-info/<profileId>`, where `<port>` is the actual
 MultiManager server port that accepted the start request
-(`req.socket.localPort`). The page is accessible without auth on loopback only
-(see the "Profile Info" section). A failure to create the tab does not stop an
-already successful launch: it is logged safely (only `profileId` and an error
-category); the tab URL is never logged.
+(`req.socket.localPort`). If a blank `about:blank` tab remains after the startup
+operations (auto-login / tab normalization), the page opens in that tab
+(`Target.attachToTarget` + `Page.navigate`); otherwise a new target is created
+(`Target.createTarget`, e.g. for automation/MM launches). The page is accessible
+without auth on loopback only (see the "Profile Info" section). A failure to open
+the tab does not stop an already successful launch: it is logged safely (only
+`profileId` and an error category); the tab URL is never logged.
 
 **Response (200):**
 ```json
