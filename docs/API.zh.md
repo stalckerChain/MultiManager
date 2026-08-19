@@ -693,18 +693,18 @@ Authorization: Bearer <token>
 
 ---
 
-## Multi-Control（窗口同步）— v0.15.0
+## Multi-Control（窗口同步）— v0.17.0
 
 通过 CDP（Chrome DevTools Protocol）将主窗口的操作广播到所有从窗口。
 
 **架构：**
-- **DOM 输入捕获**：通过 `SYNC_EVENT_SCRIPT` 在主页面注入 CDP 绑定 `Runtime.addBinding('__MM_SYNC_BIND__')`。DOM 事件（mousemove、mousedown、mouseup、wheel、keydown、keyup）+ `visibilitychange` → `window.__MM_SYNC_BIND__(JSON)` → `cdpManager.onEvent` → `inputCapture.injectFromCdp()` → `controller`
+- **DOM 输入捕获**：通过 `SYNC_EVENT_SCRIPT` 在主页面注入 CDP 绑定 `Runtime.addBinding('__MM_SYNC_BIND__')`。DOM 事件（mousemove、mousedown、mouseup、wheel[仅诊断]、click）+ 权威 `scroll`（来自 `window.scroll` 监听器的绝对 `window.scrollX/scrollY`，已合并）+ `visibilitychange` → `window.__MM_SYNC_BIND__(JSON)` → `cdpManager.onEvent` → `inputCapture.injectFromCdp()` → `controller`
 - **原生钩子（OS 级别）**：C++ 插件 `WH_KEYBOARD_LL` 在 OS 级别拦截所有按键，包括浏览器快捷键（Ctrl+T、Ctrl+W）。HTTP POST → `/api/multi-control/os-keyboard`
 - **鼠标平滑**：MouseSmoother（ghost-cursor `path()`：三次贝塞尔曲线 + Fitts's Law + 过冲）+ `setTimeout` 调度循环 + 点击前 `flush()`
-- **滚动**：分解为一系列 `wheel` 分发（SCROLL_STEP_PX=40，SCROLL_TICK_MS=16）
+- **滚动**：主窗口文档滚动的权威来源是 `window.scroll` 事件（绝对 `scrollX/scrollY`，不累加增量）。在从窗口中通过 CDP `Runtime.callFunctionOn('window.scrollTo(x, y)')` 配合会话的 `executionContextId` 应用（无 `Runtime.evaluate` 回退）。wheel 仅用于诊断，不触发滚动
 - **多标签页**：每 300ms HTTP `/json` 轮询检测原生打开的标签页。标签映射 1:N 通过 `Map<masterTargetId, Map<slaveId, slaveTargetId>>` + `tabIndex` 矩阵
 - **焦点激活**：链式调用 `Target.activateTarget` → `Page.bringToFront` → `DOM.focus` → `body.focus()` 以在从窗口中设置 DOM 输入焦点
-- **双重分发**：在 DOM 元素中输入时，按键会发送到从窗口两次（CDP + 原生钩子）
+- **双重分发已消除**：CDP 键盘已移除（v0.16.0），按键仅通过原生钩子发送到从窗口一次
 
 > **平台限制：** 原生 OS 键盘钩子（WH_KEYBOARD_LL）仅在 Windows 上可用。在 macOS/Linux 上，键盘同步使用纯 CDP 模式 — 浏览器 chrome 快捷键（Ctrl+T、Ctrl+W）不会被拦截。
 

@@ -18,19 +18,35 @@ const SYNC_EVENT_SCRIPT = `
   }
 
   var _buf = null, _timer = null, THROTTLE = 16;
-  function flush() { var b = _buf; _buf = null; _timer = null; if (b) SEND(JSON.stringify(b)); }
+  var _scrollBuf = null, _scrollTimer = null;
+  function send(msg) { SEND(JSON.stringify(msg)); }
+  function flush() { var b = _buf; _buf = null; _timer = null; if (b) send(b); }
+  function flushScroll() { var b = _scrollBuf; _scrollBuf = null; _scrollTimer = null; if (b) send(b); }
   function emit(type, data) {
     var msg = Object.assign({ __mm_event: true, type: type }, data);
-    if (type === 'mouseMove') { _buf = msg; if (!_timer) _timer = setTimeout(flush, THROTTLE); }
-    else { if (_timer) { clearTimeout(_timer); _timer = null; } _buf = null; SEND(JSON.stringify(msg)); }
+    if (type === 'mouseMove') {
+      _buf = msg; if (!_timer) _timer = setTimeout(flush, THROTTLE);
+    } else if (type === 'scroll') {
+      // Частые scroll-события коалесцируются до последнего абсолютного состояния.
+      _scrollBuf = msg; if (!_scrollTimer) _scrollTimer = setTimeout(flushScroll, THROTTLE);
+    } else {
+      if (_timer) { clearTimeout(_timer); _timer = null; _buf = null; }
+      flushScroll();
+      send(msg);
+    }
   }
 
-  document.addEventListener('mousemove', function(e) { emit('mouseMove', { x: e.pageX, y: e.pageY, scrollX: window.scrollX, scrollY: window.scrollY }); }, true);
-  document.addEventListener('mousedown', function(e) { emit('mouseDown', { x: e.pageX, y: e.pageY, button: e.button, clickCount: e.detail || 1, scrollX: window.scrollX, scrollY: window.scrollY }); }, true);
-  document.addEventListener('mouseup', function(e) { emit('mouseUp', { x: e.pageX, y: e.pageY, button: e.button, scrollX: window.scrollX, scrollY: window.scrollY }); }, true);
-  document.addEventListener('wheel', function(e) { emit('scroll', { x: e.pageX, y: e.pageY, deltaX: e.deltaX, deltaY: e.deltaY, scrollX: window.scrollX, scrollY: window.scrollY }); }, true);
+  document.addEventListener('mousemove', function(e) { emit('mouseMove', { x: e.pageX, y: e.pageY, clientX: e.clientX, clientY: e.clientY, scrollX: window.scrollX, scrollY: window.scrollY }); }, true);
+  document.addEventListener('mousedown', function(e) { emit('mouseDown', { x: e.pageX, y: e.pageY, clientX: e.clientX, clientY: e.clientY, button: e.button, clickCount: e.detail || 1, scrollX: window.scrollX, scrollY: window.scrollY }); }, true);
+  document.addEventListener('mouseup', function(e) { emit('mouseUp', { x: e.pageX, y: e.pageY, clientX: e.clientX, clientY: e.clientY, button: e.button, scrollX: window.scrollX, scrollY: window.scrollY }); }, true);
+  // Wheel — только диагностика: обработчик wheel выполняется ДО browser default
+  // action, window.scrollX/scrollY в нём ещё не отражают новую прокрутку.
+  // Authoritative scroll формируется из события window.scroll (после изменения
+  // window.scrollX/scrollY) и не должен исходить из wheel.
+  document.addEventListener('wheel', function(e) { emit('wheel', { x: e.pageX, y: e.pageY, clientX: e.clientX, clientY: e.clientY, deltaX: e.deltaX, deltaY: e.deltaY, scrollX: window.scrollX, scrollY: window.scrollY }); }, true);
+  window.addEventListener('scroll', function() { emit('scroll', { scrollX: window.scrollX, scrollY: window.scrollY }); }, true);
   document.addEventListener('click', function(e) {
-    emit('click', { x: e.pageX, y: e.pageY, button: e.button, clickCount: e.detail || 1, scrollX: window.scrollX, scrollY: window.scrollY });
+    emit('click', { x: e.pageX, y: e.pageY, clientX: e.clientX, clientY: e.clientY, button: e.button, clickCount: e.detail || 1, scrollX: window.scrollX, scrollY: window.scrollY });
   }, true);
   document.addEventListener('visibilitychange', function() { if (!document.hidden) { emit('tabActivated', {}); } });
 })();
@@ -167,6 +183,11 @@ class CdpManager {
             resolve(newSession);
           }
 
+          // Runtime.enable для ВСЕХ сессий: без него не приходит
+          // Runtime.executionContextCreated, и не будет executionContextId,
+          // который нужен Runtime.callFunctionOn (authoritative document scroll).
+          this._send(newSession, 'Runtime.enable', {});
+
           if (enableInput) {
             this._enableInput(newSession);
           }
@@ -291,6 +312,24 @@ class CdpManager {
           }
         }
 
+        // Захват идентификатора default execution context сессии: используется для
+        // Runtime.callFunctionOn (window.scrollTo) без конкатенации значений в JS-строку.
+        if (msg.method === 'Runtime.executionContextCreated') {
+          const ctxProfileId = this.sessionBySid.get(msg.sessionId);
+          const ctx = msg.params?.context;
+          if (ctxProfileId && ctx && (ctx.type === 'default' || ctx.auxData?.isDefault === true)) {
+            const bc = this.browserConnections.get(ctxProfileId);
+            if (bc) {
+              for (const [, s] of bc.targetSessions) {
+                if (s.sessionId === msg.sessionId) {
+                  s.executionContextId = ctx.id;
+                  break;
+                }
+              }
+            }
+          }
+        }
+
         if (!firstSessionResolved) return;
 
         if (msg.method === 'Runtime.exceptionThrown') {
@@ -340,6 +379,8 @@ class CdpManager {
           this.sessions.set(profileId, session);
 
           if (bc) bc.targetSessions.set(targetId, session);
+
+          this._send(session, 'Runtime.enable', {});
 
           if (enableInput) {
             this._enableInput(session);
@@ -529,6 +570,75 @@ class CdpManager {
         expression: 'String(window.scrollX) + "," + String(window.scrollY)',
       });
     });
+  }
+
+  _findSessionBySessionId(profileId, sessionId) {
+    const bc = this.browserConnections.get(profileId);
+    if (!bc) return null;
+    for (const [, s] of bc.targetSessions) {
+      if (s.sessionId === sessionId) return s;
+    }
+    return null;
+  }
+
+  // Выполнение функции в конкретной slave-сессии через Runtime.callFunctionOn.
+  // Значения передаются аргументами (числовыми), а не конкатенацией в JS-строку.
+  // Единственный разрешённый путь — executionContextId сессии (захватывается из
+  // Runtime.executionContextCreated после Runtime.enable). Fallback на
+  // Runtime.evaluate (получение window/objectId) НЕ используется: при отсутствии
+  // корректного context применение считается неуспешным (controller увеличивает
+  // диагностический счётчик discard).
+  async _callFunctionOnSession(profileId, sessionId, functionDeclaration, args, returnByValue) {
+    const bc = this.browserConnections.get(profileId);
+    const session = this._findSessionBySessionId(profileId, sessionId);
+    if (!bc || !session) {
+      throw new Error('CDP: сессия не найдена');
+    }
+    if (typeof session.executionContextId !== 'number') {
+      throw new Error('CDP: execution context сессии недоступен');
+    }
+    return this._sendAndWait(bc.ws, 'Runtime.callFunctionOn', {
+      functionDeclaration,
+      arguments: args,
+      executionContextId: session.executionContextId,
+      returnByValue: !!returnByValue,
+    }, session.sessionId);
+  }
+
+  async scrollToSession(profileId, sessionId, scrollX, scrollY) {
+    try {
+      await this._callFunctionOnSession(
+        profileId,
+        sessionId,
+        'function(x, y) { window.scrollTo(x, y); }',
+        [{ value: scrollX }, { value: scrollY }],
+        false
+      );
+      return { applied: true };
+    } catch (err) {
+      logger.debug({ profileId, sessionId, error: err.message }, 'CDP: ошибка применения scroll');
+      return { applied: false };
+    }
+  }
+
+  async getPageScrollForSession(profileId, sessionId) {
+    try {
+      const res = await this._callFunctionOnSession(
+        profileId,
+        sessionId,
+        'function() { return [window.scrollX, window.scrollY]; }',
+        [],
+        true
+      );
+      const val = res?.result?.value;
+      if (Array.isArray(val)) {
+        return { scrollX: val[0] || 0, scrollY: val[1] || 0 };
+      }
+      return { scrollX: 0, scrollY: 0 };
+    } catch (err) {
+      logger.debug({ profileId, sessionId, error: err.message }, 'CDP: ошибка чтения scroll сессии');
+      return { scrollX: 0, scrollY: 0 };
+    }
   }
 
   navigateTo(profileId, url) {

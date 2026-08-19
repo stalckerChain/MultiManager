@@ -37,8 +37,29 @@ class InputCapture extends EventEmitter {
           this.emit('click', { x: event.x, y: event.y, button: 0, clickCount: event.clickCount || 1 });
         }
         break;
+      case 'wheel':
+        // Wheel — только диагностика: обработчик wheel выполняется ДО browser
+        // default action и не отражает фактический document scroll. Authoritative
+        // scroll приходит событием type 'scroll' из window.scroll listener.
+        // inputCapture НЕ превращает wheel в authoritative scroll и не запускает
+        // scroll runner.
+        break;
       case 'scroll':
-        this.emit('scroll', { x: event.x, y: event.y, deltaX: event.deltaX || 0, deltaY: event.deltaY || 0 });
+        // Сохраняем scrollX/scrollY как есть: document scroll в slave применяется
+        // по абсолютному состоянию мастера (Runtime.callFunctionOn window.scrollTo).
+        // clientX/clientY сохраняются для будущей поддержки контейнеров, но НЕ
+        // являются условием допуска document scroll. Отсутствие числовых
+        // scrollX/scrollY → controller безопасно пропускает событие.
+        this.emit('scroll', {
+          x: event.x,
+          y: event.y,
+          clientX: event.clientX,
+          clientY: event.clientY,
+          deltaX: event.deltaX || 0,
+          deltaY: event.deltaY || 0,
+          scrollX: event.scrollX,
+          scrollY: event.scrollY,
+        });
         break;
     }
   }

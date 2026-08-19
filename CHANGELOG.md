@@ -2,6 +2,18 @@
 
 ## v1.5.1
 
+### Синхронизатор / Multi-Control
+
+- **[FEAT] Снижение задержки курсора в MultiController + authoritative document scroll.**
+  Устранена задержка движения курсора на slave-профилях (2–4 с на 5 профилях при i7-8265U / 20 GB) и рассинхрон координат после прокрутки.
+  - `src/multi-control/index.js`: throttling входящих `mousemove` (16 мс, `latest-event-wins`, pending хранит минимум `{x, y, scrollX, scrollY}`; общий для controller, не на slave; `removeSlave` не чистит общий pending при других slave; полная очистка только при stop/без slave; клики/клавиатура/scroll не троттлятся). Адаптивные параметры MouseSmoother по числу slave (1–2: `stepInterval=8/maxPoints=60`, 3–4: `12/40`, 5+: `16/30`, `moveSpeed=5` стабилен). Пропуск устаревших точек без пересчёта траектории. Исправлена `_toSlaveCoords`: `slaveX = pageX - slaveScroll.scrollX`, `slaveY = pageY - slaveScroll.scrollY` (без `masterScroll`, двойное вычитание устранено). `scrollTo` берёт абсолютное состояние мастера из события; per-slave `generation`/`pending` (коалесцирование); `_applyDocumentScroll` через `cdp.scrollToSession`; `_syncSlaveScroll` перечитывает фактический scroll slave; при неуспешном применении `scrollSyncDiscarded += 1`, состояние slave не подменяется.
+  - `src/multi-control/cdp-manager.js`: `SYNC_EVENT_SCRIPT` — `wheel` эмитит только `type: 'wheel'` (диагностика: обработчик выполняется до browser default action), authoritative `scroll` из `window.addEventListener('scroll', …)` с абсолютными `window.scrollX/scrollY` и коалесцированием; `Runtime.enable` для ВСЕХ сессий (захват `executionContextId` из `Runtime.executionContextCreated`); `_callFunctionOnSession` — единственный путь `Runtime.callFunctionOn` (sessionId + числовые аргументы + `executionContextId`), fallback `Runtime.evaluate`/objectId удалён; `scrollToSession`/`getPageScrollForSession`.
+  - `src/os-input/input-capture.js`: `case 'wheel'` — no-op (не превращает wheel в authoritative scroll, не запускает runner); `case 'scroll'` — passthrough `scrollX/scrollY`.
+  - Тесты: `tests/unit/multi-control.test.js` (throttling latest-event-wins, адаптивные параметры, пропуск stale точек, регрессии порядка событий scroll), `tests/unit/mouse-smoothing.test.js` (устаревшие точки), `tests/unit/cdp-manager.test.js` (wheel→'wheel', window-scroll→'scroll', scroll-коалесцирование, `scrollToSession` без context → `{applied:false}` без `Runtime.evaluate`, `_callFunctionOnSession` только callFunctionOn, `Runtime.enable` на attach), `tests/unit/multi-control-api.test.js` (wheel без scroll → `scrollTo` не вызывается; scroll после wheel — один вызов), `tests/unit/os-input.test.js` (wheel не эмитит 'scroll').
+  - Spike-проверка `ghost-cursor@1.4.2` (в требовании TASK): уменьшение `moveSpeed` увеличивает число исходных точек и суммарную длительность траектории — `moveSpeed` как адаптивный ограничитель не используется.
+  - API-контракт, схема БД, зависимости и версия не менялись.
+  ✅ `src/multi-control/index.js`, `src/multi-control/cdp-manager.js`, `src/os-input/input-capture.js`, `tests/unit/multi-control.test.js`, `tests/unit/mouse-smoothing.test.js`, `tests/unit/cdp-manager.test.js`, `tests/unit/multi-control-api.test.js`, `tests/unit/os-input.test.js`, `docs/MULTI-CONTROL.md`, `docs/API.md`, `docs/API.en.md`, `docs/API.zh.md`, `README.md`, `TASK.md`
+
 ### Синхронизатор / Окна
 
 - **[FEAT] Отображение имени профиля в `Window Preview` и `Detected Windows`.**

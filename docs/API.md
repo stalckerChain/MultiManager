@@ -753,7 +753,7 @@ Human-like ввод текста через CDP. Имитирует реальн
 
 ---
 
-## Multi-Control (Синхронизация окон) — v0.15.0
+## Multi-Control (Синхронизация окон) — v0.17.0
 
 Система синхронизации ввода из master окна во все slave окна через CDP (Chrome DevTools Protocol).
 
@@ -767,11 +767,11 @@ ws://127.0.0.1:{PORT}/ws?token={API_TOKEN}
 ```
 
 **Архитектура:**
-- **Захват ввода (DOM)**: CDP binding `Runtime.addBinding('__MM_SYNC_BIND__')` инжектируется в master page через `SYNC_EVENT_SCRIPT`. DOM events (mousemove, mousedown, mouseup, wheel, keydown, keyup) + `visibilitychange` → `window.__MM_SYNC_BIND__(JSON)` → `cdpManager.onEvent` → `inputCapture.injectFromCdp()` → `controller.onMouseMoved/onKeyDown/etc.`
+- **Захват ввода (DOM)**: CDP binding `Runtime.addBinding('__MM_SYNC_BIND__')` инжектируется в master page через `SYNC_EVENT_SCRIPT`. DOM events (mousemove, mousedown, mouseup, wheel [только диагностика], click) + authoritative `scroll` (абсолютные `window.scrollX/scrollY` из `window.scroll` listener, коалесцирование) + `visibilitychange` → `window.__MM_SYNC_BIND__(JSON)` → `cdpManager.onEvent` → `inputCapture.injectFromCdp()` → `controller`
 - **Native hooks (OS-level)**: C++ addon `WH_KEYBOARD_LL` перехватывает ВСЕ клавиши на уровне ОС, включая browser shortcuts (Ctrl+T, Ctrl+W). HTTP POST → `/api/multi-control/os-keyboard` → `controller.onKeyDown/onKeyUp`
 - **Broadcast**: `controller` → `_getSlaveSession(slaveId)` → CDP `Input.dispatch*` / `Input.dispatchKeyEvent` / `Input.insertText` → slave окна
 - **Mouse smoothing**: MouseSmoother (ghost-cursor `path()`: кубическая Безье + Fitts's Law + overshoot) + `setTimeout` dispatch loop + `flush()` перед кликом
-- **Scroll**: Разбивается на серию `wheel` dispatch'ей (SCROLL_STEP_PX=40, SCROLL_TICK_MS=16)
+- **Scroll**: Authoritative document scroll мастера из события `window.scroll` (абсолютные `scrollX/scrollY`, без накопления дельт). Применяется в slave через CDP `Runtime.callFunctionOn('window.scrollTo(x, y)')` с `executionContextId` сессии (без `Runtime.evaluate` fallback). Wheel — только диагностика и не запускает скролл
 - **Multi-tab**: HTTP `/json` polling каждые 300мс (DevTools endpoint) для обнаружения нативно-открытых вкладок. `Page.addScriptToEvaluateOnNewDocument` для инжекции sync-script в новые вкладки. Tab mapping 1:N через `Map<masterTargetId, Map<slaveId, slaveTargetId>>` + `tabIndex` matrix
 - **Активация фокуса**: Цепочка `Target.activateTarget` → `Page.bringToFront` → `DOM.focus` → `body.focus()` для закрепления DOM-фокуса в slave
 
@@ -783,7 +783,7 @@ ws://127.0.0.1:{PORT}/ws?token={API_TOKEN}
 - Навигация sync: master переходит → slave следует (Page.navigate)
 - Browser shortcuts: Ctrl+T (нативное открытие, polling подхватывает), Ctrl+W (закрытие slave табов через CDP)
 - Native hooks: перехват ВСЕХ клавиш на уровне ОС для browser chrome (адресная строка, tab bar)
-- Double dispatch: при вводе в DOM-элементе клавиши уходят в slave дважды (CDP + native hook)
+- Double dispatch устранён (v0.16.0): CDP-клавиатура удалена, клавиши уходят в slave ровно один раз через native hook
 
 **Ограничения:**
 - Events привязаны к DOM — не работают на chrome:// и devtools:// страницах (только native hooks для browser chrome)

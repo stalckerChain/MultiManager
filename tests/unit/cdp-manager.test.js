@@ -446,9 +446,36 @@ describe('attachToExistingTarget', () => {
       expect(script).toMatch(/mousemove[\s\S]*scrollY:\s*window\.scrollY/);
     });
 
-    it('wheel включает scrollX/scrollY', () => {
+    it('wheel включает scrollX/scrollY (диагностика)', () => {
       const script = captureInjectedScript();
       expect(script).toMatch(/wheel[\s\S]*scrollX:\s*window\.scrollX/);
+      expect(script).toMatch(/wheel[\s\S]*scrollY:\s*window\.scrollY/);
+    });
+
+    it('authoritative scroll формируется из window.scroll, а не из wheel', () => {
+      const script = captureInjectedScript();
+      // Wheel — только диагностика и НЕ эмитит authoritative 'scroll'.
+      expect(script).toMatch(/addEventListener\(['"]wheel['"][^\n]*emit\(['"]wheel['"]/);
+      expect(script).not.toMatch(/addEventListener\(['"]wheel['"][^\n]*emit\(['"]scroll['"]/);
+      // Единственный authoritative источник — фактическое window.scroll событие
+      // (после browser default action), несущее абсолютные scrollX/scrollY.
+      expect(script).toMatch(/addEventListener\(['"]scroll['"][\s\S]*scrollX:\s*window\.scrollX/);
+      expect(script).toMatch(/addEventListener\(['"]scroll['"][\s\S]*scrollY:\s*window\.scrollY/);
+    });
+
+    it('window.scroll listener использует window.scrollX/scrollY, а не clientX/clientY', () => {
+      const script = captureInjectedScript();
+      expect(script).toMatch(/addEventListener\(['"]scroll['"][\s\S]*scrollX:\s*window\.scrollX/);
+      expect(script).toMatch(/addEventListener\(['"]scroll['"][\s\S]*scrollY:\s*window\.scrollY/);
+      // clientX/clientY — viewport-координаты, НЕ источник document scroll.
+      expect(script).not.toMatch(/scrollX:\s*e\.clientX/);
+      expect(script).not.toMatch(/scrollY:\s*e\.clientY/);
+    });
+
+    it('scroll-события коалесцируются до последнего абсолютного состояния', () => {
+      const script = captureInjectedScript();
+      expect(script).toMatch(/_scrollBuf = msg/);
+      expect(script).toMatch(/flushScroll/);
     });
 
     it('mousedown/mouseup/click включают scrollX/scrollY', () => {
@@ -456,6 +483,59 @@ describe('attachToExistingTarget', () => {
       expect(script).toMatch(/mousedown[\s\S]*scrollX:\s*window\.scrollX/);
       expect(script).toMatch(/mouseup[\s\S]*scrollX:\s*window\.scrollX/);
       expect(script).toMatch(/click[\s\S]*scrollX:\s*window\.scrollX/);
+    });
+  });
+
+  // Wheel/клик/mousemove должны нести viewport-координаты master (clientX/clientY):
+  // Input.dispatchMouseEvent принимает CSS-пиксели viewport, а не pageX/pageY
+  // и не координаты рабочего стола. Существующие x/y = pageX/pageY сохраняются.
+  describe('SYNC_EVENT_SCRIPT передаёт clientX/clientY viewport-координаты', () => {
+    function captureInjectedScript() {
+      const sent = [];
+      const session = {
+        ws: { send: vi.fn((raw) => sent.push(JSON.parse(raw))) },
+        sessionId: 's-1',
+        targetId: 't-1',
+        profileId: 'p-1',
+      };
+      mgr._injectSyncScript(session, '__MM_SYNC_BIND__');
+      const evalMsg = sent.find(m => m.method === 'Runtime.evaluate');
+      return evalMsg.params.expression;
+    }
+
+    it('mousemove включает clientX/clientY', () => {
+      const script = captureInjectedScript();
+      expect(script).toMatch(/mousemove[\s\S]*clientX:\s*e\.clientX/);
+      expect(script).toMatch(/mousemove[\s\S]*clientY:\s*e\.clientY/);
+    });
+
+    it('wheel включает clientX/clientY и сохраняет x/y=pageX/pageY и scrollX/scrollY', () => {
+      const script = captureInjectedScript();
+      expect(script).toMatch(/wheel[\s\S]*clientX:\s*e\.clientX/);
+      expect(script).toMatch(/wheel[\s\S]*clientY:\s*e\.clientY/);
+      expect(script).toMatch(/wheel[\s\S]*x:\s*e\.pageX/);
+      expect(script).toMatch(/wheel[\s\S]*y:\s*e\.pageY/);
+      expect(script).toMatch(/wheel[\s\S]*scrollX:\s*window\.scrollX/);
+      expect(script).toMatch(/wheel[\s\S]*scrollY:\s*window\.scrollY/);
+    });
+
+    it('mousedown/mouseup/click включают clientX/clientY', () => {
+      const script = captureInjectedScript();
+      expect(script).toMatch(/mousedown[\s\S]*clientX:\s*e\.clientX/);
+      expect(script).toMatch(/mousedown[\s\S]*clientY:\s*e\.clientY/);
+      expect(script).toMatch(/mouseup[\s\S]*clientX:\s*e\.clientX/);
+      expect(script).toMatch(/mouseup[\s\S]*clientY:\s*e\.clientY/);
+      expect(script).toMatch(/click[\s\S]*clientX:\s*e\.clientX/);
+      expect(script).toMatch(/click[\s\S]*clientY:\s*e\.clientY/);
+    });
+
+    it('clientX/clientY — числовые поля, а не замена x/y', () => {
+      const script = captureInjectedScript();
+      expect(script).toMatch(/clientX:\s*e\.clientX/);
+      expect(script).toMatch(/clientY:\s*e\.clientY/);
+      // x/y остаются page-координатами
+      expect(script).toMatch(/x:\s*e\.pageX/);
+      expect(script).toMatch(/y:\s*e\.pageY/);
     });
   });
 
@@ -506,5 +586,197 @@ describe('attachToExistingTarget', () => {
       expect(script).toMatch(/addEventListener\(['"]click['"]/);
       expect(script).toMatch(/visibilitychange/);
     });
+
+    it('слушает фактическое window.scroll для authoritative document scroll', () => {
+      const script = captureInjectedScript();
+      expect(script).toMatch(/addEventListener\(['"]scroll['"]/);
+    });
+  });
+});
+
+describe('authoritative document scroll (Runtime.callFunctionOn)', () => {
+  let mgr;
+
+  beforeEach(() => {
+    mgr = new CdpManager();
+  });
+
+  // Сетап сессии: mockWs отвечает на Runtime.evaluate (window) и
+  // Runtime.callFunctionOn в указанной sessionId.
+  function setupSession({ executionContextId } = {}) {
+    const sent = [];
+    const session = {
+      ws: {},
+      sessionId: 's-scroll',
+      targetId: 't-scroll',
+      profileId: 'p-scroll',
+    };
+    if (typeof executionContextId === 'number') session.executionContextId = executionContextId;
+    const targetSessions = new Map();
+    targetSessions.set('t-scroll', session);
+    const mockWs = {
+      sent,
+      handlers: [],
+      send: vi.fn((raw) => {
+        const msg = JSON.parse(raw);
+        sent.push(msg);
+        if (msg.sessionId !== 's-scroll') return;
+        const respond = (result) => {
+          setTimeout(() => {
+            const handler = mockWs.handlers[mockWs.handlers.length - 1];
+            if (handler) handler(JSON.stringify({ id: msg.id, result }));
+          }, 0);
+        };
+        if (msg.method === 'Runtime.evaluate') {
+          respond({ result: { type: 'object', className: 'Window', objectId: 'obj-window' } });
+        } else if (msg.method === 'Runtime.callFunctionOn') {
+          respond({ result: { type: 'object', subtype: 'array', value: [10, 20] } });
+        }
+      }),
+      on: vi.fn((event, handler) => { if (event === 'message') mockWs.handlers.push(handler); }),
+      removeListener: vi.fn(),
+    };
+    mgr.browserConnections.set('p-scroll', { ws: mockWs, targetSessions, cdpPort: 9222 });
+    return { sent, mockWs, session };
+  }
+
+  it('scrollToSession вызывает Runtime.callFunctionOn(window.scrollTo) с числовыми аргументами', async () => {
+    setupSession({ executionContextId: 7 });
+
+    const result = await mgr.scrollToSession('p-scroll', 's-scroll', 10, 140);
+
+    expect(result).toEqual({ applied: true });
+    const calls = mgr.browserConnections.get('p-scroll').ws.sent;
+    expect(calls.length).toBe(1);
+    expect(calls[0].method).toBe('Runtime.callFunctionOn');
+    expect(calls[0].sessionId).toBe('s-scroll');
+    expect(calls[0].params.executionContextId).toBe(7);
+    expect(calls[0].params.functionDeclaration).toMatch(/window\.scrollTo/);
+    // Значения передаются аргументами, а не конкатенацией в JS-строку.
+    expect(calls[0].params.arguments).toEqual([{ value: 10 }, { value: 140 }]);
+    expect(calls[0].params.functionDeclaration).not.toContain('140');
+    // Document scroll не использует Input.dispatchMouseEvent / mouseWheel.
+    expect(calls.some(c => c.method === 'Input.dispatchMouseEvent')).toBe(false);
+    expect(calls[0].params.type).not.toBe('mouseWheel');
+  });
+
+  it('scrollToSession без executionContextId не использует Runtime.evaluate и возвращает applied:false', async () => {
+    setupSession();
+
+    const result = await mgr.scrollToSession('p-scroll', 's-scroll', 5, 60);
+
+    // При отсутствии корректного context применение считается неуспешным.
+    expect(result).toEqual({ applied: false });
+    const calls = mgr.browserConnections.get('p-scroll').ws.sent;
+    // Fallback Runtime.evaluate (window/objectId) НЕ вызывается.
+    expect(calls.some(c => c.method === 'Runtime.evaluate')).toBe(false);
+    expect(calls.length).toBe(0);
+  });
+
+  it('_callFunctionOnSession вызывает только Runtime.callFunctionOn с sessionId и числовыми аргументами', async () => {
+    setupSession({ executionContextId: 9 });
+
+    await mgr._callFunctionOnSession(
+      'p-scroll',
+      's-scroll',
+      'function(x, y) { window.scrollTo(x, y); }',
+      [{ value: 1 }, { value: 2 }],
+      false
+    );
+
+    const calls = mgr.browserConnections.get('p-scroll').ws.sent;
+    expect(calls).toHaveLength(1);
+    expect(calls[0].method).toBe('Runtime.callFunctionOn');
+    expect(calls[0].sessionId).toBe('s-scroll');
+    expect(calls[0].params.executionContextId).toBe(9);
+    expect(calls[0].params.arguments).toEqual([{ value: 1 }, { value: 2 }]);
+    // Никакого Runtime.evaluate / objectId в пути исполнения.
+    expect(calls[0].params.objectId).toBeUndefined();
+    expect(calls.some(c => c.method === 'Runtime.evaluate')).toBe(false);
+  });
+
+  it('_callFunctionOnSession бросает ошибку без сессии', async () => {
+    await expect(mgr._callFunctionOnSession('nonexistent', 'no-session', 'fn()', [], true))
+      .rejects.toThrow();
+  });
+
+  it('scrollToSession возвращает applied:false если сессии нет', async () => {
+    const result = await mgr.scrollToSession('nonexistent', 'no-session', 0, 0);
+    expect(result).toEqual({ applied: false });
+  });
+
+  it('getPageScrollForSession читает фактический scroll из возвращаемого массива', async () => {
+    setupSession({ executionContextId: 7 });
+
+    const scroll = await mgr.getPageScrollForSession('p-scroll', 's-scroll');
+
+    expect(scroll).toEqual({ scrollX: 10, scrollY: 20 });
+    const calls = mgr.browserConnections.get('p-scroll').ws.sent;
+    expect(calls[0].method).toBe('Runtime.callFunctionOn');
+    expect(calls[0].params.returnByValue).toBe(true);
+    expect(calls[0].params.functionDeclaration).toMatch(/window\.scrollX/);
+    expect(calls[0].params.functionDeclaration).toMatch(/window\.scrollY/);
+  });
+
+  it('getPageScrollForSession возвращает нули без сессии', async () => {
+    const scroll = await mgr.getPageScrollForSession('nonexistent', 'no-session');
+    expect(scroll).toEqual({ scrollX: 0, scrollY: 0 });
+  });
+
+  it('захватывает executionContextId из Runtime.executionContextCreated', () => {
+    const targetSessions = new Map();
+    const session = { ws: {}, sessionId: 's-ctx', targetId: 't-ctx', profileId: 'p-ctx' };
+    targetSessions.set('t-ctx', session);
+    const messageHandlers = [];
+    const mockWs = {
+      send: vi.fn(),
+      on: vi.fn((event, handler) => { if (event === 'message') messageHandlers.push(handler); }),
+      removeListener: vi.fn(),
+    };
+    mgr.browserConnections.set('p-ctx', { ws: mockWs, targetSessions, cdpPort: 9222 });
+    mgr.sessionBySid.set('s-ctx', 'p-ctx');
+
+    mgr._setupBrowserMessageHandler(mockWs, 'p-ctx', false, vi.fn(), vi.fn());
+    const handler = messageHandlers[0];
+    handler(JSON.stringify({
+      method: 'Runtime.executionContextCreated',
+      sessionId: 's-ctx',
+      params: { context: { id: 42, type: 'default', auxData: { isDefault: true } } },
+    }));
+
+    expect(session.executionContextId).toBe(42);
+  });
+
+  it('сессия, attach имая без enableInput, всё равно получает Runtime.enable (для executionContextId)', async () => {
+    const targetSessions = new Map();
+    const messageHandlers = [];
+    const sent = [];
+    const mockWs = {
+      sent,
+      send: vi.fn((raw) => {
+        const msg = JSON.parse(raw);
+        sent.push(msg);
+        if (msg.method === 'Target.attachToTarget') {
+          setTimeout(() => {
+            const handler = messageHandlers[0];
+            if (handler) handler(JSON.stringify({ id: msg.id, result: { sessionId: 's-attach' } }));
+          }, 0);
+        }
+      }),
+      on: vi.fn((event, handler) => { if (event === 'message') messageHandlers.push(handler); }),
+      removeListener: vi.fn(),
+    };
+    mgr.browserConnections.set('p-attach', { ws: mockWs, targetSessions, cdpPort: 9222 });
+
+    const callback = vi.fn();
+    mgr._attachToTarget(mockWs, 'p-attach', 't-attach', false, callback);
+
+    await vi.waitFor(() => {
+      const enableCalls = sent.filter(m => m.method === 'Runtime.enable');
+      expect(enableCalls).toHaveLength(1);
+      expect(enableCalls[0].sessionId).toBe('s-attach');
+      expect(callback).toHaveBeenCalled();
+    });
+    expect(targetSessions.get('t-attach')).toBeDefined();
   });
 });

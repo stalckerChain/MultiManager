@@ -894,6 +894,139 @@ describe('inputCapture lifecycle (wireInputToController)', () => {
 });
 
 // ============================================================
+// ТЕСТЫ: production-цепочка CDP event → InputCapture → controller.scrollTo
+// ============================================================
+describe('production-цепочка CDP event → InputCapture → controller.scrollTo', () => {
+  let mc;
+  let inputCapture;
+  let controller;
+  let cdpManager;
+
+  beforeEach(() => {
+    vi.restoreAllMocks();
+    mc = require('../../src/api/multi-control.js');
+    inputCapture = require('../../src/os-input').inputCapture;
+    controller = require('../../src/multi-control').controller;
+    cdpManager = require('../../src/multi-control/cdp-manager.js').cdpManager;
+    inputCapture.removeAllListeners();
+    mc.unwireInputFromController();
+    controller.stop();
+  });
+
+  afterEach(() => {
+    mc.unwireInputFromController();
+    inputCapture.removeAllListeners();
+    controller.stop();
+  });
+
+  it('scroll с scrollX/scrollY доходит до authoritative scroll-вызова (scrollToSession) и не зависит от clientX/clientY', async () => {
+    controller.cdp = cdpManager;
+    const spy = vi.spyOn(cdpManager, 'scrollToSession').mockResolvedValue({ applied: true });
+    const wheelSpy = vi.spyOn(cdpManager, 'dispatchMouseEvent').mockReturnValue(undefined);
+    try {
+      controller.setMaster('master-1');
+      await controller.addSlave('slave-1');
+      const bc = cdpManager.browserConnections.get('slave-1') || { ws: {}, targetSessions: new Map(), cdpPort: 0 };
+      bc.targetSessions.set('slave-current-tab', { ws: {}, sessionId: 's1', targetId: 'slave-current-tab', profileId: 'slave-1' });
+      cdpManager.browserConnections.set('slave-1', bc);
+
+      mc.wireInputToController();
+      inputCapture.start();
+
+      // clientX/clientY отсутствуют — document scroll всё равно применяется.
+      inputCapture.injectFromCdp({
+        type: 'scroll',
+        x: 300, y: 400,
+        deltaX: 0, deltaY: 60,
+        scrollX: 50, scrollY: 140,
+      });
+
+      await new Promise(r => setTimeout(r, 60));
+
+      expect(spy).toHaveBeenCalledWith('slave-1', 's1', 50, 140);
+      // Регрессия: document scroll НЕ dispatch-ит mouseWheel.
+      const wheelCalls = wheelSpy.mock.calls.filter(c => c[1] === 'mouseWheel');
+      expect(wheelCalls).toHaveLength(0);
+    } finally {
+      spy.mockRestore();
+      wheelSpy.mockRestore();
+    }
+  });
+
+  it('scroll без scrollX/scrollY после адаптера не вызывает authoritative scroll (нет прокрутки к 0,0)', async () => {
+    controller.cdp = cdpManager;
+    const spy = vi.spyOn(cdpManager, 'scrollToSession').mockResolvedValue({ applied: true });
+    const wheelSpy = vi.spyOn(cdpManager, 'dispatchMouseEvent').mockReturnValue(undefined);
+    try {
+      controller.setMaster('master-1');
+      await controller.addSlave('slave-1');
+
+      mc.wireInputToController();
+      inputCapture.start();
+
+      inputCapture.injectFromCdp({ type: 'scroll', x: 0, y: 0, deltaX: 0, deltaY: 60 });
+
+      await new Promise(r => setTimeout(r, 40));
+
+      expect(spy).not.toHaveBeenCalled();
+      const wheelCalls = wheelSpy.mock.calls.filter(c => c[1] === 'mouseWheel');
+      expect(wheelCalls).toHaveLength(0);
+    } finally {
+      spy.mockRestore();
+      wheelSpy.mockRestore();
+    }
+  });
+
+  it('wheel без последующего scroll НЕ вызывает controller.scrollTo (wheel — только диагностика)', async () => {
+    controller.cdp = cdpManager;
+    const scrollToSpy = vi.spyOn(controller, 'scrollTo');
+    try {
+      controller.setMaster('master-1');
+      await controller.addSlave('slave-1');
+
+      mc.wireInputToController();
+      inputCapture.start();
+
+      // Wheel-событие происходит ДО browser default action — оно не является
+      // authoritative scroll и не должно запускать scroll runner.
+      inputCapture.injectFromCdp({ type: 'wheel', deltaX: 0, deltaY: 100, scrollX: 0, scrollY: 0 });
+      inputCapture.injectFromCdp({ type: 'wheel', deltaX: 0, deltaY: 60 });
+
+      await new Promise(r => setTimeout(r, 40));
+
+      expect(scrollToSpy).not.toHaveBeenCalled();
+    } finally {
+      scrollToSpy.mockRestore();
+    }
+  });
+
+  it('фактический scroll после wheel вызывает controller.scrollTo один раз с новым scrollY', async () => {
+    controller.cdp = cdpManager;
+    const scrollToSpy = vi.spyOn(controller, 'scrollTo').mockResolvedValue(undefined);
+    try {
+      controller.setMaster('master-1');
+      await controller.addSlave('slave-1');
+
+      mc.wireInputToController();
+      inputCapture.start();
+
+      // Сначала wheel (диагностика) — не запускает scroll runner.
+      inputCapture.injectFromCdp({ type: 'wheel', deltaX: 0, deltaY: 60 });
+      // Затем фактический window.scroll event с абсолютным scrollY.
+      inputCapture.injectFromCdp({ type: 'scroll', scrollX: 0, scrollY: 100 });
+
+      await new Promise(r => setTimeout(r, 40));
+
+      // Только scroll-событие вызывает controller.scrollTo — ровно один раз.
+      expect(scrollToSpy).toHaveBeenCalledTimes(1);
+      expect(scrollToSpy).toHaveBeenCalledWith(expect.objectContaining({ scrollX: 0, scrollY: 100 }));
+    } finally {
+      scrollToSpy.mockRestore();
+    }
+  });
+});
+
+// ============================================================
 // ТЕСТЫ: маршрутизация /os-keyboard (keyDown/keyUp/charInput)
 // ============================================================
 describe('POST /os-keyboard маршрутизация', () => {

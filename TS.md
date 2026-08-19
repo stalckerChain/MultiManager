@@ -1,7 +1,7 @@
 -------------------------------
 ## SOFTWARE REQUIREMENTS SPECIFICATION (SRS) / ТЕХНИЧЕСКОЕ ЗАДАНИЕ
 ## AI-Driven Web Automation Platform на базе антидетект-браузера (MVP аналог AdsPower + ферма автоматизации)
-**Версия системы:** 1.5.1 | **Multi-Control:** 0.15.0 | **Дата ревизии:** 2026-08-14 | **Ф7 Automation Matrix:** ✅
+**Версия системы:** 1.5.1 | **Multi-Control:** 0.17.0 | **Дата ревизии:** 2026-08-20 | **Ф7 Automation Matrix:** ✅
 
 > **Принцип маркировки:** ✅ РЕАЛИЗОВАНО в коде | ⚠️ ЧАСТИЧНО | ❌ НЕ РЕАЛИЗОВАНО (в ТЗ, но в коде нет). Каждое утверждение о статусе подкреплено ссылкой на реальный файл аудита.
 > **Спутник-документ:** [TS_INTEGRATION.md](./TS_INTEGRATION.md) — миграция Python-фреймворка stAuto0 на интеграцию с MultiManager.
@@ -158,11 +158,13 @@ GUI передаёт порт бэкенду через **env-переменну
 - Таблица `cookies` — очередь одноразового импорта. Применение после запуска профиля через CDP `Network.setCookies` на browser-level WebSocket (без `sessionId`); подтверждение через `Network.getAllCookies` по ключу `(domain, path, name)` без сравнения `value`; удаляются только подтверждённые записи по snapshot DB `id`; при ошибке записи сохраняются для повтора. Файл `Default/Cookies` не читается и не перезаписывается. ✅ `src/cookie/inject.js`, `src/api/browser.js:651-654`
 - Экспорт запущенного профиля — актуальные cookies через CDP `Network.getAllCookies`; остановленного — только оставшиеся в очереди записи. ✅ `src/api/cookies.js:63-108`
 
-### 4.4. Логика синхронизатора (Multi-Control) v0.16.0 ✅ РЕАЛИЗОВАНО
+### 4.4. Логика синхронизатора (Multi-Control) v0.17.0 ✅ РЕАЛИЗОВАНО
 - CDP-синтез мыши/скролла + Native OS hooks (WH_KEYBOARD_LL) как единственный источник клавиатуры (v0.16.0: CDP-клавиатура удалена, double dispatch устранён). ✅ `src/multi-control/`, `src/os-input/native-hooks/`
 - Текст в slave через `Input.insertText` — `charInput` вычисляется addon'ом через `ToUnicodeEx` (раскладка, Shift, CapsLock, AltGr, dead keys). ✅ `src/os-input/native-hooks/hooks.cc`, `gui/src/main/keyboard-hooks-payload.js`
 - Browser-сочетания: Ctrl+T/W/N обрабатывает нативный hook (Ctrl+T — нативный таб + `/json` polling). ✅ `src/api/multi-control.js`
-- MouseSmoother (ghost-cursor path(), Безье + Fitts + overshoot), `flush()` перед кликом, микрошаговый скролл. ✅ `src/multi-control/mouse-smoothing.js`
+- MouseSmoother (ghost-cursor path(), Безье + Fitts + overshoot), `flush()` перед кликом; параметры адаптируются к числу slave, устаревшие точки пропускаются. ✅ `src/multi-control/mouse-smoothing.js`
+- Входящие `mousemove` троттлятся (16 мс, `latest-event-wins`); координаты slave без двойного вычитания scroll. ✅ `src/multi-control/index.js`
+- **Authoritative document scroll (v0.17.0):** источник — событие `window.scroll` (абсолютные `window.scrollX/scrollY` после изменения прокрутки, коалесцирование); wheel — только диагностика; применение в slave через CDP `Runtime.callFunctionOn('window.scrollTo(x, y)')` с `executionContextId` сессии (без `Runtime.evaluate` fallback), неуспешное применение фиксируется `scrollSyncDiscarded`; `Runtime.enable` для всех сессий. ✅ `src/multi-control/cdp-manager.js`, `src/multi-control/index.js`, `src/os-input/input-capture.js`
 - Tab Mapping 1:N (`Map<masterTargetId, Map<slaveId, slaveTargetId>>`). ✅ `src/multi-control/cdp-manager.js`
 - Активация фокуса: `Target.activateTarget` → `Page.bringToFront` → `DOM.focus` + `body.focus()`.
 - Endpoints `/api/multi-control/*`, `/api/window-arranger/*`. ✅ `src/core/app.js:28-29`
@@ -452,7 +454,7 @@ Python: `connect_over_cdp("http://127.0.0.1:9331")`.
 | 23 | Window Arranger cross-platform | ✅ | ⚠️ deferred | Ф9 (ToDo §4) |
 | 24 | Migration Wizard (AdsPower) | ❌ заморожено | ❌ | ToDo §5 |
 | 25 | Cloud Sync | ❌ заморожено | ❌ | ToDo §6 |
-| 26 | Multi-Control v0.15.0 | ✅ | ✅ | — |
+| 26 | Multi-Control v0.17.0 | ✅ | ✅ | — |
 | 27 | Fingerprint Generator | ✅ | ✅ | — |
 | 28 | Proxy Manager + ротация | ✅ | ✅ | — |
 | 29 | Extensions Manager | ✅ | ✅ | — |

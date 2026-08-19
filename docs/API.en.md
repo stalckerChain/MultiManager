@@ -726,18 +726,18 @@ Auto-login to Zerion extension (extension ID: `klghhnkeealcohjjanjjdaeeggmfmlpl`
 
 ---
 
-## Multi-Control (Window Sync) — v0.15.0
+## Multi-Control (Window Sync) — v0.17.0
 
 Broadcasts actions from master window to all slave windows via CDP (Chrome DevTools Protocol).
 
 **Architecture:**
-- **DOM input capture**: CDP binding `Runtime.addBinding('__MM_SYNC_BIND__')` injected into master page via `SYNC_EVENT_SCRIPT`. DOM events (mousemove, mousedown, mouseup, wheel, keydown, keyup) + `visibilitychange` → `window.__MM_SYNC_BIND__(JSON)` → `cdpManager.onEvent` → `inputCapture.injectFromCdp()` → `controller`
+- **DOM input capture**: CDP binding `Runtime.addBinding('__MM_SYNC_BIND__')` injected into master page via `SYNC_EVENT_SCRIPT`. DOM events (mousemove, mousedown, mouseup, wheel [diagnostics only], click) + authoritative `scroll` (absolute `window.scrollX/scrollY` from a `window.scroll` listener, coalesced) + `visibilitychange` → `window.__MM_SYNC_BIND__(JSON)` → `cdpManager.onEvent` → `inputCapture.injectFromCdp()` → `controller`
 - **Native hooks (OS-level)**: C++ addon `WH_KEYBOARD_LL` intercepts ALL keys at OS level, including browser shortcuts (Ctrl+T, Ctrl+W). HTTP POST → `/api/multi-control/os-keyboard`
 - **Mouse smoothing**: MouseSmoother (ghost-cursor `path()`: cubic Bézier + Fitts's Law + overshoot) + `setTimeout` dispatch loop + `flush()` before click
-- **Scroll**: Split into series of `wheel` dispatches (SCROLL_STEP_PX=40, SCROLL_TICK_MS=16)
+- **Scroll**: Authoritative document scroll of master from the `window.scroll` event (absolute `scrollX/scrollY`, no delta accumulation). Applied in slaves via CDP `Runtime.callFunctionOn('window.scrollTo(x, y)')` with the session `executionContextId` (no `Runtime.evaluate` fallback). Wheel is diagnostics only and does not trigger scroll
 - **Multi-tab**: HTTP `/json` polling every 300ms to detect natively opened tabs. Tab mapping 1:N via `Map<masterTargetId, Map<slaveId, slaveTargetId>>` + `tabIndex` matrix
 - **Focus activation**: Chain `Target.activateTarget` → `Page.bringToFront` → `DOM.focus` → `body.focus()` for DOM input focus in slaves
-- **Double dispatch**: When typing in DOM elements, keys are sent to slaves twice (CDP + native hook)
+- **Double dispatch eliminated**: CDP keyboard removed (v0.16.0), keys are sent to slaves exactly once via the native hook
 
 > **Platform Limitation:** Native OS keyboard hooks (WH_KEYBOARD_LL) are only available on Windows. On macOS/Linux, keyboard synchronization uses CDP-only mode — browser chrome shortcuts (Ctrl+T, Ctrl+W) are not captured.
 

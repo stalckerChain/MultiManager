@@ -1,7 +1,6 @@
 const { logger } = require('../logger');
 const { MouseSmoother } = require('./mouse-smoothing');
 
-const SCROLL_STEP_PX = 40;
 const SCROLL_TICK_MS = 16;
 
 class MultiController {
@@ -16,6 +15,12 @@ class MultiController {
     this.tabMapping = new Map();
     this.tabIndex = [];
     this.activeMasterTab = null;
+    this._throttleInterval = 16;
+    this._throttleTimer = null;
+    this._pendingMove = null;
+    this._scrollRunners = new Map();
+    this._debugStats = this._createDebugStats();
+    this._lastDebugLogAt = 0;
   }
 
   setMaster(profileId) {
@@ -24,6 +29,9 @@ class MultiController {
     this.smoothers.clear();
     this.slaves.clear();
     this.active = true;
+    this._clearThrottle();
+    this._debugStats = this._createDebugStats();
+    this._lastDebugLogAt = 0;
     this._loadMasterScroll();
     logger.info(`Multi-control: master установлен — ${profileId}`);
     logger.info({ masterId: this.masterId, active: this.active }, 'Multi-control: setMaster DONE');
@@ -36,8 +44,10 @@ class MultiController {
 
     const smoother = new MouseSmoother({
       dispatch: (x, y) => this._dispatchSlaveMove(profileId, x, y),
+      onStats: (stats) => this._accumulateSmootherStats(stats),
     });
     this.smoothers.set(profileId, smoother);
+    this._applySmootherProfile();
   }
 
   removeSlave(profileId) {
@@ -47,12 +57,22 @@ class MultiController {
       this.smoothers.delete(profileId);
     }
     this.slaves.delete(profileId);
+    this._cancelScrollTimers(profileId);
+    this._scrollRunners.delete(profileId);
+    if (this.slaves.size === 0) {
+      this._clearThrottle();
+    } else {
+      this._applySmootherProfile();
+    }
     logger.info(`Multi-control: slave удалён — ${profileId}, всего: ${this.slaves.size}`);
   }
 
   stop() {
     this.active = false;
     this.masterId = null;
+    this._clearThrottle();
+    this._cancelScrollTimers();
+    this._scrollRunners.clear();
     for (const smoother of this.smoothers.values()) {
       smoother.stop();
     }
@@ -63,6 +83,8 @@ class MultiController {
     this.tabMapping.clear();
     this.tabIndex = [];
     this.activeMasterTab = null;
+    this._debugStats = this._createDebugStats();
+    this._lastDebugLogAt = 0;
     logger.info('Multi-control: остановлен');
   }
 
@@ -72,7 +94,6 @@ class MultiController {
 
   mapTab(masterTargetId, slaveId, slaveTargetId) {
     let bySlave = this.tabMapping.get(masterTargetId);
-    const isNewEntry = !bySlave;
     if (!bySlave) {
       bySlave = new Map();
       this.tabMapping.set(masterTargetId, bySlave);
@@ -225,20 +246,16 @@ class MultiController {
     return 'left';
   }
 
-  _toSlaveCoords(pageX, pageY, slaveId, masterScrollX = 0, masterScrollY = 0) {
-    const slavePos = this.windowPositions.get(slaveId);
-    const masterPos = this.windowPositions.get(this.masterId);
-
-    const offsetX = (slavePos?.x || 0) - (masterPos?.x || 0);
-    const offsetY = (slavePos?.y || 0) - (masterPos?.y || 0);
-
+  // pageX/pageY — документные координаты события (e.pageX/e.pageY): masterScroll
+  // уже учтён в них. CDP Input.dispatchMouseEvent принимает viewport-координаты
+  // slave, поэтому вычитаем только фактический slaveScroll. Положение окон на
+  // рабочем столе (windowPositions) не участвует: оно не меняет систему
+  // координат CDP target/session.
+  _toSlaveCoords(pageX, pageY, slaveId) {
     const slaveScroll = this.slaves.get(slaveId)?.scroll || { scrollX: 0, scrollY: 0 };
 
-    // page -> viewport мастера, затем viewport мастера -> viewport slave
-    const masterViewportX = pageX - masterScrollX;
-    const masterViewportY = pageY - masterScrollY;
-    const slaveX = masterViewportX - (slaveScroll.scrollX || 0) + offsetX;
-    const slaveY = masterViewportY - (slaveScroll.scrollY || 0) + offsetY;
+    const slaveX = pageX - (slaveScroll.scrollX || 0);
+    const slaveY = pageY - (slaveScroll.scrollY || 0);
 
     return { x: Math.max(0, Math.round(slaveX)), y: Math.max(0, Math.round(slaveY)) };
   }
@@ -264,26 +281,143 @@ class MultiController {
   }
 
   async onMouseMoved(params) {
-    if (!this.active) return;
+    if (!this.active || this.slaves.size === 0) return;
 
-    const masterScrollX = params.scrollX || 0;
-    const masterScrollY = params.scrollY || 0;
+    // Controller-level throttling, latest-event-wins: за интервал хранится
+    // только последнее событие master, по истечении интервала обрабатывается оно.
+    this._debugStats.mousemoveReceived += 1;
+    this._pendingMove = {
+      x: params.x || 0,
+      y: params.y || 0,
+      scrollX: params.scrollX || 0,
+      scrollY: params.scrollY || 0,
+    };
+    if (this._throttleTimer) {
+      this._debugStats.mousemoveCoalesced += 1;
+      return;
+    }
+
+    this._throttleTimer = setTimeout(() => {
+      this._throttleTimer = null;
+      const event = this._pendingMove;
+      this._pendingMove = null;
+      if (event && this.active && this.slaves.size > 0) this._processMove(event);
+    }, this._throttleInterval);
+  }
+
+  _processMove(params) {
+    this._debugStats.mousemoveProcessed += 1;
     for (const [slaveId] of this.slaves) {
-      const coords = this._toSlaveCoords(params.x || 0, params.y || 0, slaveId, masterScrollX, masterScrollY);
+      const coords = this._toSlaveCoords(params.x || 0, params.y || 0, slaveId);
       const smoother = this.smoothers.get(slaveId);
       if (smoother) smoother.setTarget(coords.x, coords.y);
+    }
+    this._logDebugStats();
+  }
+
+  _cancelThrottle() {
+    if (this._throttleTimer) {
+      clearTimeout(this._throttleTimer);
+      this._throttleTimer = null;
+    }
+  }
+
+  _clearThrottle() {
+    this._cancelThrottle();
+    this._pendingMove = null;
+  }
+
+  _createDebugStats() {
+    return {
+      mousemoveReceived: 0,
+      mousemoveProcessed: 0,
+      mousemoveCoalesced: 0,
+      stalePointsSkipped: 0,
+      dispatchCount: 0,
+      scrollEventsReceived: 0,
+      scrollSyncApplied: 0,
+      scrollSyncDiscarded: 0,
+      currentLagMs: 0,
+      maxLagMs: 0,
+      windowStartedAt: Date.now(),
+    };
+  }
+
+  _accumulateSmootherStats(stats) {
+    const d = this._debugStats;
+    d.stalePointsSkipped += stats.stalePointsSkipped;
+    d.currentLagMs = stats.currentLagMs;
+    if (stats.currentLagMs > d.maxLagMs) d.maxLagMs = stats.currentLagMs;
+    this._logDebugStats();
+  }
+
+  _logDebugStats() {
+    const now = Date.now();
+    if (now - this._lastDebugLogAt < 1000) return;
+    this._lastDebugLogAt = now;
+    const d = this._debugStats;
+    const elapsedSec = Math.max(1, (now - d.windowStartedAt) / 1000);
+    const dispatchPerSecond = Math.round(d.dispatchCount / elapsedSec);
+    const coalescingRate = d.mousemoveReceived > 0
+      ? Math.round((d.mousemoveCoalesced / d.mousemoveReceived) * 100) / 100
+      : 0;
+    logger.debug({
+      mousemoveReceived: d.mousemoveReceived,
+      mousemoveProcessed: d.mousemoveProcessed,
+      mousemoveCoalesced: d.mousemoveCoalesced,
+      stalePointsSkipped: d.stalePointsSkipped,
+      dispatchCount: d.dispatchCount,
+      scrollEventsReceived: d.scrollEventsReceived,
+      scrollSyncApplied: d.scrollSyncApplied,
+      scrollSyncDiscarded: d.scrollSyncDiscarded,
+      currentLagMs: d.currentLagMs,
+      maxLagMs: d.maxLagMs,
+      dispatchPerSecond,
+      coalescingRate,
+    }, 'Multi-control: debug stats');
+  }
+
+  _getSmootherProfile() {
+    const count = this.slaves.size;
+    if (count >= 5) return { stepInterval: 16, maxPoints: 30 };
+    if (count >= 3) return { stepInterval: 12, maxPoints: 40 };
+    return { stepInterval: 8, maxPoints: 60 };
+  }
+
+  _applySmootherProfile() {
+    const profile = this._getSmootherProfile();
+    for (const smoother of this.smoothers.values()) {
+      smoother.updateOptions(profile);
     }
   }
 
   async onMousePressed(params) {
     if (!this.active) return;
-    for (const smoother of this.smoothers.values()) smoother.flush();
+    const hasPendingMove = this._pendingMove !== null || this._throttleTimer !== null;
+    this._clearThrottle();
+    for (const [slaveId, smoother] of this.smoothers) {
+      // Если последний mousemove ещё не обработан throttling — координаты клика
+      // становятся актуальной целью smoother, чтобы курсор точно попал в цель.
+      if (hasPendingMove) {
+        const coords = this._toSlaveCoords(params.x || 0, params.y || 0, slaveId);
+        smoother.setTarget(coords.x, coords.y);
+      }
+      smoother.flush();
+    }
     await this._broadcastMouse('mousePressed', params);
   }
 
   async onMouseReleased(params) {
     if (!this.active) return;
-    for (const smoother of this.smoothers.values()) smoother.flush();
+    const hasPendingMove = this._pendingMove !== null || this._throttleTimer !== null;
+    this._clearThrottle();
+    for (const [slaveId, smoother] of this.smoothers) {
+      if (hasPendingMove) {
+        const coords = this._toSlaveCoords(params.x || 0, params.y || 0, slaveId);
+        smoother.setTarget(coords.x, coords.y);
+      }
+      smoother.flush();
+    }
     await this._broadcastMouse('mouseReleased', params);
   }
 
@@ -346,83 +480,162 @@ class MultiController {
 
   async scrollTo(params) {
     if (!this.active || !this.cdp) return;
-    const totalY = params.deltaY || 0;
-    const totalX = params.deltaX || 0;
-    // Реальный scroll мастера берём из события (window.scrollX/scrollY), а не накапливаем дельты.
-    if (typeof params.scrollX === 'number' || typeof params.scrollY === 'number') {
-      this.masterScroll = {
-        scrollX: params.scrollX || 0,
-        scrollY: params.scrollY || 0,
-      };
+    this._debugStats.scrollEventsReceived += 1;
+    // Authoritative document scroll: master — единственный источник правды.
+    // Абсолютное состояние берём из события (window.scrollX/scrollY), а не
+    // накапливаем дельты. clientX/clientY не обязательны для document scroll
+    // и не являются условием допуска прокрутки.
+    const scrollX = params.scrollX;
+    const scrollY = params.scrollY;
+    if (typeof scrollX !== 'number' || typeof scrollY !== 'number') {
+      logger.debug('Multi-control: scroll-событие без числовых scrollX/scrollY пропущено');
+      return;
     }
-    const steps = Math.max(1, Math.ceil(Math.max(Math.abs(totalY), Math.abs(totalX)) / SCROLL_STEP_PX));
+    this.masterScroll = { scrollX, scrollY };
 
-    const promises = [];
+    // Коалесцируем до последнего абсолютного состояния: каждая новая серия
+    // инкрементирует generation, pending хранит только последнее состояние.
+    // Backlog старых scroll-событий не накапливается, лишних вызовов нет.
+    const runPromises = [];
     for (const [id] of this.slaves) {
-      if (this.smoothers.has(id)) {
-        promises.push(this._runScrollSequence(id, steps, totalX, totalY));
-      }
+      if (!this.smoothers.has(id)) continue;
+      const st = this._getScrollState(id);
+      st.generation += 1;
+      st.pending = { scrollX, scrollY, generation: st.generation };
+      runPromises.push(this._runScrollLoop(id));
     }
-    await Promise.all(promises);
+    await Promise.all(runPromises);
   }
 
-  _runScrollSequence(slaveId, steps, totalX, totalY) {
-    return new Promise((resolve) => {
-      let i = 0;
-      const stepX = totalX / steps;
-      const stepY = totalY / steps;
-      const fire = () => {
-        if (i >= steps || !this.active || !this.slaves.has(slaveId)) {
-          this._syncSlaveScroll(slaveId);
-          resolve();
-          return;
-        }
-        i++;
-        const isLast = i === steps;
-        const dx = isLast ? totalX - stepX * (steps - 1) : stepX;
-        const dy = isLast ? totalY - stepY * (steps - 1) : stepY;
-        const session = this._getSlaveSession(slaveId);
-        const wheelParams = { x: 0, y: 0, deltaX: dx, deltaY: dy };
-        if (session) {
-          this.cdp.dispatchMouseEventToSession(slaveId, session.sessionId, 'mouseWheel', wheelParams);
-        } else {
-          this.cdp.dispatchMouseEvent(slaveId, 'mouseWheel', wheelParams);
-        }
-        const slaveData = this.slaves.get(slaveId);
-        if (slaveData && slaveData.scroll) {
-          slaveData.scroll.scrollX = (slaveData.scroll.scrollX || 0) + dx;
-          slaveData.scroll.scrollY = (slaveData.scroll.scrollY || 0) + dy;
-        }
-        if (isLast) {
-          // После отправки последнего wheel даём браузеру докрутиться и берём реальный scroll.
-          setTimeout(() => this._syncSlaveScroll(slaveId), SCROLL_TICK_MS);
-          resolve();
-        } else {
-          setTimeout(fire, SCROLL_TICK_MS);
-        }
+  _getScrollState(slaveId) {
+    let st = this._scrollRunners.get(slaveId);
+    if (!st) {
+      st = {
+        running: false,
+        promise: null,
+        syncTimer: null,
+        pending: null,
+        generation: 0,
       };
-      fire();
-    });
+      this._scrollRunners.set(slaveId, st);
+    }
+    return st;
   }
 
-  async _syncSlaveScroll(slaveId) {
-    if (!this.cdp || !this.slaves.has(slaveId)) return;
+  _runScrollLoop(slaveId) {
+    const st = this._getScrollState(slaveId);
+    if (st.running) return st.promise;
+    st.running = true;
+    const runPromise = (async () => {
+      try {
+        while (this.active && this.slaves.has(slaveId)) {
+          const pending = st.pending;
+          if (!pending) break;
+          st.pending = null;
+          await this._applyDocumentScroll(slaveId, pending);
+        }
+        if (this.active && this.slaves.has(slaveId) && st.generation > 0) {
+          // После стабилизации серии читаем фактический scroll slave;
+          // generation защищает от записи результата устаревшей операции.
+          const gen = st.generation;
+          st.syncTimer = setTimeout(() => this._syncSlaveScroll(slaveId, gen), SCROLL_TICK_MS);
+        }
+      } finally {
+        st.running = false;
+        st.promise = null;
+      }
+    })();
+    st.promise = runPromise;
+    return runPromise;
+  }
+
+  // Применение абсолютного состояния document scroll slave исключительно через
+  // CDP Runtime.callFunctionOn(window.scrollTo) в соответствующей сессии slave.
+  // mouseWheel для document scroll не используется.
+  async _applyDocumentScroll(slaveId, pending) {
+    const st = this._scrollRunners.get(slaveId);
+    if (!st || st.generation !== pending.generation) {
+      this._debugStats.scrollSyncDiscarded += 1;
+      this._logDebugStats();
+      return;
+    }
+    const session = this._getSlaveSession(slaveId);
+    if (!session) {
+      this._debugStats.scrollSyncDiscarded += 1;
+      this._logDebugStats();
+      return;
+    }
+    let applied = false;
     try {
-      const scroll = await this.cdp.getPageScroll(slaveId);
+      const result = await this.cdp.scrollToSession(slaveId, session.sessionId, pending.scrollX, pending.scrollY);
+      applied = Boolean(result && result.applied);
+    } catch (err) {
+      logger.debug({ slaveId, error: err.message }, 'Multi-control: ошибка применения document scroll');
+    }
+    // Неуспешное применение (нет корректной сессии/context, например) — не
+    // подменяем состояние slave фиктивным значением, фиксируем discard.
+    if (!applied) {
+      this._debugStats.scrollSyncDiscarded += 1;
+    } else if (st.generation === pending.generation) {
+      // Оптимистичная запись запрошенного состояния; фактическое значение
+      // (с учётом clamp) фиксирует _syncSlaveScroll после стабилизации.
       const slaveData = this.slaves.get(slaveId);
-      if (slaveData) slaveData.scroll = scroll;
+      if (slaveData) slaveData.scroll = { scrollX: pending.scrollX, scrollY: pending.scrollY };
+    }
+    this._logDebugStats();
+  }
+
+  async _syncSlaveScroll(slaveId, generation) {
+    if (!this.cdp || !this.slaves.has(slaveId)) return;
+    const st = this._scrollRunners.get(slaveId);
+    if (!st || st.generation !== generation) {
+      this._debugStats.scrollSyncDiscarded += 1;
+      this._logDebugStats();
+      return;
+    }
+    const session = this._getSlaveSession(slaveId);
+    if (!session) {
+      this._debugStats.scrollSyncDiscarded += 1;
+      this._logDebugStats();
+      return;
+    }
+    try {
+      const scroll = await this.cdp.getPageScrollForSession(slaveId, session.sessionId);
+      const slaveData = this.slaves.get(slaveId);
+      if (slaveData && st.generation === generation) {
+        slaveData.scroll = scroll;
+        this._debugStats.scrollSyncApplied += 1;
+      } else {
+        this._debugStats.scrollSyncDiscarded += 1;
+      }
     } catch (err) {
       logger.debug({ slaveId, error: err.message }, 'Multi-control: ошибка синхронизации slave scroll');
+    }
+    this._logDebugStats();
+  }
+
+  _cancelScrollTimers(profileId) {
+    const ids = profileId ? [profileId] : Array.from(this._scrollRunners.keys());
+    for (const id of ids) {
+      const st = this._scrollRunners.get(id);
+      if (!st) continue;
+      if (st.syncTimer) {
+        clearTimeout(st.syncTimer);
+        st.syncTimer = null;
+      }
+      st.pending = null;
     }
   }
 
   _dispatchSlaveMove(slaveId, x, y) {
+    this._debugStats.dispatchCount += 1;
     const session = this._getSlaveSession(slaveId);
     if (session) {
       this.cdp.dispatchMouseEventToSession(slaveId, session.sessionId, 'mouseMoved', { x, y });
     } else {
       this.cdp.dispatchMouseEvent(slaveId, 'mouseMoved', { x, y });
     }
+    this._logDebugStats();
   }
 
   async _broadcastMouse(type, params) {
@@ -430,11 +643,9 @@ class MultiController {
       logger.warn('Multi-control: _broadcastMouse called but cdp is null');
       return;
     }
-    const masterScrollX = params.scrollX || 0;
-    const masterScrollY = params.scrollY || 0;
     for (const [id] of this.slaves) {
       try {
-        const coords = this._toSlaveCoords(params.x || 0, params.y || 0, id, masterScrollX, masterScrollY);
+        const coords = this._toSlaveCoords(params.x || 0, params.y || 0, id);
         const session = this._getSlaveSession(id);
         const cdpBtn = this._toCdpButton(params.button);
         if (session) {

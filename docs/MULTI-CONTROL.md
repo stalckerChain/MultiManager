@@ -7,11 +7,15 @@
 ```
 CDP SYNC_EVENT_SCRIPT (инжектится в master page)
   ↓ Runtime.addBinding('__MM_SYNC_BIND__')
-  ↓ DOM events + visibilitychange → window.__MM_SYNC_BIND__(JSON)
+  ↓ DOM events + window scroll + visibilitychange → window.__MM_SYNC_BIND__(JSON)
   ↓ cdpManager.onEvent(profileId, event, sessionId)
   ├── event.type === 'tabActivated' → targetId = targetBySid.get(sessionId)
   │                                   → controller.setActiveMasterTab(targetId)
   │                                   → _syncActiveTabToSlaves → activateAndFocusTarget
+  ├── event.type === 'scroll' → controller.scrollTo()
+  │                            → _runScrollLoop → _applyDocumentScroll
+  │                            → CDP Runtime.callFunctionOn(window.scrollTo) → slave windows
+  ├── event.type === 'wheel' → диагностика (НЕ authoritative scroll, runner не запускается)
   ├── other events → controller.setActiveMasterTab(targetId)
   │                 → inputCapture.injectFromCdp()
   ↓ MultiController → broadcast → _getSlaveSession(slaveId)
@@ -25,8 +29,9 @@ CDP Target.targetInfoChanged (master browser)
 
 ## Режимы работы
 
-### CDP-based синхронизация (mouse/wheel)
-- Мышь: движение, клик, скролл
+### CDP-based синхронизация (mouse/wheel/scroll)
+- Мышь: движение, клик
+- Скролл: authoritative document scroll из фактического `window.scroll` (wheel — только диагностика)
 - Навигация: master переходит → slave следует
 - Переключение вкладок: активация в master → активация в slaves
 - Клавиатура через CDP **удалена** — единственный источник клавиатуры — native hook (см. ниже)
@@ -83,13 +88,15 @@ tabIndex   = Array<masterTargetId>  // упорядоченная матрица
 
 ### CDP SYNC_EVENT_SCRIPT (DOM-события + tabActivated)
 - Инжектится в master page через `Page.addScriptToEvaluateOnNewDocument`
-- Ловит DOM-события: mousemove, mousedown, mouseup, wheel, click
+- Ловит DOM-события: mousemove, mousedown, mouseup, wheel (только диагностика), click
+- Ловит authoritative scroll: `window.addEventListener('scroll', …)` → абсолютные `scrollX: window.scrollX`, `scrollY: window.scrollY` (после изменения прокрутки)
 - Ловит `visibilitychange` → при `document.hidden === false` эмитит `tabActivated`
 - `tabActivated` → `Runtime.bindingCalled` → `onEvent` → `targetId = targetBySid.get(sessionId)` → `setActiveMasterTab(targetId)` → `_syncActiveTabToSlaves` → `activateAndFocusTarget`
 - Активация Slaves происходит **только** через `tabActivated` (Master реально переключился на вкладку). Фоновое создание вкладок (middle-click, контекстное меню) не триггерит синхронизацию
 - **Не ловит** события в browser chrome: адресная строка, tab bar, меню
 - `tabActivated` не вызывает `injectFromCdp()` (фокус синхронизируется через CDP, не через OS input)
-- Остальные события идут через `injectFromCdp()` → `controller.onMousePressed/onMouseMoved/scrollTo`
+- Остальные события идут через `injectFromCdp()` → `controller.onMousePressed/onMouseMoved`; `scroll` → `controller.scrollTo()`
+- **Wheel не становится authoritative scroll**: обработчик `wheel` в скрипте выполняется ДО browser default action и `window.scrollX/scrollY` в нём ещё не отражают новую прокрутку. Wheel — только диагностика; `inputCapture` в `case 'wheel'` не запускает scroll runner. Единственный authoritative источник — событие `window.scroll` (`type: 'scroll'`)
 - **keydown/keyup/charInput из скрипта удалены** — клавиатура не идёт по CDP
 
 ### Native hooks (WH_KEYBOARD_LL)
@@ -114,6 +121,24 @@ tabIndex   = Array<masterTargetId>  // упорядоченная матрица
 Ранее клавиши при вводе в DOM-элементе master page уходили в slave **дважды** (CDP-скрипт + native hook), что вызывало дублированный Enter в формах и двойную отправку.
 
 **Решение:** CDP-клавиатура полностью удалена — `SYNC_EVENT_SCRIPT` больше не ловит `keydown`/`keyup`/`charInput`, `injectFromCdp` не эмитит клавиатурные события. Единственный источник клавиатуры — native hook `WH_KEYBOARD_LL` → `/api/multi-control/os-keyboard`. Клавиша уходит в slave ровно один раз.
+
+### Scroll (authoritative document scroll, v0.17.0)
+
+Прокрутка синхронизируется по **фактическому** документному скроллу мастера, а не по сумме дельт wheel и не по wheel-dispatch'ам.
+
+**Проблема (v0.15.0→):** wheel-обработчик выполняется до browser default action, поэтому `window.scrollX/scrollY` в нём ещё не отражают новую прокрутку. Использование wheel как источника давало отставание на одно событие; эмуляция скролла серией `Input.dispatchMouseEvent('mouseWheel')` не учитывает инерцию/плавный скролл/трекпад.
+
+**Решение — единственный authoritative источник `window.scroll`:**
+1. `SYNC_EVENT_SCRIPT` вешает `window.addEventListener('scroll', …)`: событие выполняется ПОСЛЕ изменения `window.scrollX/scrollY` и шлёт абсолютное состояние `{ scrollX: window.scrollX, scrollY: window.scrollY }` (`type: 'scroll'`). Частые scroll-события коалесцируются до последнего состояния (буфер `_scrollBuf`/`_scrollTimer`, THROTTLE 16мс).
+2. `wheel` — только диагностика (`type: 'wheel'`): не является authoritative scroll и не запускает scroll runner.
+3. `inputCapture.injectFromCdp` в `case 'scroll'` пробрасывает `scrollX/scrollY` как есть → `controller.scrollTo()`; в `case 'wheel'` — no-op.
+4. `scrollTo()` берёт абсолютное состояние мастера из события (без накопления дельт), `masterScroll = { scrollX, scrollY }`, и для каждого slave инкрементирует `generation` + кладёт `pending` с последним состоянием (коалесцирование на стороне контроллера, backlog не накапливается).
+5. `_runScrollLoop` → `_applyDocumentScroll` применяет document scroll только через CDP `Runtime.callFunctionOn('function(x, y) { window.scrollTo(x, y); }', [{ value: scrollX }, { value: scrollY }])` в сессии slave с `executionContextId` (`mouseWheel` для document scroll не используется).
+6. После стабилизации серии `_syncSlaveScroll` читает фактический `window.scrollX/scrollY` slave через `getPageScrollForSession` и пишет в `slaveData.scroll` (с учётом clamp); `generation` защищает от записи результата устаревшей операции.
+7. **`_callFunctionOnSession`** — единственный разрешённый путь `Runtime.callFunctionOn` с `sessionId` + числовыми `arguments` + `executionContextId` сессии. Fallback на `Runtime.evaluate`/objectId **не используется**: при отсутствии корректной сессии/context применение считается неуспешным (`{ applied: false }`), состояние slave фиктивным значением не подменяется, инкрементируется диагностический счётчик `scrollSyncDiscarded`.
+8. Для наличия `executionContextId` `Runtime.enable` отправляется для **всех** сессий (в т.ч. slave с `enableInput: false`) — `executionContextId` захватывается из `Runtime.executionContextCreated`.
+
+`_toSlaveCoords(pageX, pageY, slaveId)` использует `slaveData.scroll`: `slaveX = pageX - slaveScroll.scrollX`, `slaveY = pageY - slaveScroll.scrollY` (без `masterScroll` — координаты уже в page-системе мастера).
 
 ## Создание новых вкладок (Tab Creation)
 
@@ -345,12 +370,12 @@ if (event.type === 'keyDown' && event.key === 'Enter') {
 
 | Файл | Назначение |
 |------|-----------|
-| `src/multi-control/cdp-manager.js` | CDP connection, dispatch, navigation, createTab, activateTarget |
+| `src/multi-control/cdp-manager.js` | CDP connection, dispatch, navigation, createTab, activateTarget, SYNC_EVENT_SCRIPT (mouse + wheel-диагностика + authoritative window.scroll), `Runtime.callFunctionOn` для scroll (executionContextId) |
 | `src/multi-control/index.js` | MultiController (broadcast, tabMapping 1:N, tabIndex matrix, focus switching, MouseSmoother integration) |
 | `src/multi-control/mouse-smoothing.js` | MouseSmoother: ghost-cursor path() trajectory + setTimeout dispatch loop |
 | `src/api/multi-control.js` | API routes + CDP event wiring + os-keyboard + tab mapping + slave tab discovery |
 | `src/api/window-arranger.js` | Window arranger (taskbar-aware) |
-| `src/os-input/input-capture.js` | EventEmitter wrapper (mouse/wheel from CDP; клавиатура НЕ проходит) |
+| `src/os-input/input-capture.js` | EventEmitter wrapper (mouse/scroll from CDP; wheel — диагностика; клавиатура НЕ проходит) |
 | `src/os-input/native-hooks/hooks.cc` | C++ addon: WH_KEYBOARD_LL via N-API + ToUnicodeEx (раскладка/Shift/CapsLock/AltGr/dead keys) |
 | `src/os-input/native-hooks/index.js` | Backend-обёртка native hooks (эмитит text/altGr, фильтр plain text) |
 | `gui/src/main/keyboard-hooks.js` | Electron main process: bridges native hooks to backend API |
@@ -373,12 +398,34 @@ if (event.type === 'keyDown' && event.key === 'Enter') {
 13. **`visibilitychange` как единственный надёжный детектор переключения вкладок** — `Target.targetInfoChanged` не содержит признака активации вкладки. `visibilitychange` ловит все сценарии: Ctrl+Tab, Ctrl+Shift+Tab, Ctrl+1..9, клики по tab bar. Событие передаётся через `Runtime.bindingCalled` → разрешение `targetId` из `sessionId`
 14. **Принудительная реактивация фона в Slave при background-табах** — `_enforceSlaveFocusOnActiveTab` отправляет полную цепочку фокуса (`activateAndFocusTarget`: `Target.activateTarget` → `Page.bringToFront` → `DOM.focus` → `body.focus()`) сразу после `mapTab`, если новый таб не является `activeMasterTab`. Chromium в Slave автоактивирует табы, созданные через `Input.dispatchMouseEvent` — одного `Target.activateTarget` недостаточно для закрепления DOM-фокуса, поэтому используется та же цепочка, что и в `_syncActiveTabToSlaves`
 15. **Гибрид: наш MouseSmoother loop + математика ghost-cursor path()** — high-level API GhostCursor.click/scroll требует Puppeteer/Playwright page object, что недоступно на голом CDP. Экспорт `path(start, end, options)` — чистая синхронная функция, возвращающая массив точек {x,y} с кубической Безье, Fitts's Law и overshoot. Наш loop диспатчит точки через setTimeout, flush() перед кликом гарантирует точную позицию
+16. **Authoritative scroll = фактический `window.scroll`, а не wheel** — wheel-обработчик выполняется до browser default action (отставание на одно событие). Единственный источник — `window.addEventListener('scroll')` с абсолютными `scrollX/scrollY` после изменения прокрутки. Применение в slave — только `Runtime.callFunctionOn('window.scrollTo(x,y)')` по `executionContextId` сессии (без `Runtime.evaluate` fallback); неуспешное применение фиксируется счётчиком `scrollSyncDiscarded` без подмены состояния slave
 
 ## Версия
 
-Текущая: v0.16.0 (Single-source keyboard: native hook — единственный источник клавиатуры)
+Текущая: v0.17.0 (authoritative document scroll через window.scroll + Runtime.callFunctionOn, wheel — диагностика)
 
 ## История версий
+
+### v0.17.0 — Authoritative document scroll (window.scroll + Runtime.callFunctionOn, wheel — диагностика)
+
+**Проблема:** wheel-обработчик выполняется до browser default action — `window.scrollX/scrollY` в нём ещё не отражают новую прокрутку. Источник scroll из wheel давал отставание на одно событие; эмуляция серией `Input.dispatchMouseEvent('mouseWheel')` не отражает реальное смещение контента (инерция, плавный скролл, трекпад). `Runtime.evaluate`/objectId-fallback мог применяться без корректного context.
+
+**Решение:**
+1. `SYNC_EVENT_SCRIPT`: `wheel` эмитит только `type: 'wheel'` (диагностика); authoritative `scroll` формируется из `window.addEventListener('scroll', …)` с абсолютными `scrollX: window.scrollX`, `scrollY: window.scrollY` (после изменения прокрутки). Частые scroll-события коалесцируются до последнего состояния.
+2. `inputCapture.injectFromCdp`: `case 'wheel'` — no-op (не превращает wheel в scroll, не запускает runner); `case 'scroll'` пробрасывает `scrollX/scrollY` как есть.
+3. `controller.scrollTo()`: абсолютное состояние мастера из события; per-slave `generation` + `pending` (коалесцирование); `_applyDocumentScroll` через `cdp.scrollToSession`; после стабилизации `_syncSlaveScroll` читает фактический scroll slave (`getPageScrollForSession`).
+4. `_callFunctionOnSession`: только `Runtime.callFunctionOn` с `sessionId` + числовыми `arguments` + `executionContextId`; fallback `Runtime.evaluate`/objectId удалён — без корректной сессии/context применение неуспешно, инкрементируется `scrollSyncDiscarded`, состояние slave не подменяется.
+5. `Runtime.enable` для ВСЕХ сессий (включая slave с `enableInput: false`) — захват `executionContextId` из `Runtime.executionContextCreated`.
+
+| Файл | Изменение |
+|------|-----------|
+| `src/multi-control/cdp-manager.js` | SYNC_EVENT_SCRIPT: `wheel` → `'wheel'`-диагностика; `window.addEventListener('scroll')` → `'scroll'` с абсолютными `scrollX/scrollY`; scroll-коалесцирование; `Runtime.enable` для всех сессий; `_callFunctionOnSession` только через `executionContextId` (без `Runtime.evaluate` fallback); `scrollToSession`/`getPageScrollForSession` |
+| `src/os-input/input-capture.js` | `case 'wheel'` — no-op; `case 'scroll'` — passthrough `scrollX/scrollY` |
+| `src/multi-control/index.js` | `scrollTo` (абсолютное состояние, generation/pending), `_runScrollLoop`, `_applyDocumentScroll`, `_syncSlaveScroll`, `scrollSyncDiscarded` при неуспешном применении |
+| `tests/unit/cdp-manager.test.js` | wheel→'wheel' и window-scroll→'scroll', scroll-коалесцирование, `scrollToSession` без context → `{applied:false}` без `Runtime.evaluate`, `_callFunctionOnSession` только callFunctionOn, `Runtime.enable` на attach |
+| `tests/unit/multi-control.test.js` | Регрессии порядка событий (down/up/up-вторая, down/up/down), чтение после apply через `getPageScrollForSession` |
+| `tests/unit/multi-control-api.test.js` | wheel без scroll → `scrollTo` не вызывается; scroll после wheel → один вызов с новым scrollY |
+| `tests/unit/os-input.test.js` | wheel не эмитит 'scroll' |
 
 ### v0.16.0 — Single-source keyboard (устранён double dispatch)
 

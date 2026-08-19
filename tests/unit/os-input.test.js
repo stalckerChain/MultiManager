@@ -68,11 +68,63 @@ describe('InputCapture', () => {
     expect(h).not.toHaveBeenCalled();
   });
 
-  it('emits scroll', () => {
+  it('emits scroll preserving clientX/clientY, x/y, deltaX/deltaY, scrollX/scrollY', () => {
     const h = vi.fn();
     cap.on('scroll', h);
-    cap.injectFromCdp({ type: 'scroll', x: 100, y: 200, deltaX: 0, deltaY: -120 });
-    expect(h).toHaveBeenCalledWith({ x: 100, y: 200, deltaX: 0, deltaY: -120 });
+    cap.injectFromCdp({
+      type: 'scroll',
+      x: 100, y: 200,
+      clientX: 55, clientY: 66,
+      deltaX: 0, deltaY: -120,
+      scrollX: 10, scrollY: 20,
+    });
+    expect(h).toHaveBeenCalledWith({
+      x: 100, y: 200,
+      clientX: 55, clientY: 66,
+      deltaX: 0, deltaY: -120,
+      scrollX: 10, scrollY: 20,
+    });
+  });
+
+  it('scroll без clientX/clientY не получает фиктивные координаты (undefined → controller пропустит)', () => {
+    const h = vi.fn();
+    cap.on('scroll', h);
+    cap.injectFromCdp({ type: 'scroll', x: 5, y: 6, deltaX: 0, deltaY: -100 });
+    expect(h).toHaveBeenCalledTimes(1);
+    const emitted = h.mock.calls[0][0];
+    expect(emitted.x).toBe(5);
+    expect(emitted.y).toBe(6);
+    expect(emitted.clientX).toBeUndefined();
+    expect(emitted.clientY).toBeUndefined();
+    // Без числовых scrollX/scrollY событие не должно превращаться в прокрутку к (0,0).
+    expect(emitted.scrollX).toBeUndefined();
+    expect(emitted.scrollY).toBeUndefined();
+  });
+
+  it('scroll без clientX/clientY, но с числовыми scrollX/scrollY передаётся как document scroll', () => {
+    const h = vi.fn();
+    cap.on('scroll', h);
+    cap.injectFromCdp({ type: 'scroll', x: 5, y: 6, deltaX: 0, deltaY: -100, scrollX: 0, scrollY: 40 });
+    expect(h).toHaveBeenCalledTimes(1);
+    const emitted = h.mock.calls[0][0];
+    expect(emitted.scrollX).toBe(0);
+    expect(emitted.scrollY).toBe(40);
+    expect(emitted.clientX).toBeUndefined();
+    expect(emitted.clientY).toBeUndefined();
+  });
+
+  it('wheel НЕ превращается в authoritative scroll (diagnostic only)', () => {
+    const h = vi.fn();
+    cap.on('scroll', h);
+    cap.injectFromCdp({ type: 'wheel', deltaX: 0, deltaY: 100, scrollX: 0, scrollY: 0 });
+    expect(h).not.toHaveBeenCalled();
+  });
+
+  it('wheel НЕ эмитит событие scroll даже с delta и scroll-полями', () => {
+    const h = vi.fn();
+    cap.on('scroll', h);
+    cap.injectFromCdp({ type: 'wheel', x: 10, y: 20, deltaX: 0, deltaY: -120, scrollX: 5, scrollY: 8 });
+    expect(h).not.toHaveBeenCalled();
   });
 
   it('не эмитит keyDown из CDP (мёртвое поведение удалено)', () => {
