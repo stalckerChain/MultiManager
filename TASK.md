@@ -1,212 +1,261 @@
-# TASK — Исправление дублирования и ошибочной рассылки ввода
+# TASK — Надёжная синхронизация popup Zerion в Multi-Control
 
 ## Цель
 
-Исправить два связанных дефекта Multi-Control:
+Устранить появление обычных вкладок вместо нативных popup-окон Zerion при
+задержке открытия popup в слейве.
 
-1. При вводе printable-символа в master символ появляется в slave ровно один
-   раз, а не два.
-2. При вводе или редактировании в любом slave событие не рассылается в другие
-   окна и не повторяется в самом slave.
+Сохранить текущую синхронизацию мыши и существующее поведение для обычных
+`http(s)`-вкладок, включая `_blank` и `window.open`.
 
-Пример приёмки: после ввода `1` в master во всех slave появляется один `1`;
-после ввода `2` в одном slave только этот slave получает локальный `2`, остальные
-окна не изменяются.
+## Причина дефекта
 
-## Установленная причина
+Новые нативные target'ы антидетект-браузера не всегда приходят через CDP
+WebSocket. Поэтому master обнаруживается через HTTP `/json` polling каждые
+300 мс, после чего `syncNewMasterTab()` ищет соответствующий target в каждом
+slave.
 
-### Дублирование printable-ввода
+Текущая `_findNativeSlaveTab()` выполняет только две попытки с паузой 150 мс и
+выбирает любую немапленную page-вкладку. Если popup Zerion в slave открывается
+позже, `syncNewMasterTab()` вызывает `Target.createTarget` через `createTab`.
+CDP создаёт обычную вкладку, а не native popup расширения, поэтому в slave
+появляется вкладка с `chrome-extension://...` вместо плавающего окна.
 
-Native keyboard hook отправляет для printable-клавиши два события:
-
-- `keyDown` через `/api/multi-control/os-keyboard`;
-- `charInput` через тот же endpoint.
-
-`MultiController.onKeyDown()` отправляет в slave `Input.dispatchKeyEvent`, а
-`MultiController.onCharInput()` затем отправляет `Input.insertText`. Браузер может
-вставить символ уже на `keyDown`, после чего `insertText` вставляет его повторно.
-В master при этом работает обычная нативная обработка клавиатуры, поэтому
-симптом наблюдается прежде всего в slave.
-
-### Рассылка ввода из slave
-
-Native low-level hook видит клавиатуру глобально, но текущий payload не содержит
-PID/идентификатор окна-источника. Backend считает любое событие вводом master и
-передаёт его всем slave, включая окно, в котором пользователь фактически печатает.
-
-`src/os-input/window-tracker.js` содержит заготовку для определения foreground
-окна, но окна в multi-control через него не регистрируются. Подключать этот
-неиспользуемый путь только ради данной задачи не следует.
+Дополнительно поздний native target может быть обработан `onNewTab` или
+`onTabAttached` по порядковому `tabIndex`, что приводит к неверному mapping и
+дубликату.
 
 ## Согласованное решение
 
-### 1. Передавать PID foreground-окна
+### 1. Распознавание popup Zerion
 
-В native hook на момент обработки каждого keyboard event получить PID
-foreground window через уже используемый Windows API `GetForegroundWindow()` и
-`GetWindowThreadProcessId()`.
+- Добавить локальные helper-функции в `src/api/multi-control.js`, не создавая
+  новый сервис или менеджер.
+- Распознавать только URL вида `chrome-extension://...`.
+- Runtime ID Zerion получать из `profile.extensions` через уже существующий
+  `resolveRuntimeId`, используя данные конкретного профиля.
+- Для классификации использовать runtime ID master-профиля. Для поиска popup в
+  каждом slave использовать runtime ID именно этого slave и pathname,
+  извлечённый из URL master-popup. ID unpacked-расширения между профилями не
+  считать одинаковыми автоматически.
+- Сопоставлять extension ID и pathname popup. Query string и hash не должны
+  мешать сопоставлению.
+- Не считать любой `chrome-extension://` target Zerion-popup без проверки
+  ожидаемого ID и пути.
+- Ошибки чтения профиля, JSON или разрешения runtime ID обрабатывать безопасно:
+  не классифицировать URL как Zerion-popup и логировать только техническую
+  информацию без секретов.
 
-- Добавить в `KeyEvent` поле `DWORD sourcePid`.
-- Получать foreground window/PID один раз в `KeyboardProc` для каждого события,
-  включая `keyUp`, и записывать PID в `KeyEvent`. Не вызывать эти API повторно
-  только ради определения источника.
-- Передать в `ComputeTextForKey()` уже полученные foreground window/thread data
-  для выбора keyboard layout, чтобы сохранить текущую логику `ToUnicodeEx` без
-  дополнительного вызова `GetForegroundWindow()`/`GetWindowThreadProcessId()`.
-- Не оставлять PID только внутри `ComputeTextForKey()`: она вызывается лишь для
-  `keyDown`, тогда как `keyUp` также обязан иметь source PID.
-- Сохранить его в payload `buildKeyEvent()` для `keyDown` и `keyUp`.
-- Добавить тот же PID в `charInput`, эмитимый из `native-hooks/index.js`, чтобы
-  все три типа событий использовали один источник идентификации.
-- Не логировать текст, токены или иные чувствительные данные.
-- Не менять внешний REST endpoint и не добавлять новый endpoint.
+### 2. Ожидание native popup
 
-### 2. Отсекать события, пришедшие не из master
+Изменить `_findNativeSlaveTab(slaveId, expectedUrl)`:
 
-В `/api/multi-control/os-keyboard` перед маршрутизацией keyboard event определить
-PID master-профиля из существующей БД и сравнить его с PID источника.
+- Для Zerion-popup выполнять polling примерно 2–3 секунды.
+- Между попытками использовать шаг 150–250 мс.
+- В каждой попытке получать актуальный список через `getHttpTabs(slaveId)`.
+- Исключать target'ы, уже присутствующие в `tabMapping` для этого slave.
+- Принимать только page-target, чей URL совпадает с ожидаемым Zerion extension
+  ID конкретного slave и pathname из master URL.
+- Не принимать случайную немапленную вкладку, открытую под нагрузкой.
+- Для обычных `http(s)`-страниц сохранить текущую логику поиска нативного
+  немапленного target и её короткое ожидание, достаточное для `_blank`.
 
-- События с PID master направлять в `onKeyDown`, `onKeyUp` и `onCharInput`.
-- События с PID slave считать локальным вводом и не вызывать controller.
-- При неизвестном или отсутствующем PID не считать событие вводом master.
-- Для внутренних unit-тестов явно передавать корректный master PID, а не вводить
-  небезопасный fallback.
-- Учитывать, что проверка выполняется как для `keyDown`, так и для `keyUp` и
-  `charInput`, иначе состояние клавиш может рассинхронизироваться.
+Ожидание для разных slave должно выполняться параллельно, а не последовательно:
+один медленный профиль не должен добавлять полный timeout каждому следующему
+slave.
 
-Проверка должна опираться на PID текущего master из профиля, а не на имя окна,
-заголовок или координаты.
+### 3. Запрет CDP fallback для popup
 
-### 3. Разделить управляющие клавиши и printable-текст
+В `syncNewMasterTab()`:
 
-Сохранить два существующих канала, но не использовать их одновременно для
-одного printable-символа.
+- Если URL нового master-target является Zerion-popup, ждать native popup в
+  каждом slave и не вызывать `cdpManager.createTab()` ни при каких условиях.
+- После нахождения popup выполнять `attachToExistingTarget`, `mapTab` и
+  существующую логику фокусировки.
+- Если popup не появился до окончания таймаута, не создавать заменяющую вкладку;
+  записать предупреждение и завершить синхронизацию этого slave.
+- Для обычных `http(s)` URL сохранить текущий fallback:
+  `createTab` → `attachToExistingTarget` → `mapTab`.
+- Использовать трёхветочную классификацию URL:
+  - подтверждённый Zerion-popup — длительное ожидание и reconciliation;
+  - любой `chrome-extension://` URL, который не удалось безопасно подтвердить
+    как Zerion, — также не передавать в `createTab`, только предупреждение,
+    ожидание/завершение без искусственной вкладки;
+  - `http(s)` URL — текущая логика с разрешённым fallback.
+- Не менять правила активации фоновых `_blank`-вкладок: фокус должен по-прежнему
+  следовать фактической активации master.
+- Долгое ожидание popup не должно блокировать `discoverActiveTab()` и путь
+  `/os-keyboard` для Enter. `discoverActiveTab()` должен быстро завершать
+  обнаружение master-target, а длительный popup-wait запускать асинхронно либо
+  передавать его в отдельный state reconciliation без ожидания из Enter-пути.
+- Ожидание slave-popup запускать для всех slave параллельно через эквивалент
+  `Promise.all`, не удерживая последовательный цикл на несколько timeout'ов.
 
-- Printable key event с непустым `text`, без `Ctrl`/`Meta`/обычного `Alt`
-  (AltGr остаётся текстовым вводом) не отправлять в slave через
-  `Input.dispatchKeyEvent`.
-- Такой символ отправлять только через существующий `charInput` и
-  `Input.insertText`.
-- Управляющие клавиши, навигацию, Enter, Backspace, Delete, Tab, модификаторы и
-  browser shortcuts продолжать передавать через key event по существующей
-  логике.
-- Не ломать комбинации с Shift и AltGr: modifier events должны сохраняться, а
-  сформированный символ должен идти единственным текстовым каналом.
-- Не использовать ненадёжный вариант с `keyDown` и принудительно пустым `text`:
-  браузер всё равно может выполнить default text insertion.
+### 4. Защита от гонок и cleanup
 
-`buildKeyEvent()` должен включать `text` из native event в payload `keyDown`,
-чтобы backend определял printable event из единого keyboard payload без
-дополнительного события или скрытого состояния. Не создавать новый сервис или
-отдельный менеджер.
+- Учитывать, что для native target антидетект может не прислать
+  `Target.targetCreated`/`Target.attachedToTarget`. Поэтому одного
+  `onNewTab`/`onTabAttached` недостаточно.
+- Добавить явный reconciliation-механизм через HTTP `/json` для slave:
+  - хранить незавершённые popup-sync записи с master target, pathname и
+    ожидаемым профилем slave;
+  - проверять их на существующем discovery-интервале 300 мс либо отдельным
+    короткоживущим timer'ом;
+  - продолжать проверку после первоначального timeout ещё заданное время,
+    чтобы обнаруживать popup, открывшийся через 5 и более секунд под нагрузкой;
+  - выполнять attach, in-place remap и cleanup идемпотентно;
+  - удалять запись после успешного mapping, окончательного timeout или stop.
+- Не маппить native extension target в `onNewTab` по `tabIndex` как обычную
+  вкладку.
+- При позднем появлении native Zerion-popup искать существующий mapping на
+  target с тем же extension ID и pathname.
+- Если такой target был создан через CDP как ошибочный fallback:
+  - закрыть его через существующий `cdpManager.closeTarget()`;
+  - заменить mapping master/slave на native target;
+  - не закрывать native target;
+  - не оставлять старый target в `tabMapping` или `tabIndex`.
+- При remap заменять значение непосредственно в существующей записи:
+  `tabMapping.get(masterTargetId).set(slaveId, newTargetId)`. Не использовать
+  пару `unmapTab` + `mapTab`, поскольку при единственном slave это удалит
+  `masterTargetId` из `tabIndex` и добавит его в конец.
+- Вести минимальное runtime-состояние созданных popup-target'ов, чтобы cleanup
+  не мог закрыть обычную `_blank`-вкладку или настоящий native popup.
+- Очищать реестр созданных fallback-target'ов и pending reconciliation в
+  `/stop` и `/slave/remove` вместе с уже существующими `pendingSync` и
+  `attachedMasterTabs`.
+- Учесть порядок событий: target может сначала попасть в `targetSessions`, а
+  mapping появиться позднее. Операции должны быть идемпотентными при повторном
+  `onNewTab`, `onTabAttached` или polling.
+- При закрытии target существующая очистка `tabMapping` и `tabIndex` должна
+  продолжать работать.
+
+### 5. Регрессия обычных вкладок
+
+- `_blank`, `window.open` и другие обычные `http(s)`-ссылки должны сохранить
+  текущий путь синхронизации.
+- Для них при отсутствии native slave-tab `createTab` по-прежнему разрешён.
+- Не менять поведение навигации, активации, мыши и scroll для уже замапленных
+  обычных вкладок.
+- Для обычных табов сохранить текущую логику `tabIndex` по порядку создания.
+  Extension-target'ы нужно исключить из index-based mapping, но образовавшиеся
+  из-за них index gaps в рамках этой задачи не исправлять.
 
 ## Затрагиваемые файлы
 
 ### Реализация
 
-- `src/os-input/native-hooks/hooks.cc` — получить foreground PID в момент
-  keyboard event и передать его в JS payload.
-- `src/os-input/native-hooks/index.js` — прокинуть PID и текст в нормализованные
-  `keyDown`/`keyUp`/`charInput` события.
-- `gui/src/main/keyboard-hooks-payload.js` — включить source PID и текст в
-  формируемый keyboard payload, сохранив правила `shouldSendCharInput()`.
-- `gui/src/main/keyboard-hooks.js` — отправлять обновлённый payload без
-  дублирования дополнительных запросов и без логирования содержимого текста.
-- `src/api/multi-control.js` — проверить source PID относительно PID master до
-  вызова controller; пропускать события из slave.
-- `src/multi-control/index.js` — не dispatch-ить printable `keyDown`, если его
-  текст будет передан через `onCharInput`; сохранить forwarding управляющих
-  клавиш и keyUp.
+- `src/api/multi-control.js` — распознавание Zerion URL, получение runtime ID,
+  расширенное polling-ожидание, запрет popup fallback, reconciliation в
+  `onNewTab`/`onTabAttached` и cleanup ошибочного target.
 
 ### Тесты
 
-- `tests/unit/os-input.test.js` — проверить передачу source PID, text и
-  сохранение `charInput` только для обычного текста, включая Shift/AltGr и
-  исключения Ctrl/Meta/обычного Alt.
-- `tests/unit/multi-control.test.js` — проверить, что printable input вызывает
-  только один путь вставки в slave, а управляющие клавиши по-прежнему
-  dispatch-ятся; проверить AltGr и modifier combinations.
-- `tests/unit/multi-control-api.test.js` — получать PID master тем же паттерном,
-  что и `focusWindowByPid()` (`pq.getById(masterId)?.pid`), проверить
-  маршрутизацию событий с master PID и единообразное игнорирование
-  `keyDown`/`keyUp`/`charInput` с slave или неизвестным PID.
-- `tests/unit/keyboard-hooks-payload.test.js` — обновить ожидания payload и
-  проверить отсутствие потери source PID/text.
+- `tests/unit/multi-control-api.test.js` — обновить mocks и тестовые копии
+  логики multi-control для delayed popup, точного URL matching, отсутствия
+  `createTab`, cleanup и обычного `http(s)` fallback.
 
-Новые файлы не добавлять без необходимости. `window-tracker.js`, API-документы и
-схему БД не менять: REST endpoint и структура БД не изменяются.
+### Документация
+
+- `docs/MULTI-CONTROL.md` — обновить разделы про `_blank`, native target
+  discovery и `syncNewMasterTab`: указать отдельное поведение extension-popup,
+  расширенный timeout и запрет `createTarget` для Zerion.
+
+`src/multi-control/cdp-manager.js` менять не следует: `getHttpTabs`,
+`attachToExistingTarget` и `closeTarget` уже предоставляют необходимые
+операции.
+
+Не менять схему БД, REST API, security-модель, версии проекта, `package.json` и
+lock-файлы.
 
 ## Порядок реализации
 
-1. Проверить существующие тестовые mock-профили и способ получения PID master в
-   `multi-control-api.test.js`; добавить PID в mock-профили и payload fixtures в
-   `multi-control-api.test.js`, `multi-control.test.js` и
-   `keyboard-hooks-payload.test.js`.
-2. Добавить source PID в native event и JS payload.
-3. Добавить строгую фильтрацию источника в `/os-keyboard`.
-4. Изменить forwarding printable keyboard events так, чтобы символ имел ровно
-   один канал вставки.
-5. Добавить/обновить unit-тесты на оба дефекта и на управляющие клавиши.
-6. Запустить целевые тесты, затем полный unit-набор.
-7. Выполнить ручную проверку на Windows с четырьмя профилями.
+1. Проверить текущие mocks, lifecycle `start/stop` и очистку listener/state в
+   `multi-control-api.test.js`.
+2. Реализовать получение runtime ID Zerion для профилей и helper точного
+   сопоставления extension ID + pathname.
+3. Разделить в `_findNativeSlaveTab` режимы extension-popup и обычного URL.
+4. Изменить `syncNewMasterTab`, исключив `createTab` только для Zerion-popup.
+5. Добавить идемпотентный cleanup/re-mapping позднего native popup.
+6. Добавить регрессионные и race-condition unit-тесты.
+7. Обновить `docs/MULTI-CONTROL.md`.
+8. Запустить целевые тесты, полный тестовый набор и lint.
+9. При необходимости выполнить ручную проверку на Windows с master и несколькими
+   slave под искусственной задержкой открытия popup.
 
 ## Проверка результата
 
 Запустить:
 
 ```bash
-npm test -- --run tests/unit/os-input.test.js tests/unit/keyboard-hooks-payload.test.js tests/unit/multi-control.test.js tests/unit/multi-control-api.test.js
+npm test -- --run tests/unit/multi-control-api.test.js
 npm test
 npm run lint
 ```
 
-Если native addon требует пересборки после изменения `hooks.cc`, выполнить:
+Обязательные тестовые сценарии:
 
-```bash
-npm run build:native
-```
+1. Master открывает Zerion-popup, slave открывает его позже чем через 300 мс:
+   `createTab` не вызывается, native target находится, attach и mapping
+   выполняются.
+2. При активном длительном popup-wait вызов `/os-keyboard` с Enter не ожидает
+   этот wait и завершается без многосекундной задержки.
+3. В списке slave между попытками появляется обычный немапленный `http(s)`-tab:
+   он не принимается за Zerion-popup.
+4. Zerion-popup не появляется до истечения таймаута: искусственная вкладка не
+   создаётся, ошибка не приводит к необработанному rejection.
+5. Нераспознанный `chrome-extension://` URL после ошибки `resolveRuntimeId` не
+   приводит к вызову `createTab`.
+6. Обычный `_blank` не имеет native target вовремя: `createTab` вызывается и
+   tab маппится как раньше.
+7. Поздний native popup обнаруживается reconciliation-поллером после
+   первоначального timeout.
+8. Поздний native popup появляется после ошибочно созданного popup-target:
+   ошибочный target закрывается, mapping указывает на native target.
+9. Повторная обработка того же native target не создаёт дубликат и не закрывает
+   правильный target.
+10. Extension target с другим ID или pathname не маппится как Zerion-popup.
+11. Remap выполняется in-place и не меняет порядок `tabIndex`; повторный polling
+    не создаёт дублей и не переставляет master-target.
 
-Ручной сценарий на Windows:
+Ручная проверка:
 
-1. Запустить четыре профиля, выровнять окна и включить синхронизацию.
-2. Ввести `1` в поле master: в каждом slave должен появиться ровно один `1`.
-3. Ввести `2` в поле одного slave: только этот slave должен получить один `2`;
-   master и остальные slave не должны измениться.
-4. Проверить последовательности `Backspace`, `Delete`, `Enter`, стрелки, `Tab`,
-   `Ctrl+A`, `Ctrl+C`, `Ctrl+V`, Shift и AltGr.
-5. Проверить ввод в нескольких slave по очереди.
-6. Остановить и повторно запустить синхронизацию; убедиться, что старые
-   listeners не создают повторную рассылку.
+1. Запустить master и минимум два slave, включить Multi-Control.
+2. Нажать на кнопку подключения или подписания в Zerion.
+3. Проверить, что во всех профилях открываются именно popup-окна, а не вкладки.
+4. Повторить сценарий при высокой нагрузке или задержке ответа сайта.
+5. Проверить синхронизацию мыши внутри popup и отсутствие вкладки-дубликата.
+6. Проверить обычную ссылку с `_blank` и убедиться, что её поведение не
+   изменилось.
 
 ## Критерии приёмки
 
-- Printable-символ из master появляется в каждом slave ровно один раз.
-- Printable-символ из slave не появляется в master или других slave.
-- Ввод в slave не дублируется самим multi-control.
-- Управляющие клавиши и browser shortcuts сохраняют существующее поведение.
-- AltGr и Shift не теряют символы и не создают повторные вставки.
-- События с неизвестным source PID не рассылаются.
-- После stop/start не возникает накопленных keyboard listeners.
-- `npm test`, целевые тесты и lint проходят; native addon пересобран и проверен,
-  если изменён `hooks.cc`.
+- Zerion-popup определяется по runtime ID профиля и pathname, а не по одному
+  префиксу `chrome-extension://`.
+- Для Zerion-popup `Target.createTarget`/`createTab` не вызывается.
+- Native popup ожидается до 2–3 секунд с повторным polling.
+- Popup-wait для slave выполняется параллельно и не блокирует Enter через
+  `discoverActiveTab()`.
+- Случайные немапленные страницы не принимаются за wallet-popup.
+- Нераспознанные `chrome-extension://` URL никогда не передаются в `createTab`.
+- Поздний native popup заменяет ошибочный созданный target, а ошибочный target
+  закрывается.
+- Reconciliation обнаруживает native popup даже если WS-события не пришли.
+- Remap сохраняет существующий порядок `tabIndex`.
+- Обычные `http(s)` `_blank` и `window.open` сохраняют fallback через
+  `createTab`.
+- В popup синхронизируются мышь и остальные существующие события.
+- Целевые тесты, `npm test` и `npm run lint` проходят.
 
 ## Риски и ограничения
 
-- PID foreground-окна может быть недоступен в редком переходном состоянии; такие
-  события безопасно отбрасываются, чтобы не рассылать ввод из slave.
-- Изменение native payload требует пересборки `hooks.node` на Windows.
-- Неправильная классификация printable event может сломать раскладки, dead keys
-  или AltGr; обязательны тесты на эти случаи и ручная проверка.
-- Key event без текста нельзя считать безопасным способом отключить вставку:
-  именно поэтому printable keyDown должен быть исключён из CDP forwarding, а не
-  только изменён.
-- Тесты не заменяют ручную проверку реального foreground PID и поведения
-  браузера на Windows.
-
-## Что не входит в задачу
-
-- Миграции БД и изменение схемы профилей.
-- Изменение REST API contract или добавление новых endpoint.
-- Подключение `windowTracker` и регистрация окон через новый lifecycle.
-- Изменение синхронизации мыши, scroll, вкладок или раскладки окон.
-- Изменение версии проекта, `package.json` или lock-файлов.
+- Runtime ID может разрешаться отдельно для разных профилей; нельзя полагаться
+  только на имя директории расширения.
+- Если ошибочный target был создан старой версией до появления runtime-реестра,
+  его происхождение может быть невозможно доказать. Cleanup должен закрывать
+  только target, явно зарегистрированный как созданный popup fallback.
+- Если native popup не открылся вообще, slave останется без соответствующего
+  popup-target. Это предпочтительнее создания обычной вкладки-дубликата.
+- Изменение timeout увеличивает время ожидания обработки одного master-popup и
+  требует сохранения защиты от параллельных `pendingSync`.
+- Проверка должна гарантировать, что popup-target одного slave не будет ошибочно
+  сопоставлен с другим master-target через `tabIndex`.

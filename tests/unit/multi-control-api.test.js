@@ -1281,3 +1281,436 @@ describe('onTabActivated callback (matches api/multi-control)', () => {
     expect(mockCdp.activateCalls).toHaveLength(0);
   });
 });
+
+// ============================================================
+// ТЕСТЫ: Zerion popup — helper и _findNativeSlaveTab / syncNewMasterTab
+// ============================================================
+describe('Zerion popup helpers (getChromeExtensionInfo, classify)', () => {
+  let mc;
+  beforeEach(() => {
+    vi.resetModules();
+  });
+  it('getChromeExtensionInfo parses chrome-extension URL correctly', async () => {
+    const mod = require('../../src/api/multi-control.js');
+    const info = mod.getChromeExtensionInfo('chrome-extension://aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa/popup.html?x=1#hash');
+    expect(info).toEqual({ extId: 'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa', pathname: '/popup.html' });
+  });
+  it('ignores query and hash', async () => {
+    const mod = require('../../src/api/multi-control.js');
+    const info = mod.getChromeExtensionInfo('chrome-extension://bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb/page.html?foo=bar#frag');
+    expect(info.pathname).toBe('/page.html');
+  });
+  it('returns null for non chrome-extension url', async () => {
+    const mod = require('../../src/api/multi-control.js');
+    expect(mod.getChromeExtensionInfo('https://example.com')).toBeNull();
+  });
+  it('returns null for invalid ext id', async () => {
+    const mod = require('../../src/api/multi-control.js');
+    expect(mod.getChromeExtensionInfo('chrome-extension://short/popup.html')).toBeNull();
+  });
+});
+
+describe('Zerion popup sync scenarios', () => {
+  let controller;
+  let cdpManager;
+  let mc;
+  let tmpDir;
+  let originalAppData;
+  let masterId;
+  let slaveId1;
+  let slaveId2;
+  let extFolder = 'test-ext-folder';
+  let fakeRuntimeMaster = 'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa';
+  let fakeRuntimeSlave1 = 'bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb';
+  let fakeRuntimeSlave2 = 'cccccccccccccccccccccccccccccccc';
+
+  function createProfileWithExt(name, extFolderName) {
+    const { initDatabase } = require('../../src/db/index.js');
+    const db = require('../../src/db').getDatabase();
+    const pq = createProfileQueries(db);
+    const profile = pq.create({
+      name,
+      platform: 'windows',
+      fingerprint_seed: 'seed-' + name,
+      user_agent: 'Mozilla/5.0',
+      screen_resolution: '1920x1080',
+      hardware_cores: 4,
+      hardware_memory: 8,
+      extensions: [extFolderName],
+    });
+    return profile;
+  }
+
+  beforeEach(() => {
+    vi.resetModules();
+    originalAppData = process.env.APPDATA;
+    tmpDir = path.join(os.tmpdir(), 'mc-zerion-test-' + Date.now() + '-' + Math.random().toString(36).slice(2));
+    process.env.APPDATA = tmpDir;
+    fs.mkdirSync(tmpDir, { recursive: true });
+    // need to require after setting APPDATA
+    const { initDatabase } = require('../../src/db/index.js');
+    initDatabase();
+    const db = require('../../src/db').getDatabase();
+    const pq = createProfileQueries(db);
+    // create master/slave profiles
+    const m = createProfileWithExt('master', extFolder);
+    const s1 = createProfileWithExt('slave1', extFolder);
+    const s2 = createProfileWithExt('slave2', extFolder);
+    masterId = m.id;
+    slaveId1 = s1.id;
+    slaveId2 = s2.id;
+
+    // mock extensions resolveRuntimeId per profile: master -> fakeRuntimeMaster, slave1 -> fakeRuntimeSlave1, etc.
+    const extensionsMod = require('../../src/api/extensions.js');
+    vi.spyOn(extensionsMod, 'resolveRuntimeId').mockImplementation(async (extPath, profileDir) => {
+      // profileDir contains profileId via BrowserData path
+      if (profileDir && profileDir.includes(masterId)) return fakeRuntimeMaster;
+      if (profileDir && profileDir.includes(slaveId1)) return fakeRuntimeSlave1;
+      if (profileDir && profileDir.includes(slaveId2)) return fakeRuntimeSlave2;
+      return fakeRuntimeMaster;
+    });
+    // ensure getExtensionsDir returns tmpDir/extensions
+    vi.spyOn(extensionsMod, 'getExtensionsDir').mockReturnValue(path.join(tmpDir, 'extensions'));
+
+    controller = require('../../src/multi-control').controller;
+    cdpManager = require('../../src/multi-control/cdp-manager.js').cdpManager;
+    mc = require('../../src/api/multi-control.js');
+    controller.stop();
+    mc.pendingPopupReconciliations.clear();
+    mc.createdPopupFallbackTargets.clear();
+    mc.pendingSync.clear();
+    mc.attachedMasterTabs.clear();
+    controller.setMaster(masterId);
+    controller.addSlave(slaveId1);
+    controller.addSlave(slaveId2);
+    // ensure cdpManager browserConnections exist
+    cdpManager.browserConnections.set(masterId, { targetSessions: new Map(), cdpPort: 9222, ws: { send: vi.fn() } });
+    cdpManager.browserConnections.set(slaveId1, { targetSessions: new Map(), cdpPort: 9223, ws: { send: vi.fn() } });
+    cdpManager.browserConnections.set(slaveId2, { targetSessions: new Map(), cdpPort: 9224, ws: { send: vi.fn() } });
+    // mock cdp functions
+    vi.spyOn(cdpManager, 'getHttpTabs').mockResolvedValue([]);
+    vi.spyOn(cdpManager, 'attachToExistingTarget').mockResolvedValue({ sessionId: 'sess' });
+    vi.spyOn(cdpManager, 'createTab').mockResolvedValue('created-tab-id');
+    vi.spyOn(cdpManager, 'closeTarget').mockImplementation(() => {});
+    vi.spyOn(controller, '_enforceSlaveFocusOnActiveTab').mockResolvedValue(undefined);
+  });
+
+  afterEach(() => {
+    controller.stop();
+    mc.pendingPopupReconciliations.clear();
+    mc.createdPopupFallbackTargets.clear();
+    const { closeDatabase } = require('../../src/db/index.js');
+    closeDatabase();
+    process.env.APPDATA = originalAppData;
+    if (tmpDir) try { fs.rmSync(tmpDir, { recursive: true, force: true }); } catch {}
+    vi.restoreAllMocks();
+  });
+
+  it('1. Master Zerion-popup, slave delayed >300ms: createTab не вызывается, native находится', async () => {
+    const masterUrl = `chrome-extension://${fakeRuntimeMaster}/popup.html`;
+    const slaveUrl1 = `chrome-extension://${fakeRuntimeSlave1}/popup.html`;
+    const slaveUrl2 = `chrome-extension://${fakeRuntimeSlave2}/popup.html`;
+    let callCount1 = 0;
+    let callCount2 = 0;
+    cdpManager.getHttpTabs.mockImplementation(async (pid) => {
+      if (pid === slaveId1) {
+        callCount1++;
+        if (callCount1 < 3) return [];
+        return [{ targetId: 'slave1-native', url: slaveUrl1, type: 'page' }];
+      }
+      if (pid === slaveId2) {
+        callCount2++;
+        if (callCount2 < 2) return [];
+        return [{ targetId: 'slave2-native', url: slaveUrl2, type: 'page' }];
+      }
+      return [];
+    });
+    await mc.syncNewMasterTab('master-target-1', masterUrl);
+    expect(cdpManager.createTab).not.toHaveBeenCalled();
+    expect(controller.getSlaveTabForMaster('master-target-1', slaveId1)).toBe('slave1-native');
+    expect(controller.getSlaveTabForMaster('master-target-1', slaveId2)).toBe('slave2-native');
+  });
+
+  it('3. Случайный http tab не принимается за Zerion-popup', async () => {
+    const masterUrl = `chrome-extension://${fakeRuntimeMaster}/popup.html`;
+    const randomHttp = { targetId: 'random-http', url: 'https://example.com', type: 'page' };
+    const correct1 = { targetId: 'correct1', url: `chrome-extension://${fakeRuntimeSlave1}/popup.html`, type: 'page' };
+    let call = 0;
+    cdpManager.getHttpTabs.mockImplementation(async (pid) => {
+      if (pid === slaveId1) {
+        call++;
+        if (call === 1) return [randomHttp];
+        if (call === 2) return [randomHttp, correct1];
+      }
+      return [];
+    });
+    // Use single slave for deterministic
+    controller.slaves.clear();
+    controller.slaves.set(slaveId1, { position: null });
+    await mc.syncNewMasterTab('master-target-2', masterUrl);
+    // Should not map random-http, should map correct1 after second poll
+    expect(controller.getSlaveTabForMaster('master-target-2', slaveId1)).toBe('correct1');
+    expect(cdpManager.createTab).not.toHaveBeenCalled();
+  });
+
+  it('4. Zerion-popup timeout: искусственная вкладка не создаётся', async () => {
+    const masterUrl = `chrome-extension://${fakeRuntimeMaster}/popup.html`;
+    cdpManager.getHttpTabs.mockResolvedValue([]);
+    await mc.syncNewMasterTab('master-target-3', masterUrl);
+    expect(cdpManager.createTab).not.toHaveBeenCalled();
+    expect(mc.pendingPopupReconciliations.size).toBeGreaterThan(0);
+  });
+
+  it('5. Нераспознанный chrome-extension URL после ошибки resolveRuntimeId не приводит к createTab', async () => {
+    const extensionsMod = require('../../src/api/extensions.js');
+    extensionsMod.resolveRuntimeId.mockRejectedValue(new Error('fs error'));
+    const unknownUrl = 'chrome-extension://dddddddddddddddddddddddddddddddd/popup.html';
+    cdpManager.getHttpTabs.mockResolvedValue([]);
+    await mc.syncNewMasterTab('master-target-4', unknownUrl);
+    expect(cdpManager.createTab).not.toHaveBeenCalled();
+  });
+
+  it('6. Обычный _blank без native: createTab вызывается и маппится', async () => {
+    const httpUrl = 'https://example.com/new';
+    cdpManager.getHttpTabs.mockResolvedValue([]);
+    cdpManager.createTab.mockResolvedValueOnce('slave1-created').mockResolvedValueOnce('slave2-created');
+    await mc.syncNewMasterTab('master-target-5', httpUrl);
+    expect(cdpManager.createTab).toHaveBeenCalledTimes(2);
+    expect(controller.getSlaveTabForMaster('master-target-5', slaveId1)).toBe('slave1-created');
+  });
+
+  it('7. Поздний native popup обнаруживается reconciliation-поллером после timeout', async () => {
+    const masterUrl = `chrome-extension://${fakeRuntimeMaster}/popup.html?x=1#hash`;
+    const slaveUrl1 = `chrome-extension://${fakeRuntimeSlave1}/popup.html?y=2`;
+    cdpManager.getHttpTabs.mockResolvedValue([]);
+    await mc.syncNewMasterTab('master-target-7', masterUrl);
+    expect(mc.pendingPopupReconciliations.size).toBe(2);
+    // now late popup appears
+    cdpManager.getHttpTabs.mockImplementation(async (pid) => {
+      if (pid === slaveId1) return [{ targetId: 'late-native-1', url: slaveUrl1, type: 'page' }];
+      return [];
+    });
+    await mc.reconcilePendingPopups();
+    expect(controller.getSlaveTabForMaster('master-target-7', slaveId1)).toBe('late-native-1');
+  });
+
+  it('8. Поздний native после ошибочного fallback: ошибочный закрывается, mapping на native', async () => {
+    const masterUrl = `chrome-extension://${fakeRuntimeMaster}/popup.html`;
+    const slaveUrl = `chrome-extension://${fakeRuntimeSlave1}/popup.html`;
+    // simulate existing erroneous fallback mapping
+    controller.mapTab('master-target-8', slaveId1, 'fallback-target');
+    mc.createdPopupFallbackTargets.set(`master-target-8:${slaveId1}`, 'fallback-target');
+    // ensure old fallback present in /json
+    const fallbackTab = { targetId: 'fallback-target', url: slaveUrl, type: 'page' };
+    const nativeTab = { targetId: 'native-late', url: slaveUrl, type: 'page' };
+    cdpManager.getHttpTabs.mockImplementation(async (pid) => {
+      if (pid === slaveId1) return [fallbackTab, nativeTab];
+      return [];
+    });
+    // register pending
+    mc.pendingPopupReconciliations.set(`master-target-8:${slaveId1}`, {
+      masterTargetId: 'master-target-8',
+      masterUrl,
+      slaveId: slaveId1,
+      expectedPathname: '/popup.html',
+      slaveRuntimeId: fakeRuntimeSlave1,
+      masterRuntimeId: fakeRuntimeMaster,
+      createdAt: Date.now(),
+      expiresAt: Date.now() + 10000,
+    });
+    await mc.reconcilePendingPopups();
+    expect(cdpManager.closeTarget).toHaveBeenCalledWith(slaveId1, 'fallback-target');
+    expect(controller.getSlaveTabForMaster('master-target-8', slaveId1)).toBe('native-late');
+  });
+
+  it('9. Повторная обработка того же native не создаёт дубликат', async () => {
+    const masterUrl = `chrome-extension://${fakeRuntimeMaster}/popup.html`;
+    const slaveUrl = `chrome-extension://${fakeRuntimeSlave1}/popup.html`;
+    controller.mapTab('master-target-9', slaveId1, 'native-1');
+    mc.pendingPopupReconciliations.set(`master-target-9:${slaveId1}`, {
+      masterTargetId: 'master-target-9',
+      masterUrl,
+      slaveId: slaveId1,
+      expectedPathname: '/popup.html',
+      slaveRuntimeId: fakeRuntimeSlave1,
+      masterRuntimeId: fakeRuntimeMaster,
+      createdAt: Date.now(),
+      expiresAt: Date.now() + 10000,
+    });
+    cdpManager.getHttpTabs.mockResolvedValue([{ targetId: 'native-1', url: slaveUrl, type: 'page' }]);
+    await mc.reconcilePendingPopups();
+    // should be idempotent: still mapped to native-1, not closed
+    expect(cdpManager.closeTarget).not.toHaveBeenCalled();
+    expect(controller.getSlaveTabForMaster('master-target-9', slaveId1)).toBe('native-1');
+    // pending should remain or be removed? Since candidate already mapped, tryReconcile returns false and pending stays
+  });
+
+  it('10. Extension target с другим ID или pathname не маппится', async () => {
+    const masterUrl = `chrome-extension://${fakeRuntimeMaster}/popup.html`;
+    const wrongIdUrl = `chrome-extension://eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee/popup.html`;
+    const wrongPathUrl = `chrome-extension://${fakeRuntimeSlave1}/other.html`;
+    cdpManager.getHttpTabs.mockImplementation(async (pid) => {
+      if (pid === slaveId1) return [{ targetId: 'wrong-id', url: wrongIdUrl, type: 'page' }, { targetId: 'wrong-path', url: wrongPathUrl, type: 'page' }];
+      return [];
+    });
+    await mc.syncNewMasterTab('master-target-10', masterUrl);
+    // no mapping for wrong targets
+    expect(controller.getSlaveTabForMaster('master-target-10', slaveId1)).toBeNull();
+  });
+
+  it('11. Remap in-place не меняет порядок tabIndex', async () => {
+    const masterUrl = `chrome-extension://${fakeRuntimeMaster}/popup.html`;
+    // setup tabIndex with two masters
+    controller.tabMapping.clear();
+    controller.tabIndex = [];
+    controller.mapTab('master-A', slaveId1, 'slave-A');
+    controller.mapTab('master-B', slaveId1, 'slave-B');
+    const before = [...controller.tabIndex];
+    controller.mapTab('master-target-11', slaveId1, 'fallback-11');
+    mc.createdPopupFallbackTargets.set(`master-target-11:${slaveId1}`, 'fallback-11');
+    const slaveUrl = `chrome-extension://${fakeRuntimeSlave1}/popup.html`;
+    cdpManager.getHttpTabs.mockResolvedValue([{ targetId: 'fallback-11', url: slaveUrl, type: 'page' }, { targetId: 'native-11', url: slaveUrl, type: 'page' }]);
+    mc.pendingPopupReconciliations.set(`master-target-11:${slaveId1}`, {
+      masterTargetId: 'master-target-11',
+      masterUrl,
+      slaveId: slaveId1,
+      expectedPathname: '/popup.html',
+      slaveRuntimeId: fakeRuntimeSlave1,
+      masterRuntimeId: fakeRuntimeMaster,
+      createdAt: Date.now(),
+      expiresAt: Date.now() + 10000,
+    });
+    await mc.reconcilePendingPopups();
+    expect(controller.tabIndex).toEqual([...before, 'master-target-11']);
+    expect(controller.tabIndex.indexOf('master-target-11')).toBe(before.length);
+  });
+
+  it('2. discoverActiveTab с Zerion не блокирует Enter (быстро завершается)', async () => {
+    const masterUrl = `chrome-extension://${fakeRuntimeMaster}/popup.html`;
+    const slaveUrl = `chrome-extension://${fakeRuntimeSlave1}/popup.html`;
+    // master has new tab
+    cdpManager.getHttpTabs.mockImplementation(async (pid) => {
+      if (pid === masterId) return [{ targetId: 'new-master', url: masterUrl, type: 'page' }];
+      if (pid === slaveId1) return [{ targetId: 'late-slave', url: slaveUrl, type: 'page' }];
+      return [];
+    });
+    // make _findNativeSlaveTab delay 200ms per attempt (12 attempts = 2.4s) but we mock quickly
+    // measure duration of discoverActiveTab
+    const start = Date.now();
+    await mc.discoverActiveTab();
+    const dur = Date.now() - start;
+    // Should not wait full 2.5s, should return quickly (fire-and-forget for Zerion)
+    expect(dur).toBeLessThan(1000);
+  });
+
+  it('parallel: ожидание slave-popup параллельно, один медленный не блокирует другой', async () => {
+    const masterUrl = `chrome-extension://${fakeRuntimeMaster}/popup.html`;
+    const slaveUrl1 = `chrome-extension://${fakeRuntimeSlave1}/popup.html`;
+    const slaveUrl2 = `chrome-extension://${fakeRuntimeSlave2}/popup.html`;
+    let t1 = 0, t2 = 0;
+    cdpManager.getHttpTabs.mockImplementation(async (pid) => {
+      if (pid === slaveId1) {
+        t1++;
+        if (t1 < 5) { await new Promise(r=>setTimeout(r, 50)); return []; }
+        return [{ targetId: 'native1', url: slaveUrl1, type: 'page' }];
+      }
+      if (pid === slaveId2) {
+        t2++;
+        if (t2 < 2) { await new Promise(r=>setTimeout(r, 50)); return []; }
+        return [{ targetId: 'native2', url: slaveUrl2, type: 'page' }];
+      }
+      return [];
+    });
+    const start = Date.now();
+    await mc.syncNewMasterTab('master-par', masterUrl);
+    const dur = Date.now() - start;
+    // parallel => duration approx max delay, not sum. Slowest ~ 4*200=800ms, sum would be ~1200ms. Check less than 1500
+    expect(dur).toBeLessThan(1500);
+    expect(controller.getSlaveTabForMaster('master-par', slaveId1)).toBe('native1');
+    expect(controller.getSlaveTabForMaster('master-par', slaveId2)).toBe('native2');
+  });
+
+  it('9b. pending удаляется при обнаружении корректного mapping (идемпотентность)', async () => {
+    const masterUrl = `chrome-extension://${fakeRuntimeMaster}/popup.html`;
+    const slaveUrl = `chrome-extension://${fakeRuntimeSlave1}/popup.html`;
+    // already correctly mapped
+    controller.mapTab('master-pending-clean', slaveId1, 'native-correct');
+    cdpManager.getHttpTabs.mockResolvedValue([{ targetId: 'native-correct', url: slaveUrl, type: 'page' }]);
+    mc.pendingPopupReconciliations.set(`master-pending-clean:${slaveId1}`, {
+      masterTargetId: 'master-pending-clean',
+      masterUrl,
+      slaveId: slaveId1,
+      expectedPathname: '/popup.html',
+      slaveRuntimeId: fakeRuntimeSlave1,
+      masterRuntimeId: fakeRuntimeMaster,
+      createdAt: Date.now(),
+      expiresAt: Date.now() + 10000,
+    });
+    await mc.reconcilePendingPopups();
+    expect(mc.pendingPopupReconciliations.has(`master-pending-clean:${slaveId1}`)).toBe(false);
+  });
+});
+
+describe('os-keyboard Enter не блокируется длительным popup-wait (полная цепочка)', () => {
+  let app;
+  let controllerCb;
+  let tmpDir2;
+  let origAppData;
+  let mId;
+  let sId;
+  let fakeRuntime = 'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa';
+  it('POST /os-keyboard Enter возвращается быстро даже при pending Zerion popup', async () => {
+    origAppData = process.env.APPDATA;
+    tmpDir2 = path.join(os.tmpdir(), 'mc-keyboard-enter-' + Date.now());
+    process.env.APPDATA = tmpDir2;
+    fs.mkdirSync(tmpDir2, { recursive: true });
+    const { initDatabase } = require('../../src/db/index.js');
+    initDatabase();
+    const db = require('../../src/db').getDatabase();
+    const pq = createProfileQueries(db);
+    const master = pq.create({
+      name: 'master-kb', platform: 'windows', fingerprint_seed: 'seed-kb', user_agent: 'Mozilla/5.0', screen_resolution: '1920x1080', hardware_cores: 4, hardware_memory: 8, extensions: ['ext-kb'],
+    });
+    pq.updatePid(master.id, 9999);
+    mId = master.id;
+    const slave = pq.create({
+      name: 'slave-kb', platform: 'windows', fingerprint_seed: 'seed-kb2', user_agent: 'Mozilla/5.0', screen_resolution: '1920x1080', hardware_cores: 4, hardware_memory: 8, extensions: ['ext-kb'],
+    });
+    sId = slave.id;
+    const extensionsMod = require('../../src/api/extensions.js');
+    const spyRes = vi.spyOn(extensionsMod, 'resolveRuntimeId').mockResolvedValue(fakeRuntime);
+    const cdp = require('../../src/multi-control/cdp-manager.js').cdpManager;
+    const mc2 = require('../../src/api/multi-control.js');
+    controllerCb = require('../../src/multi-control').controller;
+    controllerCb.stop();
+    mc2.pendingPopupReconciliations.clear();
+    mc2.createdPopupFallbackTargets.clear();
+    controllerCb.setMaster(mId);
+    await controllerCb.addSlave(sId);
+    cdp.browserConnections.set(mId, { targetSessions: new Map([['existing', { sessionId: 's0' }]]), cdpPort: 9222, ws: { send: vi.fn() } });
+    cdp.browserConnections.set(sId, { targetSessions: new Map(), cdpPort: 9223, ws: { send: vi.fn() } });
+    // master has new Zerion tab
+    vi.spyOn(cdp, 'getHttpTabs').mockImplementation(async (pid) => {
+      if (pid === mId) return [{ targetId: 'new-master-zerion', url: `chrome-extension://${fakeRuntime}/popup.html`, type: 'page' }];
+      if (pid === sId) {
+        await new Promise(r => setTimeout(r, 800));
+        return [{ targetId: 'late-native', url: `chrome-extension://${fakeRuntime}/popup.html`, type: 'page' }];
+      }
+      return [];
+    });
+    vi.spyOn(cdp, 'attachToExistingTarget').mockResolvedValue({});
+    app = express();
+    app.use(express.json());
+    app.use('/api/multi-control', require('../../src/api/multi-control.js'));
+    const start = Date.now();
+    await supertest(app).post('/api/multi-control/os-keyboard').send({ type: 'keyDown', key: 'Enter', sourcePid: 9999 }).expect(200);
+    const dur = Date.now() - start;
+    expect(dur).toBeLessThan(1000);
+    spyRes.mockRestore();
+    controllerCb.stop();
+    const { closeDatabase } = require('../../src/db/index.js');
+    closeDatabase();
+    process.env.APPDATA = origAppData;
+    if (tmpDir2) try { fs.rmSync(tmpDir2, { recursive: true, force: true }); } catch {}
+  });
+});

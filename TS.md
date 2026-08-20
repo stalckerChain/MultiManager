@@ -1,7 +1,7 @@
 -------------------------------
 ## SOFTWARE REQUIREMENTS SPECIFICATION (SRS) / ТЕХНИЧЕСКОЕ ЗАДАНИЕ
 ## AI-Driven Web Automation Platform на базе антидетект-браузера (MVP аналог AdsPower + ферма автоматизации)
-**Версия системы:** 1.5.1 | **Multi-Control:** 0.17.0 | **Дата ревизии:** 2026-08-20 | **Ф7 Automation Matrix:** ✅
+**Версия системы:** 1.5.1 | **Multi-Control:** 0.19.0 | **Дата ревизии:** 2026-08-21 | **Ф7 Automation Matrix:** ✅
 
 > **Принцип маркировки:** ✅ РЕАЛИЗОВАНО в коде | ⚠️ ЧАСТИЧНО | ❌ НЕ РЕАЛИЗОВАНО (в ТЗ, но в коде нет). Каждое утверждение о статусе подкреплено ссылкой на реальный файл аудита.
 > **Спутник-документ:** [TS_INTEGRATION.md](./TS_INTEGRATION.md) — миграция Python-фреймворка stAuto0 на интеграцию с MultiManager.
@@ -158,7 +158,7 @@ GUI передаёт порт бэкенду через **env-переменну
 - Таблица `cookies` — очередь одноразового импорта. Применение после запуска профиля через CDP `Network.setCookies` на browser-level WebSocket (без `sessionId`); подтверждение через `Network.getAllCookies` по ключу `(domain, path, name)` без сравнения `value`; удаляются только подтверждённые записи по snapshot DB `id`; при ошибке записи сохраняются для повтора. Файл `Default/Cookies` не читается и не перезаписывается. ✅ `src/cookie/inject.js`, `src/api/browser.js:651-654`
 - Экспорт запущенного профиля — актуальные cookies через CDP `Network.getAllCookies`; остановленного — только оставшиеся в очереди записи. ✅ `src/api/cookies.js:63-108`
 
-### 4.4. Логика синхронизатора (Multi-Control) v0.17.0 ✅ РЕАЛИЗОВАНО
+### 4.4. Логика синхронизатора (Multi-Control) v0.19.0 ✅ РЕАЛИЗОВАНО
 - CDP-синтез мыши/скролла + Native OS hooks (WH_KEYBOARD_LL) как единственный источник клавиатуры (v0.16.0: CDP-клавиатура удалена, double dispatch устранён). ✅ `src/multi-control/`, `src/os-input/native-hooks/`
 - Текст в slave через `Input.insertText` — `charInput` вычисляется addon'ом через `ToUnicodeEx` (раскладка, Shift, CapsLock, AltGr, dead keys). ✅ `src/os-input/native-hooks/hooks.cc`, `gui/src/main/keyboard-hooks-payload.js`
 - **Источник ввода по PID (v0.18.0):** каждое событие клавиатуры несёт `sourcePid` (PID foreground-окна из `KeyboardProc`); `/os-keyboard` рассылает в slave только события из master-профиля (`pq.getById(masterId)?.pid`), ввод из slave/других окон игнорируется. ✅ `src/os-input/native-hooks/hooks.cc`, `src/os-input/native-hooks/index.js`, `gui/src/main/keyboard-hooks-payload.js`, `gui/src/main/keyboard-hooks.js`, `src/api/multi-control.js`
@@ -167,6 +167,7 @@ GUI передаёт порт бэкенду через **env-переменну
 - MouseSmoother (ghost-cursor path(), Безье + Fitts + overshoot), `flush()` перед кликом; параметры адаптируются к числу slave, устаревшие точки пропускаются. ✅ `src/multi-control/mouse-smoothing.js`
 - Входящие `mousemove` троттлятся (16 мс, `latest-event-wins`); координаты slave без двойного вычитания scroll. ✅ `src/multi-control/index.js`
 - **Authoritative document scroll (v0.17.0):** источник — событие `window.scroll` (абсолютные `window.scrollX/scrollY` после изменения прокрутки, коалесцирование); wheel — только диагностика; применение в slave через CDP `Runtime.callFunctionOn('window.scrollTo(x, y)')` с `executionContextId` сессии (без `Runtime.evaluate` fallback), неуспешное применение фиксируется `scrollSyncDiscarded`; `Runtime.enable` для всех сессий. ✅ `src/multi-control/cdp-manager.js`, `src/multi-control/index.js`, `src/os-input/input-capture.js`
+- **Надёжная синхронизация Zerion popup (v0.19.0):** распознавание только `chrome-extension://` через `getChromeExtensionInfo` + `getZerionRuntimeIdForProfile` (`resolveRuntimeId` из `profile.extensions` конкретного профиля, `getBrowserDataDir`, кэш 5с) + `classifyMasterUrl` (`zerion-popup`/`unknown-extension`/`http`); `_findNativeSlaveTab(slaveId, expectedUrl)` — для Zerion polling 2–3с шаг 200мс через `getHttpTabs`, исключает `tabMapping` для slave, принимает только `page` с совпадающим Zerion ID конкретного slave и `pathname` master-popup (query/hash игнорируются), для `http(s)` 2×150мс; `syncNewMasterTab` — трёхветочная классификация (Zerion без `createTab`, unknown-extension warning без `createTab`, `http(s)` `createTab`→`attach`→`map`), параллельное `Promise.all` для slave, `discoverActiveTab` для Zerion fire-and-forget не блокирует `/os-keyboard` Enter; reconciliation через `pendingPopupReconciliations` (проверка на `discoverActiveTab` 300мс + 5.5с после таймаута, `attach` + in-place `tabMapping.get().set()` без `tabIndex` сдвига, cleanup только ошибочного fallback через `closeTarget`, идемпотентно, очистка в `/stop`/`/slave/remove` + `runtimeIdCache`), `onNewTab`/`onTabAttached` для slave не маппят `chrome-extension://` по `tabIndex`. ✅ `src/api/multi-control.js`
 - Tab Mapping 1:N (`Map<masterTargetId, Map<slaveId, slaveTargetId>>`). ✅ `src/multi-control/cdp-manager.js`
 - Активация фокуса: `Target.activateTarget` → `Page.bringToFront` → `DOM.focus` + `body.focus()`.
 - Endpoints `/api/multi-control/*`, `/api/window-arranger/*`. ✅ `src/core/app.js:28-29`

@@ -181,6 +181,30 @@ tabIndex   = Array<masterTargetId>  // упорядоченная матрица
 
 **Клики по `_blank` больше не перехватываются в sync-script** — мёртвый код удалён (0 срабатываний в логах).
 
+### Zerion popup (`chrome-extension://`) — надёжная синхронизация (v0.19.0)
+
+**Проблема:** Новые native target'ы антидетект-браузера не всегда приходят через CDP WebSocket. Master обнаруживается через HTTP `/json` polling каждые 300 мс, после чего `syncNewMasterTab()` ищет соответствующий target в каждом slave. Старая `_findNativeSlaveTab()` делала только 2 попытки с паузой 150 мс и выбирала любую немапленную page-вкладку. Если popup Zerion в slave открывается позже, `syncNewMasterTab()` вызывала `Target.createTarget` через `createTab`, CDP создавала обычную вкладку с `chrome-extension://...` вместо нативного popup-окна расширения. Поздний native target мог быть обработан `onNewTab`/`onTabAttached` по `tabIndex`, что приводило к неверному mapping и дубликату.
+
+**Решение:**
+
+1. **Распознавание popup:** локальные helper'ы в `src/api/multi-control.js` (`getChromeExtensionInfo`, `getZerionRuntimeIdForProfile`, `classifyMasterUrl`). Распознаётся только URL вида `chrome-extension://...`. Runtime ID получается из `profile.extensions[0]` через `resolveRuntimeId(extPath, profileDir)` для конкретного профиля (`getBrowserDataDir`). Для классификации master используется runtime ID master-профиля, для поиска в slave — runtime ID именно этого slave и `pathname` из URL master-popup. Сопоставляются `extension ID` + `pathname` (query/hash игнорируются). Любой `chrome-extension://` без совпадения ID/пути не считается Zerion-popup. Ошибки чтения профиля/JSON/`resolveRuntimeId` обрабатываются безопасно (не классифицировать как popup, лог без секретов).
+
+2. **`_findNativeSlaveTab(slaveId, expectedUrl)` разделена на два режима:**
+   - *Zerion-popup:* polling ~2–3 сек, шаг 150–250 мс (`POPUP_INITIAL_WAIT_MS=2500`, `POPUP_POLL_INTERVAL_MS=200`), в каждой попытке `getHttpTabs(slaveId)`, исключаются уже замапленные `tabMapping` для этого slave, принимается только `page`-target, чей URL совпадает с Zerion extension ID конкретного slave и `pathname` из master URL. Случайная немапленная `http(s)`-вкладка не принимается.
+   - *Обычные `http(s)`*: сохраняется текущая логика (2 попытки, 150 мс) для `_blank`/`window.open`.
+
+3. **`syncNewMasterTab()` — трёхветочная классификация:**
+   - *подтверждённый Zerion-popup:* длительное ожидание native popup в каждом slave параллельно (`Promise.all`), **никогда не вызывает `cdpManager.createTab()`**, после нахождения — `attachToExistingTarget` + `mapTab` + фокус; если не найден до таймаута — предупреждение, без создания заменяющей вкладки, регистрация в `pendingPopupReconciliations` для reconciliation;
+   - *нераспознанный `chrome-extension://`:* также не передаётся в `createTab`, только предупреждение;
+   - *`http(s)`*: текущий fallback `createTab` → `attach` → `map` сохранён.
+   - Ожидание для разных slave выполняется параллельно, один медленный профиль не блокирует других. Долгое ожидание не блокирует `discoverActiveTab()` и путь `/os-keyboard` для Enter — `discoverActiveTab()` для Zerion запускает `syncNewMasterTab` асинхронно (fire-and-forget) и сразу завершается, Enter не ждёт 2–3 сек.
+
+4. **Reconciliation и защита от гонок:**
+   - Хранятся незавершённые popup-sync записи (`pendingPopupReconciliations` с `masterTargetId`, `pathname`, `slaveId`, `slaveRuntimeId`, `expiresAt` = initial + 5500 мс). Проверяются на каждом `discoverActiveTab` (300 мс) и после initial timeout ещё ~5 сек, чтобы поймать popup, открывшийся через 5+ сек под нагрузкой. При нахождении выполняется `attach`, in-place remap (`tabMapping.get(masterTargetId).set(slaveId, newTargetId)` — не `unmapTab`+`mapTab`, чтобы не сдвинуть `tabIndex` при единственном slave) и cleanup идемпотентно.
+   - `onNewTab`/`onTabAttached` для slave не маппят `chrome-extension://` target по `tabIndex`. Поздний native popup ищется среди `pendingPopupReconciliations` и может заменить ошибочный fallback: если существующий mapping указывает на target с тем же extension ID + pathname и он был явно зарегистрирован как fallback в `createdPopupFallbackTargets` (или его URL совпадает с ожидаемым popup), он закрывается через `cdpManager.closeTarget()`, mapping заменяется in-place, native не закрывается. Вестись минимальное runtime-состояние созданных popup-target'ов, чтобы не закрыть обычный `_blank` или настоящий native popup.
+   - Очистка `pendingPopupReconciliations` и `createdPopupFallbackTargets` вместе с `pendingSync`/`attachedMasterTabs` в `/stop` и `/slave/remove` (по `slaveId`). Операции идемпотентны при повторном `onNewTab`/`onTabAttached`/polling. Порядок `targetSessions` vs `tabMapping` учитывается.
+   - `tabIndex` для обычных табов сохраняется, extension-target'ы исключены из index-based mapping (gaps не исправляются в рамках задачи).
+
 ### onNewTab для master/slave (v0.11.1)
 
 **Master:** `onNewTab` больше не вызывает `setActiveMasterTab`. Новый таб только регистрируется в `attachedMasterTabs`. Активация в Slaves произойдёт только когда Master реально переключится на таб (`tabActivated` через `visibilitychange`). Это исключает ложную активацию при фоновом открытии вкладок (middle-click, контекстное меню "открыть в новом табе").

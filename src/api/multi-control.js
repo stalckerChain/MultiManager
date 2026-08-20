@@ -5,8 +5,11 @@ const { controller } = require('../multi-control');
 const { cdpManager } = require('../multi-control/cdp-manager');
 const { inputCapture, windowTracker } = require('../os-input');
 const { getCdpPort } = require('./browser');
+const path = require('path');
 const { getDatabase, createProfileQueries } = require('../db');
 const { logger } = require('../logger');
+const extensionsApi = require('./extensions');
+const { getBrowserDataDir } = require('../core/profile-path');
 
 const execAsync = promisify(exec);
 
@@ -42,6 +45,15 @@ controller.cdp = cdpManager;
 const pendingSync = new Set();
 const attachedMasterTabs = new Set();
 
+// Zerion popup reconciliation state
+const pendingPopupReconciliations = new Map(); // key `${masterTargetId}:${slaveId}` -> entry
+const createdPopupFallbackTargets = new Map(); // key `${masterTargetId}:${slaveId}` -> slaveTargetId — defensive, остаётся пустой пока fallback для Zerion запрещён (см. TASK Риски)
+const POPUP_INITIAL_WAIT_MS = 2500;
+const POPUP_POLL_INTERVAL_MS = 200;
+const POPUP_RECONCILIATION_EXTRA_MS = 5500;
+const runtimeIdCache = new Map(); // profileId -> { id, fetchedAt }
+const RUNTIME_ID_CACHE_TTL_MS = 5000;
+
 // PID foreground-окна мастера для фильтрации источника в /os-keyboard.
 // Кэшируется до смены masterId: при stop() controller.masterId становится null,
 // поэтому повторный старт (даже с тем же профилем) пересчитает значение.
@@ -60,6 +72,193 @@ function getMasterKeyboardPid() {
     masterKeyboardPidCache = { masterId, pid };
   }
   return masterKeyboardPidCache.pid;
+}
+
+function getChromeExtensionInfo(url) {
+  if (!url || typeof url !== 'string' || !url.startsWith('chrome-extension://')) return null;
+  try {
+    const u = new URL(url);
+    if (u.protocol !== 'chrome-extension:') return null;
+    const extId = u.hostname;
+    if (!/^[a-z]{32}$/.test(extId)) return null;
+    return { extId, pathname: u.pathname || '/' };
+  } catch {
+    return null;
+  }
+}
+
+async function getZerionRuntimeIdForProfile(profileId) {
+  const cached = runtimeIdCache.get(profileId);
+  if (cached && Date.now() - cached.fetchedAt < RUNTIME_ID_CACHE_TTL_MS) return cached.id;
+  let resolved = null;
+  try {
+    const db = getDatabase();
+    const pq = createProfileQueries(db);
+    const profile = pq.getById(profileId);
+    if (!profile) {
+      runtimeIdCache.set(profileId, { id: null, fetchedAt: Date.now() });
+      return null;
+    }
+    let extIds;
+    try {
+      extIds = JSON.parse(profile.extensions || '[]');
+    } catch {
+      runtimeIdCache.set(profileId, { id: null, fetchedAt: Date.now() });
+      return null;
+    }
+    if (!Array.isArray(extIds) || extIds.length === 0) {
+      runtimeIdCache.set(profileId, { id: null, fetchedAt: Date.now() });
+      return null;
+    }
+    const folder = extIds[0];
+    if (typeof folder !== 'string' || !folder) {
+      runtimeIdCache.set(profileId, { id: null, fetchedAt: Date.now() });
+      return null;
+    }
+    const extPath = path.join(extensionsApi.getExtensionsDir(), folder);
+    const profileDir = getBrowserDataDir(profile);
+    const runtimeId = await extensionsApi.resolveRuntimeId(extPath, profileDir);
+    if (runtimeId && /^[a-z]{32}$/.test(runtimeId)) resolved = runtimeId;
+    runtimeIdCache.set(profileId, { id: resolved, fetchedAt: Date.now() });
+    return resolved;
+  } catch (err) {
+    logger.warn({ profileId, error: err.message }, 'Failed to resolve Zerion runtime ID');
+    runtimeIdCache.set(profileId, { id: null, fetchedAt: Date.now() });
+    return null;
+  }
+}
+
+async function classifyMasterUrl(url) {
+  if (!url || typeof url !== 'string') return 'http';
+  if (url.startsWith('chrome-extension://')) {
+    const info = getChromeExtensionInfo(url);
+    if (!info) return 'unknown-extension';
+    try {
+      const runtimeId = await getZerionRuntimeIdForProfile(controller.masterId);
+      if (!runtimeId) {
+        logger.warn({ masterId: controller.masterId }, 'Could not resolve Zerion runtime ID for master');
+        return 'unknown-extension';
+      }
+      if (info.extId === runtimeId) return 'zerion-popup';
+      return 'unknown-extension';
+    } catch (err) {
+      logger.warn({ error: err.message }, 'Failed to classify chrome-extension URL');
+      return 'unknown-extension';
+    }
+  }
+  if (url.startsWith('http://') || url.startsWith('https://')) return 'http';
+  return 'unknown-extension';
+}
+
+function registerPendingPopupSync(masterTargetId, masterUrl, slaveId, expectedPathname, slaveRuntimeId, masterRuntimeId) {
+  const key = `${masterTargetId}:${slaveId}`;
+  if (pendingPopupReconciliations.has(key)) return;
+  pendingPopupReconciliations.set(key, {
+    masterTargetId,
+    masterUrl,
+    slaveId,
+    expectedPathname,
+    slaveRuntimeId,
+    masterRuntimeId,
+    createdAt: Date.now(),
+    expiresAt: Date.now() + POPUP_INITIAL_WAIT_MS + POPUP_RECONCILIATION_EXTRA_MS,
+  });
+  logger.info({ masterTargetId, slaveId, pathname: expectedPathname }, 'SYNC: registered pending popup reconciliation');
+}
+
+async function tryReconcileOnePending(key) {
+  const entry = pendingPopupReconciliations.get(key);
+  if (!entry) return false;
+  if (Date.now() > entry.expiresAt) {
+    pendingPopupReconciliations.delete(key);
+    logger.warn({ masterTargetId: entry.masterTargetId, slaveId: entry.slaveId }, 'SYNC: pending popup reconciliation expired');
+    return false;
+  }
+  let slaveTabs;
+  try {
+    slaveTabs = await cdpManager.getHttpTabs(entry.slaveId);
+  } catch {
+    return false;
+  }
+  const candidate = slaveTabs.find(t => {
+    if (t.type !== 'page') return false;
+    const info = getChromeExtensionInfo(t.url);
+    if (!info) return false;
+    if (entry.slaveRuntimeId && info.extId !== entry.slaveRuntimeId) return false;
+    if (info.pathname !== entry.expectedPathname) return false;
+    const bySlave = controller.tabMapping.get(entry.masterTargetId);
+    const alreadyMapped = bySlave?.get(entry.slaveId);
+    if (alreadyMapped === t.targetId) return false;
+    return true;
+  });
+  if (!candidate) {
+    const bySlaveCheck = controller.tabMapping.get(entry.masterTargetId);
+    const existingCheck = bySlaveCheck?.get(entry.slaveId);
+    if (existingCheck) {
+      const existingTab = slaveTabs.find(t => t.targetId === existingCheck);
+      if (existingTab) {
+        const existingInfo = getChromeExtensionInfo(existingTab.url);
+        if (existingInfo && existingInfo.extId === entry.slaveRuntimeId && existingInfo.pathname === entry.expectedPathname) {
+          pendingPopupReconciliations.delete(key);
+          return true;
+        }
+      }
+    }
+    return false;
+  }
+  try {
+    await cdpManager.attachToExistingTarget(entry.slaveId, candidate.targetId);
+  } catch (err) {
+    logger.warn({ slaveId: entry.slaveId, error: err.message }, 'RECONCILE: attach failed');
+    return false;
+  }
+  const bySlave = controller.tabMapping.get(entry.masterTargetId);
+  const existingSlaveTargetId = bySlave ? bySlave.get(entry.slaveId) : null;
+  const fallbackKey = `${entry.masterTargetId}:${entry.slaveId}`;
+  let isFallback = existingSlaveTargetId && createdPopupFallbackTargets.get(fallbackKey) === existingSlaveTargetId;
+  if (bySlave && existingSlaveTargetId && !isFallback) {
+    const oldTab = slaveTabs.find(t => t.targetId === existingSlaveTargetId);
+    if (oldTab) {
+      const oldInfo = getChromeExtensionInfo(oldTab.url);
+      if (oldInfo && oldInfo.extId === entry.slaveRuntimeId && oldInfo.pathname === entry.expectedPathname) {
+        isFallback = true;
+      }
+    }
+  }
+  if (bySlave && existingSlaveTargetId) {
+    if (isFallback) {
+      try {
+        cdpManager.closeTarget(entry.slaveId, existingSlaveTargetId);
+        logger.info({ slaveId: entry.slaveId, oldTargetId: existingSlaveTargetId, newTargetId: candidate.targetId }, 'RECONCILE: closed erroneous fallback target');
+      } catch (e) {
+        logger.warn({ error: e.message }, 'RECONCILE: close fallback failed');
+      }
+      createdPopupFallbackTargets.delete(fallbackKey);
+    }
+    bySlave.set(entry.slaveId, candidate.targetId);
+    logger.info({ slaveId: entry.slaveId, masterTargetId: entry.masterTargetId, newTargetId: candidate.targetId }, 'RECONCILE: in-place remapped to native popup');
+  } else if (bySlave) {
+    bySlave.set(entry.slaveId, candidate.targetId);
+    logger.info({ slaveId: entry.slaveId, masterTargetId: entry.masterTargetId, newTargetId: candidate.targetId }, 'RECONCILE: remapped to native popup');
+  } else {
+    controller.mapTab(entry.masterTargetId, entry.slaveId, candidate.targetId);
+    logger.info({ slaveId: entry.slaveId, masterTargetId: entry.masterTargetId, newTargetId: candidate.targetId }, 'RECONCILE: mapped late native popup');
+  }
+  if (entry.masterTargetId !== controller.activeMasterTab) {
+    try {
+      await controller._enforceSlaveFocusOnActiveTab(entry.slaveId);
+    } catch (err) {
+      logger.debug({ error: err.message }, 'RECONCILE: enforce focus failed');
+    }
+  }
+  pendingPopupReconciliations.delete(key);
+  return true;
+}
+
+async function reconcilePendingPopups() {
+  if (pendingPopupReconciliations.size === 0) return;
+  const keys = Array.from(pendingPopupReconciliations.keys());
+  await Promise.all(keys.map(k => tryReconcileOnePending(k).catch(() => false)));
 }
 
 /**
@@ -88,30 +287,68 @@ async function syncNewMasterTab(masterTargetId, masterTabUrl) {
     }
 
     logger.info({ masterTargetId, url: masterTabUrl }, 'SYNC: discovered new master tab, syncing slaves');
-    for (const [slaveId] of controller.slaves) {
-      try {
-        let nativeTab = await _findNativeSlaveTab(slaveId);
-        if (nativeTab) {
-          await cdpManager.attachToExistingTarget(slaveId, nativeTab.targetId);
-          controller.mapTab(masterTargetId, slaveId, nativeTab.targetId);
-          if (masterTargetId !== controller.activeMasterTab) {
-            await controller._enforceSlaveFocusOnActiveTab(slaveId);
-          }
-          logger.info({ slaveId, slaveTargetId: nativeTab.targetId }, 'SYNC: mapped existing native slave tab');
-        } else {
-          const slaveTargetId = await cdpManager.createTab(slaveId, masterTabUrl);
-          if (slaveTargetId) {
-            await cdpManager.attachToExistingTarget(slaveId, slaveTargetId);
-            controller.mapTab(masterTargetId, slaveId, slaveTargetId);
+    const urlType = await classifyMasterUrl(masterTabUrl);
+    const slaves = Array.from(controller.slaves.keys());
+    if (urlType === 'zerion-popup') {
+      const info = getChromeExtensionInfo(masterTabUrl);
+      const expectedPathname = info ? info.pathname : '/';
+      const masterRuntimeId = await getZerionRuntimeIdForProfile(controller.masterId);
+      await Promise.all(slaves.map(async (slaveId) => {
+        try {
+          const nativeTab = await _findNativeSlaveTab(slaveId, masterTabUrl);
+          if (nativeTab) {
+            await cdpManager.attachToExistingTarget(slaveId, nativeTab.targetId);
+            controller.mapTab(masterTargetId, slaveId, nativeTab.targetId);
             if (masterTargetId !== controller.activeMasterTab) {
               await controller._enforceSlaveFocusOnActiveTab(slaveId);
             }
-            logger.info({ slaveId, slaveTargetId }, 'SYNC: created and mapped slave tab');
+            logger.info({ slaveId, slaveTargetId: nativeTab.targetId }, 'SYNC: mapped existing native slave popup');
+            const key = `${masterTargetId}:${slaveId}`;
+            pendingPopupReconciliations.delete(key);
+          } else {
+            logger.warn({ slaveId, masterTargetId, url: masterTabUrl }, 'SYNC: Zerion popup not found in slave within timeout, not creating fallback tab');
+            const slaveRuntimeId = await getZerionRuntimeIdForProfile(slaveId);
+            registerPendingPopupSync(masterTargetId, masterTabUrl, slaveId, expectedPathname, slaveRuntimeId, masterRuntimeId);
           }
+        } catch (err) {
+          logger.error({ slaveId, error: err.message }, 'SYNC: failed to sync slave popup tab');
         }
-      } catch (err) {
-        logger.error({ slaveId, error: err.message }, 'SYNC: failed to sync slave tab');
-      }
+      }));
+    } else if (urlType === 'unknown-extension') {
+      logger.warn({ masterTargetId, url: masterTabUrl }, 'SYNC: unknown chrome-extension URL, not creating fallback tab');
+      const info = getChromeExtensionInfo(masterTabUrl);
+      const expectedPathname = info ? info.pathname : '/';
+      const masterRuntimeId = await getZerionRuntimeIdForProfile(controller.masterId);
+      await Promise.all(slaves.map(async (slaveId) => {
+        const slaveRuntimeId = await getZerionRuntimeIdForProfile(slaveId);
+        registerPendingPopupSync(masterTargetId, masterTabUrl, slaveId, expectedPathname, slaveRuntimeId, masterRuntimeId);
+      }));
+    } else {
+      await Promise.all(slaves.map(async (slaveId) => {
+        try {
+          const nativeTab = await _findNativeSlaveTab(slaveId, masterTabUrl);
+          if (nativeTab) {
+            await cdpManager.attachToExistingTarget(slaveId, nativeTab.targetId);
+            controller.mapTab(masterTargetId, slaveId, nativeTab.targetId);
+            if (masterTargetId !== controller.activeMasterTab) {
+              await controller._enforceSlaveFocusOnActiveTab(slaveId);
+            }
+            logger.info({ slaveId, slaveTargetId: nativeTab.targetId }, 'SYNC: mapped existing native slave tab');
+          } else {
+            const slaveTargetId = await cdpManager.createTab(slaveId, masterTabUrl);
+            if (slaveTargetId) {
+              await cdpManager.attachToExistingTarget(slaveId, slaveTargetId);
+              controller.mapTab(masterTargetId, slaveId, slaveTargetId);
+              if (masterTargetId !== controller.activeMasterTab) {
+                await controller._enforceSlaveFocusOnActiveTab(slaveId);
+              }
+              logger.info({ slaveId, slaveTargetId }, 'SYNC: created and mapped slave tab');
+            }
+          }
+        } catch (err) {
+          logger.error({ slaveId, error: err.message }, 'SYNC: failed to sync slave tab');
+        }
+      }));
     }
   } finally {
     pendingSync.delete(masterTargetId);
@@ -122,16 +359,62 @@ async function syncNewMasterTab(masterTargetId, masterTabUrl) {
  * Поиск нативного таба в слейве, открытого от диспатченного ивента.
  *
  * В отличие от старой логики (сравнение /json с targetSessions), этот метод
- * сравнивает /json с уже замапленными в tabMapping табами слейва. Это
- * исключает race condition с CDP auto-attach: нативный таб может быть уже
- * в targetSessions, но его ещё нет в tabMapping — значит, это наш кандидат.
+ * сравнивает /json с уже замапленными в tabMapping табами слейва.
  *
- * Делает 2 попытки с паузой 150мс, т.к. браузер может не успеть открыть таб.
+ * Для Zerion-popup выполняет polling ~2–3 секунды с шагом 150–250 мс и
+ * принимает только page-target, чей URL совпадает с ожидаемым Zerion extension
+ * ID конкретного slave и pathname из master URL. Случайная немапленная
+ * вкладка не принимается.
+ *
+ * Для обычных http(s) страниц сохраняет короткое ожидание (2 попытки, 150 мс).
  *
  * @param {string} slaveId
+ * @param {string} expectedUrl - URL master-popup для режима Zerion
  * @returns {Promise<{targetId: string, url: string}|null>}
  */
-async function _findNativeSlaveTab(slaveId) {
+async function _findNativeSlaveTab(slaveId, expectedUrl) {
+  if (expectedUrl && expectedUrl.startsWith('chrome-extension://')) {
+    const masterInfo = getChromeExtensionInfo(expectedUrl);
+    if (masterInfo) {
+      let isZerion = false;
+      try {
+        const masterRuntimeId = await getZerionRuntimeIdForProfile(controller.masterId);
+        if (masterRuntimeId && masterInfo.extId === masterRuntimeId) isZerion = true;
+      } catch (err) {
+        logger.debug({ error: err.message }, 'Failed to check Zerion popup');
+      }
+      if (isZerion) {
+        let slaveRuntimeId;
+        try {
+          slaveRuntimeId = await getZerionRuntimeIdForProfile(slaveId);
+        } catch {
+          slaveRuntimeId = null;
+        }
+        if (!slaveRuntimeId) {
+          logger.warn({ slaveId }, 'Could not resolve Zerion runtime for slave');
+          return null;
+        }
+        const expectedPathname = masterInfo.pathname;
+        const attempts = Math.ceil(POPUP_INITIAL_WAIT_MS / POPUP_POLL_INTERVAL_MS);
+        for (let attempt = 0; attempt < attempts; attempt++) {
+          const slaveTabs = await cdpManager.getHttpTabs(slaveId);
+          const mappedIds = _getMappedSlaveTabIds(slaveId);
+          const candidate = slaveTabs.find(t => {
+            if (t.type !== 'page') return false;
+            if (mappedIds.has(t.targetId)) return false;
+            const candInfo = getChromeExtensionInfo(t.url);
+            if (!candInfo) return false;
+            return candInfo.extId === slaveRuntimeId && candInfo.pathname === expectedPathname;
+          });
+          if (candidate) return candidate;
+          if (attempt < attempts - 1) await new Promise(r => setTimeout(r, POPUP_POLL_INTERVAL_MS));
+        }
+        return null;
+      } else {
+        return null;
+      }
+    }
+  }
   for (let attempt = 0; attempt < 2; attempt++) {
     const slaveTabs = await cdpManager.getHttpTabs(slaveId);
     const mappedIds = _getMappedSlaveTabIds(slaveId);
@@ -166,7 +449,10 @@ async function discoverActiveTab() {
   discovering = true;
   try {
     const tabs = await cdpManager.getHttpTabs(controller.masterId);
-    if (tabs.length === 0) return;
+    if (tabs.length === 0) {
+      await reconcilePendingPopups().catch(() => {});
+      return;
+    }
 
     const masterBc = cdpManager.browserConnections.get(controller.masterId);
     const knownTargets = masterBc ? masterBc.targetSessions : null;
@@ -177,8 +463,14 @@ async function discoverActiveTab() {
       : tabs[0];
 
     if (newTab) {
-      await syncNewMasterTab(newTab.targetId, newTab.url);
+      const urlType = await classifyMasterUrl(newTab.url);
+      if (urlType === 'zerion-popup') {
+        syncNewMasterTab(newTab.targetId, newTab.url).catch(err => logger.error({ error: err.message }, 'DISCOVERY: syncNewMasterTab failed'));
+      } else {
+        await syncNewMasterTab(newTab.targetId, newTab.url);
+      }
     }
+    await reconcilePendingPopups().catch(() => {});
   } catch (err) {
     logger.warn({ error: err.message }, 'DISCOVERY: getHttpTabs failed');
   } finally {
@@ -280,6 +572,24 @@ router.post('/start', async (req, res) => {
         return;
       }
 
+      if (getChromeExtensionInfo(targetInfo.url)) {
+        logger.info({ slaveId: profileId, targetId: targetInfo.targetId, url: targetInfo.url }, 'MULTI-CONTROL: slave extension target detected, skipping tabIndex mapping');
+        for (const [key, entry] of pendingPopupReconciliations) {
+          if (entry.slaveId !== profileId) continue;
+          const candInfo = getChromeExtensionInfo(targetInfo.url);
+          if (!candInfo) continue;
+          if (entry.slaveRuntimeId && candInfo.extId !== entry.slaveRuntimeId) continue;
+          if (candInfo.pathname !== entry.expectedPathname) continue;
+          try {
+            await tryReconcileOnePending(key);
+          } catch (err) {
+            logger.debug({ error: err.message }, 'onNewTab reconcile failed');
+          }
+          break;
+        }
+        return;
+      }
+
       const bc = cdpManager.browserConnections.get(profileId);
       if (bc) {
         const slaveIdx = bc.targetSessions.size - 1;
@@ -296,6 +606,7 @@ router.post('/start', async (req, res) => {
     cdpManager.onTabAttached = (profileId, targetInfo, newSession) => {
       if (!controller.active) return;
       if (profileId === masterId) return;
+      if (getChromeExtensionInfo(targetInfo.url)) return;
 
       const bc = cdpManager.browserConnections.get(profileId);
       if (bc) {
@@ -414,6 +725,9 @@ router.post('/stop', async (req, res) => {
   }
   pendingSync.clear();
   attachedMasterTabs.clear();
+  pendingPopupReconciliations.clear();
+  createdPopupFallbackTargets.clear();
+  runtimeIdCache.clear();
   inputCapture.stop();
   unwireInputFromController();
   cdpManager.onEvent = null;
@@ -478,6 +792,13 @@ router.post('/slave/remove', (req, res) => {
 
   cdpManager.disconnect(profileId);
   controller.removeSlave(profileId);
+  for (const key of Array.from(pendingPopupReconciliations.keys())) {
+    if (key.endsWith(`:${profileId}`)) pendingPopupReconciliations.delete(key);
+  }
+  for (const key of Array.from(createdPopupFallbackTargets.keys())) {
+    if (key.endsWith(`:${profileId}`)) createdPopupFallbackTargets.delete(key);
+  }
+  runtimeIdCache.delete(profileId);
   res.json({ status: 'removed', profileId });
 });
 
@@ -664,3 +985,14 @@ router.post('/focus-windows', async (req, res) => {
 module.exports = router;
 module.exports.wireInputToController = wireInputToController;
 module.exports.unwireInputFromController = unwireInputFromController;
+module.exports.getChromeExtensionInfo = getChromeExtensionInfo;
+module.exports.getZerionRuntimeIdForProfile = getZerionRuntimeIdForProfile;
+module.exports.classifyMasterUrl = classifyMasterUrl;
+module.exports._findNativeSlaveTab = _findNativeSlaveTab;
+module.exports.syncNewMasterTab = syncNewMasterTab;
+module.exports.discoverActiveTab = discoverActiveTab;
+module.exports.reconcilePendingPopups = reconcilePendingPopups;
+module.exports.pendingPopupReconciliations = pendingPopupReconciliations;
+module.exports.createdPopupFallbackTargets = createdPopupFallbackTargets;
+module.exports.pendingSync = pendingSync;
+module.exports.attachedMasterTabs = attachedMasterTabs;
