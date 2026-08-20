@@ -42,6 +42,26 @@ controller.cdp = cdpManager;
 const pendingSync = new Set();
 const attachedMasterTabs = new Set();
 
+// PID foreground-окна мастера для фильтрации источника в /os-keyboard.
+// Кэшируется до смены masterId: при stop() controller.masterId становится null,
+// поэтому повторный старт (даже с тем же профилем) пересчитает значение.
+let masterKeyboardPidCache = { masterId: null, pid: null };
+
+function getMasterKeyboardPid() {
+  const masterId = controller.masterId;
+  if (masterKeyboardPidCache.masterId !== masterId) {
+    let pid = null;
+    if (masterId) {
+      const db = getDatabase();
+      const pq = createProfileQueries(db);
+      const profile = pq.getById(masterId);
+      pid = profile?.pid ?? null;
+    }
+    masterKeyboardPidCache = { masterId, pid };
+  }
+  return masterKeyboardPidCache.pid;
+}
+
 /**
  * Синхронизация нового таба мастера в слейвы.
  *
@@ -485,6 +505,16 @@ router.post('/os-keyboard', async (req, res) => {
   if (!controller.active) return res.json({ ok: true, skipped: 'inactive' });
 
   const event = req.body;
+
+  // Native hook видит клавиатуру глобально: источник определяем по PID
+  // foreground-окна из payload. Рассылаются только события, пришедшие из окна
+  // master (PID master из профиля). Ввод из slave или событие с неизвестным PID
+  // считаем локальным и не трогаем controller — иначе slave получит собственный
+  // ввод повторно, а состояние клавиш рассинхронизируется.
+  const masterPid = getMasterKeyboardPid();
+  if (typeof event.sourcePid !== 'number' || event.sourcePid !== masterPid) {
+    return res.json({ ok: true, skipped: 'source-not-master' });
+  }
 
   logger.debug({
     type: event.type,

@@ -43,7 +43,20 @@ function buildKeyEvent(raw) {
     shiftKey: !!raw.shiftKey,
     altKey: !!raw.altKey,
     metaKey: !!raw.metaKey,
+    text: typeof raw.text === 'string' ? raw.text : '',
+    sourcePid: raw.sourcePid,
   };
+}
+
+// Управляющие символы (C0 и DEL) текстом не являются: ToUnicodeEx для
+// Backspace/Tab/Enter/Delete может вернуть \b, \t, \r, \x7f — это клавиши,
+// а не печатный символ, вставлять их в input нельзя (в slave появится
+// «квадратик» вместо стирания/перевода строки).
+function hasControlChars(text) {
+  return Array.from(text).some((ch) => {
+    const code = ch.codePointAt(0);
+    return code < 0x20 || code === 0x7f;
+  });
 }
 
 /**
@@ -56,14 +69,16 @@ function buildKeyEvent(raw) {
  * - AltGr (правый Alt) — символы европейских раскладок формируются по результату
  *   ToUnicodeEx, т.е. только если layout действительно дал символ.
  * - Пустой text (dead key, меню, непечатная клавиша) — charInput не отправляется.
+ * - Управляющие символы (\b, \t, \r, \x7f и прочие C0/DEL) — не текст, а клавиши.
  */
 function shouldSendCharInput(event) {
   if (!event) return false;
   if (typeof event.text !== 'string' || event.text.length === 0) return false;
+  if (hasControlChars(event.text)) return false;
   if (event.metaKey) return false;
   if (event.ctrlKey && !event.altGr) return false;
   if (event.altKey && !event.altGr) return false;
   return true;
 }
 
-module.exports = { vkToKey, vkToCode, buildKeyEvent, shouldSendCharInput };
+module.exports = { vkToKey, vkToCode, buildKeyEvent, shouldSendCharInput, hasControlChars };

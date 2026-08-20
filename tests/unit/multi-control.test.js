@@ -1403,4 +1403,152 @@ describe('MultiController', () => {
       expect(mockCdp.activateAndFocusTarget).toHaveBeenCalledWith('slave-1', 'active-slave-tab');
     });
   });
+
+  describe('keyboard: printable текст и управляющие клавиши', () => {
+    function setupSingleSlave() {
+      controller.setMaster('master-1');
+      return controller.addSlave('slave-1');
+    }
+
+    it('printable keyDown не dispatch-ится: символ идёт единственным текстовым каналом (insertText)', async () => {
+      await setupSingleSlave();
+
+      await controller.onKeyDown({
+        key: 'a', code: 'KeyA', windowsVirtualKeyCode: 65,
+        text: 'a', ctrlKey: false, shiftKey: false, altKey: false, metaKey: false, altGr: false,
+      });
+      await controller.onCharInput({ text: 'a' });
+
+      expect(mockCdp.dispatchKeyEvent).not.toHaveBeenCalled();
+      expect(mockCdp.insertText).toHaveBeenCalledTimes(1);
+      expect(mockCdp.insertText).toHaveBeenCalledWith('slave-1', 'a');
+    });
+
+    it('printable keyDown с Shift не dispatch-ится, а символ вставляется один раз', async () => {
+      await setupSingleSlave();
+
+      await controller.onKeyDown({
+        key: 'a', code: 'KeyA', windowsVirtualKeyCode: 65,
+        text: 'A', ctrlKey: false, shiftKey: true, altKey: false, metaKey: false, altGr: false,
+      });
+      await controller.onCharInput({ text: 'A' });
+
+      expect(mockCdp.dispatchKeyEvent).not.toHaveBeenCalled();
+      expect(mockCdp.insertText).toHaveBeenCalledTimes(1);
+      expect(mockCdp.insertText).toHaveBeenCalledWith('slave-1', 'A');
+    });
+
+    it('AltGr-символ остаётся текстовым вводом: keyDown не dispatch-ится, insertText один', async () => {
+      await setupSingleSlave();
+
+      await controller.onKeyDown({
+        key: '2', code: 'Digit2', windowsVirtualKeyCode: 50,
+        text: '@', ctrlKey: true, shiftKey: false, altKey: true, metaKey: false, altGr: true,
+      });
+      await controller.onCharInput({ text: '@' });
+
+      expect(mockCdp.dispatchKeyEvent).not.toHaveBeenCalled();
+      expect(mockCdp.insertText).toHaveBeenCalledTimes(1);
+      expect(mockCdp.insertText).toHaveBeenCalledWith('slave-1', '@');
+    });
+
+    it('Ctrl-сочетание с текстом (Ctrl+1) продолжает dispatch-иться, текст не вставляется повторно', async () => {
+      await setupSingleSlave();
+
+      await controller.onKeyDown({
+        key: '1', code: 'Digit1', windowsVirtualKeyCode: 49,
+        text: '1', ctrlKey: true, shiftKey: false, altKey: false, metaKey: false, altGr: false,
+      });
+
+      expect(mockCdp.dispatchKeyEvent).toHaveBeenCalledTimes(1);
+      expect(mockCdp.dispatchKeyEvent).toHaveBeenCalledWith('slave-1', 'keyDown', expect.objectContaining({ key: '1', ctrlKey: true }));
+      expect(mockCdp.insertText).not.toHaveBeenCalled();
+    });
+
+    it('Meta-сочетание с текстом dispatch-ится (не printable)', async () => {
+      await setupSingleSlave();
+
+      await controller.onKeyDown({
+        key: 'a', code: 'KeyA', windowsVirtualKeyCode: 65,
+        text: 'a', ctrlKey: false, shiftKey: false, altKey: false, metaKey: true, altGr: false,
+      });
+
+      expect(mockCdp.dispatchKeyEvent).toHaveBeenCalledTimes(1);
+    });
+
+    it('обычный Alt-текст (не AltGr) dispatch-ится (не printable)', async () => {
+      await setupSingleSlave();
+
+      await controller.onKeyDown({
+        key: 'a', code: 'KeyA', windowsVirtualKeyCode: 65,
+        text: 'a', ctrlKey: false, shiftKey: false, altKey: true, metaKey: false, altGr: false,
+      });
+
+      expect(mockCdp.dispatchKeyEvent).toHaveBeenCalledTimes(1);
+    });
+
+    it('Enter без text продолжает dispatch-иться как управляющая клавиша', async () => {
+      await setupSingleSlave();
+
+      await controller.onKeyDown({ key: 'Enter', code: 'Enter', windowsVirtualKeyCode: 13, text: '' });
+
+      expect(mockCdp.dispatchKeyEvent).toHaveBeenCalledTimes(1);
+    });
+
+    it('keyUp для printable-клавиши продолжает dispatch-иться (состояние клавиш синхронизируется)', async () => {
+      await setupSingleSlave();
+
+      await controller.onKeyDown({
+        key: 'a', code: 'KeyA', windowsVirtualKeyCode: 65,
+        text: 'a', ctrlKey: false, shiftKey: false, altKey: false, metaKey: false, altGr: false,
+      });
+      await controller.onKeyUp({
+        key: 'a', code: 'KeyA', windowsVirtualKeyCode: 65,
+        text: '', ctrlKey: false, shiftKey: false, altKey: false, metaKey: false, altGr: false,
+      });
+
+      const downCalls = mockCdp.dispatchKeyEvent.mock.calls.filter(c => c[1] === 'keyDown');
+      const upCalls = mockCdp.dispatchKeyEvent.mock.calls.filter(c => c[1] === 'keyUp');
+      expect(downCalls).toHaveLength(0);
+      expect(upCalls).toHaveLength(1);
+      expect(upCalls[0][0]).toBe('slave-1');
+    });
+
+    it('printable keyDown с пустым/отсутствующим text остаётся управляющей клавишей', async () => {
+      await setupSingleSlave();
+
+      await controller.onKeyDown({ key: 'ArrowLeft', code: 'ArrowLeft', windowsVirtualKeyCode: 37 });
+
+      expect(mockCdp.dispatchKeyEvent).toHaveBeenCalledTimes(1);
+    });
+
+    it('Backspace (управляющий text \\b) не считает printable: dispatch c пустым text, insertText не вызывается', async () => {
+      await setupSingleSlave();
+
+      await controller.onKeyDown({
+        key: 'Backspace', code: 'Backspace', windowsVirtualKeyCode: 8,
+        text: '\b', ctrlKey: false, shiftKey: false, altKey: false, metaKey: false, altGr: false,
+      });
+
+      expect(mockCdp.dispatchKeyEvent).toHaveBeenCalledTimes(1);
+      expect(mockCdp.dispatchKeyEvent).toHaveBeenCalledWith('slave-1', 'keyDown', expect.objectContaining({
+        key: 'Backspace', text: '',
+      }));
+      expect(mockCdp.insertText).not.toHaveBeenCalled();
+    });
+
+    it('Tab/Enter с управляющим text dispatch-ится, text очищен (CDP не вставит \\t/\\r)', async () => {
+      await setupSingleSlave();
+
+      await controller.onKeyDown({ key: 'Tab', code: 'Tab', windowsVirtualKeyCode: 9, text: '\t' });
+      await controller.onKeyDown({ key: 'Enter', code: 'Enter', windowsVirtualKeyCode: 13, text: '\r' });
+
+      const downCalls = mockCdp.dispatchKeyEvent.mock.calls.filter(c => c[1] === 'keyDown');
+      expect(downCalls).toHaveLength(2);
+      for (const [, , params] of downCalls) {
+        expect(params.text).toBe('');
+      }
+      expect(mockCdp.insertText).not.toHaveBeenCalled();
+    });
+  });
 });

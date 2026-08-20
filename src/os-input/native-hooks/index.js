@@ -72,6 +72,7 @@ class NativeKeyboardHooks extends EventEmitter {
       altGr: !!event.altGr,
       isExtended: !!(event.flags & (1 << 0)),
       injected: !!(event.flags & (1 << 4)),
+      sourcePid: event.sourcePid,
     };
 
     if (event.isDown) {
@@ -89,7 +90,7 @@ class NativeKeyboardHooks extends EventEmitter {
       // Printable text только когда addon вычислил символ через ToUnicodeEx
       // (layout/shift/capslock/altGr) и это не командное сочетание.
       if (this._isPlainText(event)) {
-        this.emit('charInput', { text: event.text });
+        this.emit('charInput', { text: event.text, sourcePid: event.sourcePid });
       }
     } else if (event.isUp) {
       this._lastEvent = null;
@@ -97,8 +98,15 @@ class NativeKeyboardHooks extends EventEmitter {
     }
   }
 
+  // Управляющие символы (C0 и DEL) не являются печатным текстом: ToUnicodeEx
+  // для Backspace/Tab/Enter/Delete может вернуть \b, \t, \r, \x7f — это клавиши,
+  // а не символы для вставки.
   _isPlainText(event) {
     if (!event || typeof event.text !== 'string' || event.text.length === 0) return false;
+    if (Array.from(event.text).some((ch) => {
+      const code = ch.codePointAt(0);
+      return code < 0x20 || code === 0x7f;
+    })) return false;
     if (event.metaKey) return false;
     if (event.ctrlKey && !event.altGr) return false;
     if (event.altKey && !event.altGr) return false;

@@ -113,7 +113,7 @@ function start(port, token) {
       sendToBackend(buildKeyEvent(event));
 
       if (event.isDown && shouldSendCharInput(event)) {
-        sendToBackend({ type: 'charInput', text: event.text });
+        sendToBackend({ type: 'charInput', text: event.text, sourcePid: event.sourcePid });
       }
     });
     logHook('Addon start() called OK');

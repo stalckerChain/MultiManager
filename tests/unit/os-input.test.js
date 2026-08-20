@@ -347,6 +347,7 @@ describe('NativeKeyboardHooks', () => {
       shiftKey: false,
       altKey: false,
       metaKey: false,
+      sourcePid: 1234,
       isDown: true,
       isUp: false,
     });
@@ -358,6 +359,7 @@ describe('NativeKeyboardHooks', () => {
     expect(evt.windowsVirtualKeyCode).toBe(0x4C);
     expect(evt.ctrlKey).toBe(true);
     expect(evt.altKey).toBe(false);
+    expect(evt.sourcePid).toBe(1234);
   });
 
   it('converts Ctrl+T event correctly', () => {
@@ -374,6 +376,7 @@ describe('NativeKeyboardHooks', () => {
       shiftKey: false,
       altKey: false,
       metaKey: false,
+      sourcePid: 1234,
       isDown: true,
       isUp: false,
     });
@@ -400,11 +403,36 @@ describe('NativeKeyboardHooks', () => {
       metaKey: false,
       altGr: false,
       text: 'a',
+      sourcePid: 1234,
       isDown: true,
       isUp: false,
     });
 
-    expect(h).toHaveBeenCalledWith({ text: 'a' });
+    expect(h).toHaveBeenCalledWith({ text: 'a', sourcePid: 1234 });
+  });
+
+  it('emits charInput for Shift-символа с сохранением sourcePid', () => {
+    const h = vi.fn();
+    hooks.on('charInput', h);
+    hooks.running = true;
+
+    hooks._onNativeEvent({
+      wParam: 0x0100,
+      vkCode: 0x31,
+      scanCode: 2,
+      flags: 0,
+      ctrlKey: false,
+      shiftKey: true,
+      altKey: false,
+      metaKey: false,
+      altGr: false,
+      text: '!',
+      sourcePid: 555,
+      isDown: true,
+      isUp: false,
+    });
+
+    expect(h).toHaveBeenCalledWith({ text: '!', sourcePid: 555 });
   });
 
   it('does not emit charInput for Ctrl+a (browser shortcut)', () => {
@@ -469,11 +497,12 @@ describe('NativeKeyboardHooks', () => {
       metaKey: false,
       altGr: true,
       text: '@',
+      sourcePid: 777,
       isDown: true,
       isUp: false,
     });
 
-    expect(h).toHaveBeenCalledWith({ text: '@' });
+    expect(h).toHaveBeenCalledWith({ text: '@', sourcePid: 777 });
   });
 
   it('does not emit charInput when text is empty (dead key / непечатная клавиша)', () => {
@@ -492,6 +521,31 @@ describe('NativeKeyboardHooks', () => {
       metaKey: false,
       altGr: false,
       text: '',
+      sourcePid: 1234,
+      isDown: true,
+      isUp: false,
+    });
+
+    expect(h).not.toHaveBeenCalled();
+  });
+
+  it('does not emit charInput for Backspace (control char from ToUnicodeEx)', () => {
+    const h = vi.fn();
+    hooks.on('charInput', h);
+    hooks.running = true;
+
+    hooks._onNativeEvent({
+      wParam: 0x0100,
+      vkCode: 0x08,
+      scanCode: 14,
+      flags: 0,
+      ctrlKey: false,
+      shiftKey: false,
+      altKey: false,
+      metaKey: false,
+      altGr: false,
+      text: '\b',
+      sourcePid: 1234,
       isDown: true,
       isUp: false,
     });
@@ -513,6 +567,7 @@ describe('NativeKeyboardHooks', () => {
       shiftKey: false,
       altKey: false,
       metaKey: false,
+      sourcePid: 1234,
       isDown: false,
       isUp: true,
     });
@@ -521,6 +576,7 @@ describe('NativeKeyboardHooks', () => {
     expect(evt.key).toBe('Control');
     expect(evt.code).toBe('ControlLeft');
     expect(evt.windowsVirtualKeyCode).toBe(0x11);
+    expect(evt.sourcePid).toBe(1234);
   });
 
   it('does not emit when not running', () => {

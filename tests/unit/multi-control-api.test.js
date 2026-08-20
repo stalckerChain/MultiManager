@@ -1,6 +1,10 @@
 ﻿import { describe, it, expect, vi, beforeEach } from 'vitest';
 import express from 'express';
 import supertest from 'supertest';
+import fs from 'fs';
+import path from 'path';
+import os from 'os';
+import { createProfileQueries } from '../../src/db/queries.js';
 
 // ============================================================
 // Копии зависимостей — минимум моков, чтобы тестировать изолированно
@@ -1032,41 +1036,189 @@ describe('production-цепочка CDP event → InputCapture → controller.sc
 describe('POST /os-keyboard маршрутизация', () => {
   let app;
   let controller;
+  let tmpDir;
+  let originalAppData;
+  let masterPid;
+  let masterId;
+
+  function createMasterProfile(db, pid) {
+    const pq = createProfileQueries(db);
+    const profile = pq.create({
+      name: 'Master',
+      platform: 'windows',
+      fingerprint_seed: 'e73d9c0c-3960-4d9c-8096-b8359a39fe92',
+      user_agent: 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/146.0.0.0 Safari/537.36',
+      screen_resolution: '1920x1080',
+      hardware_cores: 8,
+      hardware_memory: 16,
+    });
+    pq.updatePid(profile.id, pid);
+    return profile;
+  }
 
   beforeEach(() => {
+    originalAppData = process.env.APPDATA;
+    tmpDir = path.join(os.tmpdir(), 'mc-keyboard-test-' + Date.now());
+    process.env.APPDATA = tmpDir;
+    fs.mkdirSync(tmpDir, { recursive: true });
+
+    const { initDatabase } = require('../../src/db/index.js');
+    const db = initDatabase();
+    const profile = createMasterProfile(db, 9000);
+    masterId = profile.id;
+    masterPid = 9000;
+
     controller = require('../../src/multi-control').controller;
     controller.stop();
-    controller.active = true;
+    controller.setMaster(masterId);
+
     app = express();
     app.use(express.json());
     app.use('/api/multi-control', require('../../src/api/multi-control.js'));
   });
 
-  it('маршрутизирует charInput в controller.onCharInput({ text })', async () => {
+  afterEach(() => {
+    controller.stop();
+    const { closeDatabase } = require('../../src/db/index.js');
+    closeDatabase();
+    process.env.APPDATA = originalAppData;
+    if (tmpDir) {
+      try { fs.rmSync(tmpDir, { recursive: true, force: true }); } catch {}
+    }
+  });
+
+  it('маршрутизирует charInput из master в controller.onCharInput({ text })', async () => {
     const spy = vi.spyOn(controller, 'onCharInput').mockResolvedValue(undefined);
     await supertest(app)
       .post('/api/multi-control/os-keyboard')
-      .send({ type: 'charInput', text: 'hello' })
+      .send({ type: 'charInput', text: 'hello', sourcePid: masterPid })
       .expect(200);
     expect(spy).toHaveBeenCalledWith({ text: 'hello' });
   });
 
-  it('маршрутизирует keyDown в controller.onKeyDown', async () => {
+  it('маршрутизирует keyDown из master в controller.onKeyDown', async () => {
     const spy = vi.spyOn(controller, 'onKeyDown').mockResolvedValue(undefined);
     await supertest(app)
       .post('/api/multi-control/os-keyboard')
-      .send({ type: 'keyDown', key: 'a' })
+      .send({ type: 'keyDown', key: 'a', sourcePid: masterPid })
       .expect(200);
     expect(spy).toHaveBeenCalled();
   });
 
-  it('маршрутизирует keyUp в controller.onKeyUp', async () => {
+  it('маршрутизирует keyUp из master в controller.onKeyUp', async () => {
     const spy = vi.spyOn(controller, 'onKeyUp').mockResolvedValue(undefined);
     await supertest(app)
       .post('/api/multi-control/os-keyboard')
-      .send({ type: 'keyUp', key: 'a' })
+      .send({ type: 'keyUp', key: 'a', sourcePid: masterPid })
       .expect(200);
     expect(spy).toHaveBeenCalled();
+  });
+
+  it('игнорирует keyDown с PID slave (локальный ввод не рассылается)', async () => {
+    const spy = vi.spyOn(controller, 'onKeyDown').mockResolvedValue(undefined);
+    await supertest(app)
+      .post('/api/multi-control/os-keyboard')
+      .send({ type: 'keyDown', key: 'a', sourcePid: masterPid + 1 })
+      .expect(200);
+    expect(spy).not.toHaveBeenCalled();
+  });
+
+  it('игнорирует keyUp с PID slave', async () => {
+    const spy = vi.spyOn(controller, 'onKeyUp').mockResolvedValue(undefined);
+    await supertest(app)
+      .post('/api/multi-control/os-keyboard')
+      .send({ type: 'keyUp', key: 'a', sourcePid: masterPid + 1 })
+      .expect(200);
+    expect(spy).not.toHaveBeenCalled();
+  });
+
+  it('игнорирует charInput с PID slave', async () => {
+    const spy = vi.spyOn(controller, 'onCharInput').mockResolvedValue(undefined);
+    await supertest(app)
+      .post('/api/multi-control/os-keyboard')
+      .send({ type: 'charInput', text: 'x', sourcePid: masterPid + 1 })
+      .expect(200);
+    expect(spy).not.toHaveBeenCalled();
+  });
+
+  it('единообразно игнорирует keyDown/keyUp/charInput без sourcePid', async () => {
+    const keyDownSpy = vi.spyOn(controller, 'onKeyDown').mockResolvedValue(undefined);
+    const keyUpSpy = vi.spyOn(controller, 'onKeyUp').mockResolvedValue(undefined);
+    const charSpy = vi.spyOn(controller, 'onCharInput').mockResolvedValue(undefined);
+    await supertest(app).post('/api/multi-control/os-keyboard').send({ type: 'keyDown', key: 'a' }).expect(200);
+    await supertest(app).post('/api/multi-control/os-keyboard').send({ type: 'keyUp', key: 'a' }).expect(200);
+    await supertest(app).post('/api/multi-control/os-keyboard').send({ type: 'charInput', text: 'x' }).expect(200);
+    expect(keyDownSpy).not.toHaveBeenCalled();
+    expect(keyUpSpy).not.toHaveBeenCalled();
+    expect(charSpy).not.toHaveBeenCalled();
+  });
+
+  it('игнорирует события с неизвестным PID', async () => {
+    const spy = vi.spyOn(controller, 'onKeyDown').mockResolvedValue(undefined);
+    await supertest(app)
+      .post('/api/multi-control/os-keyboard')
+      .send({ type: 'keyDown', key: 'a', sourcePid: 424242 })
+      .expect(200);
+    expect(spy).not.toHaveBeenCalled();
+  });
+});
+
+describe('POST /os-keyboard при отсутствующем PID master', () => {
+  let app;
+  let controller;
+  let tmpDir;
+  let originalAppData;
+  let masterId;
+
+  beforeEach(() => {
+    originalAppData = process.env.APPDATA;
+    tmpDir = path.join(os.tmpdir(), 'mc-keyboard-nopid-' + Date.now());
+    process.env.APPDATA = tmpDir;
+    fs.mkdirSync(tmpDir, { recursive: true });
+
+    const { initDatabase } = require('../../src/db/index.js');
+    const db = initDatabase();
+    const pq = createProfileQueries(db);
+    const profile = pq.create({
+      name: 'Master NoPid',
+      platform: 'windows',
+      fingerprint_seed: 'e73d9c0c-3960-4d9c-8096-b8359a39fe93',
+      user_agent: 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/146.0.0.0 Safari/537.36',
+      screen_resolution: '1920x1080',
+      hardware_cores: 8,
+      hardware_memory: 16,
+    });
+    masterId = profile.id;
+
+    controller = require('../../src/multi-control').controller;
+    controller.stop();
+    controller.setMaster(masterId);
+
+    app = express();
+    app.use(express.json());
+    app.use('/api/multi-control', require('../../src/api/multi-control.js'));
+  });
+
+  afterEach(() => {
+    controller.stop();
+    const { closeDatabase } = require('../../src/db/index.js');
+    closeDatabase();
+    process.env.APPDATA = originalAppData;
+    if (tmpDir) {
+      try { fs.rmSync(tmpDir, { recursive: true, force: true }); } catch {}
+    }
+  });
+
+  it('не считает событие вводом master, если у профиля нет PID', async () => {
+    const keyDownSpy = vi.spyOn(controller, 'onKeyDown').mockResolvedValue(undefined);
+    const keyUpSpy = vi.spyOn(controller, 'onKeyUp').mockResolvedValue(undefined);
+    const charSpy = vi.spyOn(controller, 'onCharInput').mockResolvedValue(undefined);
+    await supertest(app).post('/api/multi-control/os-keyboard').send({ type: 'keyDown', key: 'a', sourcePid: 9000 }).expect(200);
+    await supertest(app).post('/api/multi-control/os-keyboard').send({ type: 'keyUp', key: 'a', sourcePid: 9000 }).expect(200);
+    await supertest(app).post('/api/multi-control/os-keyboard').send({ type: 'charInput', text: 'x', sourcePid: 9000 }).expect(200);
+    expect(keyDownSpy).not.toHaveBeenCalled();
+    expect(keyUpSpy).not.toHaveBeenCalled();
+    expect(charSpy).not.toHaveBeenCalled();
   });
 });
 describe('onTabActivated callback (matches api/multi-control)', () => {

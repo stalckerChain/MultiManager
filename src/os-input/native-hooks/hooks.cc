@@ -16,6 +16,7 @@ typedef struct {
   bool altKey;
   bool metaKey;
   bool altGr;
+  DWORD sourcePid;
   wchar_t chars[8];
   int charsLen;
 } KeyEvent;
@@ -53,15 +54,14 @@ static void BuildKeyboardState(BYTE* state, const KeyEvent* evt, DWORD deadVk, b
 
 // Заполняет out Unicode-символом(ами) для keyDown. Для dead key возвращает 0 и
 // переключает s_deadKeyPending, чтобы композиция обрабатывалась на следующем событии.
-static void ComputeTextForKey(const KeyEvent* ev, wchar_t* out, int bufSize, int* outLen) {
+// fgTid — thread id foreground-окна, полученный в KeyboardProc для выбора раскладки.
+static void ComputeTextForKey(const KeyEvent* ev, wchar_t* out, int bufSize, int* outLen, DWORD fgTid) {
   *outLen = 0;
   out[0] = 0;
 
   DWORD scanCode = ev->scanCode;
   if (ev->flags & LLKHF_EXTENDED) scanCode |= 0x100;
 
-  HWND fg = GetForegroundWindow();
-  DWORD fgTid = fg ? GetWindowThreadProcessId(fg, NULL) : 0;
   HKL layout = GetKeyboardLayout(fgTid ? fgTid : 0);
 
   BYTE state[256];
@@ -134,6 +134,9 @@ static void ExecuteJS(napi_env env, napi_value jsCb, void* ctx, void* data) {
   napi_get_boolean(env, evt->altGr, &val);
   napi_set_named_property(env, obj, "altGr", val);
 
+  napi_create_double(env, (double)evt->sourcePid, &val);
+  napi_set_named_property(env, obj, "sourcePid", val);
+
   // Printable text, вычисленный ToUnicodeEx с учётом раскладки. Для командных
   // клавиш и dead key — пустая строка. Содержимое текста нигде не логируется.
   napi_create_string_utf16(env, (const char16_t*)evt->chars, (size_t)evt->charsLen, &val);
@@ -165,6 +168,17 @@ static LRESULT CALLBACK KeyboardProc(int nCode, WPARAM wParam, LPARAM lParam) {
     evt->scanCode = p->scanCode;
     evt->flags = p->flags;
 
+    // Foreground window/PID получаем один раз для каждого события (включая
+    // keyUp): это и источник ввода для маршрутизации, и thread id для выбора
+    // раскладки. Повторно эти API для определения источника не вызываем.
+    HWND fg = GetForegroundWindow();
+    DWORD fgTid = 0;
+    DWORD fgPid = 0;
+    if (fg) {
+      fgTid = GetWindowThreadProcessId(fg, &fgPid);
+    }
+    evt->sourcePid = fgPid;
+
     evt->ctrlKey = (GetAsyncKeyState(VK_CONTROL) & 0x8000) != 0;
     evt->shiftKey = (GetAsyncKeyState(VK_SHIFT) & 0x8000) != 0;
     evt->altKey = (GetAsyncKeyState(VK_MENU) & 0x8000) != 0;
@@ -180,7 +194,7 @@ static LRESULT CALLBACK KeyboardProc(int nCode, WPARAM wParam, LPARAM lParam) {
     bool isDown = (wParam == WM_KEYDOWN || wParam == WM_SYSKEYDOWN);
     if (isDown) {
       int len = 0;
-      ComputeTextForKey(evt, evt->chars, 8, &len);
+      ComputeTextForKey(evt, evt->chars, 8, &len, fgTid);
       evt->charsLen = len;
     } else {
       evt->charsLen = 0;

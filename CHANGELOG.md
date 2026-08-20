@@ -2,6 +2,20 @@
 
 ## v1.5.1
 
+### Синхронизатор / Клавиатура
+
+- **[FIX] Дублирование printable-ввода и ошибочная рассылка ввода из slave + «квадратики» от Backspace.**
+  При вводе печатного символа в master символ дублировался в slave (`Input.dispatchKeyEvent` из `keyDown` + `Input.insertText` из `charInput`); ввод из slave-окна рассылался всем slave; Backspace/Tab/Enter/Delete вставляли в input slave управляющие символы (`\b`, `\t`, `\r`, `\x7f` из `ToUnicodeEx`) вместо стирания/перевода строки.
+  - `src/os-input/native-hooks/hooks.cc`: в `KeyEvent` добавлен `sourcePid` — PID foreground-окна; в `KeyboardProc` PID/thread-id получаются один раз на каждое событие (включая `keyUp`) и записываются в `sourcePid`; `ComputeTextForKey` принимает уже вычисленный thread-id (раскладка из foreground-окна, без повторных вызовов `GetForegroundWindow`/`GetWindowThreadProcessId`).
+  - `src/os-input/native-hooks/index.js`: `sourcePid` в `keyDown`/`keyUp` eventData и в `charInput { text, sourcePid }`; `_isPlainText` отсекает управляющие символы C0/DEL (`code < 0x20 || code === 0x7f`).
+  - `gui/src/main/keyboard-hooks-payload.js`: `buildKeyEvent` включает `text` и `sourcePid`; `shouldSendCharInput`/`hasControlChars` — управляющие символы текстом не считаются (`\b`, `\t`, `\r`, `\x7f` для Backspace/Tab/Enter/Delete).
+  - `gui/src/main/keyboard-hooks.js`: `charInput` отправляется с `sourcePid`, без дублирования запросов и без логирования текста.
+  - `src/api/multi-control.js`: ленивый кэш `masterKeyboardPidCache`/`getMasterKeyboardPid()` (инвалидация по `stop`/смене `masterId`); строгая фильтрация `/os-keyboard` — события с PID, отличным от PID master (`pq.getById(masterId)?.pid`), возвращают `{ ok: true, skipped: 'source-not-master' }` и не вызывают controller (фильтр стоит до обработки Ctrl+T/W и Enter).
+  - `src/multi-control/index.js`: `_isPrintableText` (непустой text, не управляющий символ, без Ctrl/Meta/обычного Alt; AltGr остаётся текстовым) — printable `keyDown` не dispatch-ится, символ идёт единственным каналом `charInput → Input.insertText`; управляющие клавиши (Backspace/Delete/Tab/Enter/стрелки/Ctrl+...) форвардятся через `Input.dispatchKeyEvent` с очищенным `text: ''` (CDP не вставит управляющий символ); `keyUp` форвардится как раньше.
+  - Тесты: `tests/unit/os-input.test.js` (sourcePid, charInput `{text, sourcePid}`, Backspace не эмитит charInput), `tests/unit/keyboard-hooks-payload.test.js` (payload `text`/`sourcePid`, `shouldSendCharInput`/`hasControlChars`), `tests/unit/multi-control.test.js` (printable/Shift/AltGr → один `insertText`; Ctrl+1/Meta/обычный Alt/Enter/стрелки → dispatch; Backspace/Tab/Enter с управляющим text → dispatch с `text: ''`), `tests/unit/multi-control-api.test.js` (маршрутизация master PID, игнор slave/без PID/неизвестного PID, отсутствующий PID master).
+  - API-контракт, схема БД, зависимости и версия не менялись; клавиши и текст не логируются.
+  ✅ `src/os-input/native-hooks/hooks.cc`, `src/os-input/native-hooks/index.js`, `gui/src/main/keyboard-hooks-payload.js`, `gui/src/main/keyboard-hooks.js`, `src/api/multi-control.js`, `src/multi-control/index.js`, `tests/unit/os-input.test.js`, `tests/unit/keyboard-hooks-payload.test.js`, `tests/unit/multi-control.test.js`, `tests/unit/multi-control-api.test.js`, `docs/MULTI-CONTROL.md`, `README.md`, `TS.md`, `TASK.md`
+
 ### Синхронизатор / Multi-Control
 
 - **[FEAT] Снижение задержки курсора в MultiController + authoritative document scroll.**

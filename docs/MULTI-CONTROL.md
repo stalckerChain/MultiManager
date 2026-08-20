@@ -43,6 +43,7 @@ CDP Target.targetInfoChanged (master browser)
 - Единственный источник клавиатуры для **всех** вводов (в т.ч. DOM-элементы) — CDP-клавиатура из SYNC_EVENT_SCRIPT удалена
 - Перехватывает browser shortcuts (Ctrl+T, Ctrl+W, etc.)
 - **Double dispatch устранён**: клавиша уходит в slave ровно один раз
+- **Источник фильтруется по PID foreground-окна (v0.18.0):** каждое событие (`keyDown`/`keyUp`/`charInput`) несёт `sourcePid` — PID foreground-окна на момент события. `/os-keyboard` сравнивает его с PID master-профиля (`pq.getById(masterId)?.pid`) и рассылает в slave только ввод из master; ввод из slave/других окон считается локальным и не рассылается
 
 ## Tab Mapping (1:N)
 
@@ -106,6 +107,8 @@ tabIndex   = Array<masterTargetId>  // упорядоченная матрица
 - **Всегда активен**, включая ввод в адресной строке
 - Шлёт `keyDown`/`keyUp` для ЛЮБЫХ клавиш, не только Ctrl+T/W
 - Текст (`charInput`) вычисляется в addon'е через `ToUnicodeEx` с учётом раскладки, Shift, CapsLock и AltGr; шлётся отдельным событием только для печатных символов
+- Каждое событие несёт `sourcePid` (PID foreground-окна, полученный в `KeyboardProc` один раз на событие, включая `keyUp`); `charInput` — тот же `sourcePid`
+- `/os-keyboard` фильтрует по PID master до маршрутизации: события из slave/других окон возвращаются `{ ok: true, skipped: 'source-not-master' }` и не вызывают controller
 
 ### Текст с учётом раскладки (ToUnicodeEx)
 
@@ -115,6 +118,8 @@ tabIndex   = Array<masterTargetId>  // упорядоченная матрица
 - Поддержка Shift, CapsLock и AltGr (правый Alt) — `altGr` отличает AltGr-символы от командных сочетаний Alt
 - Композиция dead keys (`´` + `e` = `é`) — состояние dead key хранится в addon'е (`s_deadKeyVk`/`s_deadKeyPending`) и подаётся в следующий вызов `ToUnicodeEx`
 - Командные сочетания (Ctrl/Meta/Alt без AltGr), непечатные клавиши и dead keys текстом **не** считаются — `charInput` для них не отправляется
+- Управляющие символы C0/DEL (v0.18.0) текстом **не** считаются: `ToUnicodeEx` для Backspace/Tab/Enter/Delete может вернуть `\b`, `\t`, `\r`, `\x7f`. Проверка (одинаковая в `shouldSendCharInput` gui, `_isPlainText` native-hooks, `_isPrintableText` controller) отсекает `code < 0x20 || code === 0x7f`. Поэтому Backspace/Delete/Tab/Enter не идут через `Input.insertText` (в slave не появляется «квадратик»), а форвардятся как key events
+- **Разделение каналов (v0.18.0):** printable `keyDown` не dispatch-ится в slave — символ идёт единственным каналом `charInput → Input.insertText`. Управляющие клавиши (Backspace, Delete, Tab, Enter, стрелки, Ctrl+…, Meta, обычный Alt) форвардятся через `Input.dispatchKeyEvent` с очищенным `text` (`text: ''`), чтобы CDP не вставил управляющий символ в DOM
 
 ### Double Dispatch (устранён, v0.16.0)
 
@@ -402,11 +407,35 @@ if (event.type === 'keyDown' && event.key === 'Enter') {
 
 ## Версия
 
-Текущая: v0.17.0 (authoritative document scroll через window.scroll + Runtime.callFunctionOn, wheel — диагностика)
+Текущая: v0.18.0 (source PID в native keyboard events + фильтрация ввода master + единый текстовый канал printable-символа)
 
 ## История версий
 
-### v0.17.0 — Authoritative document scroll (window.scroll + Runtime.callFunctionOn, wheel — диагностика)
+### v0.18.0 — Источник ввода по PID master + единый канал printable-текста
+
+**Проблема:** (1) printable-клавиша из master уходила в slave двумя путями — `Input.dispatchKeyEvent` (keyDown) и `Input.insertText` (charInput), символ дублировался. (2) Native hook видит клавиатуру глобально, но payload не содержал источника: ввод из slave-окна рассылался всем slave. (3) `ToUnicodeEx` для Backspace/Tab/Enter/Delete возвращает управляющие символы (`\b`, `\t`, `\r`, `\x7f`), которые вставлялись в input slave как «квадратики».
+
+**Решение:**
+1. `hooks.cc`: в `KeyEvent` добавлен `sourcePid` — PID foreground-окна (`GetForegroundWindow` + `GetWindowThreadProcessId`), получается один раз в `KeyboardProc` на каждое событие (включая `keyUp`); `ComputeTextForKey` получает уже вычисленный thread-id (раскладка из foreground-окна, без повторных вызовов API).
+2. Payload: `sourcePid` в `keyDown`/`keyUp`/`charInput` (native-hooks/index.js, keyboard-hooks-payload.js `buildKeyEvent`).
+3. `/api/multi-control/os-keyboard`: строгая фильтрация источника — события с PID, отличным от PID master (`pq.getById(masterId)?.pid`, ленивый кэш с инвалидацией по `stop`/смене `masterId`), игнорируются до обработки Ctrl+T/W и Enter.
+4. `controller.onKeyDown`: printable-событие (непустой text, без Ctrl/Meta/обычного Alt, AltGr допустим, без управляющих символов C0/DEL) не dispatch-ится — символ идёт только через `charInput → Input.insertText`. Управляющие клавиши форвардятся с `text: ''`.
+5. Управляющие символы отсекаются в трёх рантаймах: `shouldSendCharInput` (gui), `_isPlainText` (native-hooks), `_isPrintableText` (controller) — условие `code < 0x20 || code === 0x7f`.
+
+| Файл | Изменение |
+|------|-----------|
+| `src/os-input/native-hooks/hooks.cc` | `sourcePid` в `KeyEvent`/payload; PID/thread-id из `KeyboardProc`; `ComputeTextForKey` по foreground-раскладке без повторных вызовов `GetForegroundWindow`/`GetWindowThreadProcessId` |
+| `src/os-input/native-hooks/index.js` | `sourcePid` в eventData/`charInput`; `_isPlainText` отсекает управляющие символы |
+| `gui/src/main/keyboard-hooks-payload.js` | `buildKeyEvent` с `text`/`sourcePid`; `shouldSendCharInput`/`hasControlChars` отсекают управляющие символы |
+| `gui/src/main/keyboard-hooks.js` | `charInput` с `sourcePid`, без дублирования запросов и логирования текста |
+| `src/api/multi-control.js` | `masterKeyboardPidCache`/`getMasterKeyboardPid()`; фильтр `/os-keyboard` по PID master (skip: `source-not-master`) |
+| `src/multi-control/index.js` | `_isPrintableText` (printable, не управляющий символ, без Ctrl/Meta/обычного Alt); skip printable keyDown; форвард управляющих клавиш с `text: ''` |
+| `tests/unit/os-input.test.js` | `sourcePid`, `charInput {text, sourcePid}`, Backspace не эмитит charInput, Shift/keyUp sourcePid |
+| `tests/unit/keyboard-hooks-payload.test.js` | `text`/`sourcePid` в `buildKeyEvent`, `shouldSendCharInput`/`hasControlChars` для управляющих символов |
+| `tests/unit/multi-control.test.js` | printable/Shift/AltGr → только `insertText`; Ctrl+1/Meta/Alt/Enter/стрелки → dispatch; Backspace/Tab/Enter с управляющим text → dispatch с `text: ''` |
+| `tests/unit/multi-control-api.test.js` | маршрутизация событий с master PID; игнор slave/неизвестного PID; отсутствующий PID master |
+
+### v0.16.0 — Single-source keyboard (устранён double dispatch)
 
 **Проблема:** wheel-обработчик выполняется до browser default action — `window.scrollX/scrollY` в нём ещё не отражают новую прокрутку. Источник scroll из wheel давал отставание на одно событие; эмуляция серией `Input.dispatchMouseEvent('mouseWheel')` не отражает реальное смещение контента (инерция, плавный скролл, трекпад). `Runtime.evaluate`/objectId-fallback мог применяться без корректного context.
 

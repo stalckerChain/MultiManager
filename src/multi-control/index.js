@@ -421,19 +421,46 @@ class MultiController {
     await this._broadcastMouse('mouseReleased', params);
   }
 
+  // Printable-символ, который пойдёт в slave единым текстовым каналом
+  // (charInput → Input.insertText). keyDown для него не dispatch-ится, иначе
+  // браузер вставит символ повторно. Управляющие клавиши, навигация, Enter,
+  // Backspace/Delete/Tab, модификаторы и browser shortcuts текст не несут или
+  // не печатаются как текст (Ctrl/Meta/обычный Alt); AltGr остаётся текстовым.
+  // Управляющие символы C0/DEL (\b, \t, \r, \x7f), которые ToUnicodeEx может
+  // вернуть для Backspace/Tab/Enter/Delete, текстом не считаются — это клавиши.
+  _isPrintableText(params) {
+    if (!params || typeof params.text !== 'string' || params.text.length === 0) return false;
+    if (Array.from(params.text).some((ch) => {
+      const code = ch.codePointAt(0);
+      return code < 0x20 || code === 0x7f;
+    })) return false;
+    if (params.metaKey) return false;
+    if (params.ctrlKey && !params.altGr) return false;
+    if (params.altKey && !params.altGr) return false;
+    return true;
+  }
+
   async onKeyDown(params) {
     if (!this.active || !this.cdp) return;
     if (params.ctrlKey && ['t', 'n', 'w'].includes((params.key || '').toLowerCase())) {
       logger.debug({ ctrlKey: params.ctrlKey }, 'MC-KEY: Ctrl+W/T/N blocked from CDP forwarding (handled by browserAction or OS hook)');
       return;
     }
+    if (this._isPrintableText(params)) {
+      logger.debug('MC-KEY: printable keyDown skipped, text goes through charInput');
+      return;
+    }
+    // Управляющая клавиша (Backspace/Tab/Enter/Delete/стрелки/Ctrl+...). Текст
+    // принудительно очищается: у неё он либо пуст, либо содержит управляющий
+    // символ (\b, \t, \r, \x7f) из ToUnicodeEx, который CDP вставил бы в input.
+    const keyParams = { ...params, text: '' };
     for (const [id] of this.slaves) {
       try {
         const session = this._getSlaveSession(id);
         if (session) {
-          this.cdp.dispatchKeyEventToSession(id, session.sessionId, 'keyDown', params);
+          this.cdp.dispatchKeyEventToSession(id, session.sessionId, 'keyDown', keyParams);
         } else {
-          this.cdp.dispatchKeyEvent(id, 'keyDown', params);
+          this.cdp.dispatchKeyEvent(id, 'keyDown', keyParams);
         }
       } catch (err) {
         logger.error(`Multi-control: keyboard error slave ${id}`, { error: err.message });
