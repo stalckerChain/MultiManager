@@ -44,6 +44,18 @@
           </div>
           <div class="flex items-center gap-2 ml-2">
             <a-button
+              size="small"
+              @click.stop="openCloneModal(run, 'retry')"
+            >
+              {{ t('automation.retry') }}
+            </a-button>
+            <a-button
+              size="small"
+              @click.stop="openCloneModal(run, 'duplicate')"
+            >
+              {{ t('automation.duplicate') }}
+            </a-button>
+            <a-button
               v-if="run.status === 'pending'"
               size="small"
               type="primary"
@@ -131,6 +143,24 @@
         </div>
       </div>
     </div>
+
+    <a-modal
+      v-model:open="showCloneModal"
+      :title="cloneMode === 'retry' ? t('automation.retryTitle') : t('automation.duplicateTitle')"
+      :confirm-loading="cloning"
+      :ok-text="t('automation.create')"
+      :cancel-text="t('automation.cancel')"
+      @ok="handleCloneConfirm"
+    >
+      <a-form layout="vertical">
+        <a-form-item :label="t('automation.runName')">
+          <a-input v-model:value="cloneName" :placeholder="t('automation.runNamePlaceholder')" :maxlength="200" />
+        </a-form-item>
+        <a-form-item :label="t('automation.parallelLimit')">
+          <a-input-number v-model:value="cloneLimit" :min="1" :max="50" class="w-full" />
+        </a-form-item>
+      </a-form>
+    </a-modal>
   </div>
 </template>
 
@@ -147,6 +177,13 @@ const store = useAutomationStore();
 const expandedId = ref(null);
 const runTasks = ref({});
 const runProjects = ref({});
+
+const showCloneModal = ref(false);
+const cloning = ref(false);
+const cloneMode = ref('retry');
+const cloneSourceRun = ref(null);
+const cloneName = ref('');
+const cloneLimit = ref(1);
 
 function statusColor(status) {
   const map = {
@@ -277,6 +314,46 @@ async function handleCancel(run) {
     run.status = 'cancelled';
   } catch (err) {
     message.error(err.message);
+  }
+}
+
+function buildDefaultRunName() {
+  const now = new Date();
+  const pad = (n) => String(n).padStart(2, '0');
+  return `Run ${now.getFullYear()}-${pad(now.getMonth() + 1)}-${pad(now.getDate())} ${pad(now.getHours())}:${pad(now.getMinutes())}`;
+}
+
+function openCloneModal(run, mode) {
+  cloneMode.value = mode;
+  cloneSourceRun.value = run;
+  cloneName.value = buildDefaultRunName();
+  cloneLimit.value = 1;
+  showCloneModal.value = true;
+}
+
+async function handleCloneConfirm() {
+  const source = cloneSourceRun.value;
+  if (!source) return;
+  const trimmed = (cloneName.value || '').trim();
+  const nameToSend = trimmed.length ? trimmed : buildDefaultRunName();
+  const limitToSend = cloneLimit.value != null ? cloneLimit.value : 1;
+  cloning.value = true;
+  try {
+    const payload = { name: nameToSend, parallel_limit: limitToSend };
+    if (cloneMode.value === 'retry') {
+      await store.retryRun(source.id, payload);
+      message.success(t('automation.retrySuccess'));
+    } else {
+      await store.duplicateRun(source.id, payload);
+      message.success(t('automation.duplicateSuccess'));
+    }
+    showCloneModal.value = false;
+    await store.fetchRuns(1, 50);
+  } catch (err) {
+    const msg = err?.response?.data?.error || err.message || t('common.error');
+    message.error(msg);
+  } finally {
+    cloning.value = false;
   }
 }
 

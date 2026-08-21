@@ -1872,6 +1872,69 @@ Batch-обновление отметок матрицы. Транзакция: 
 
 ---
 
+### POST /api/runs/:id/retry
+
+Создать новый `pending` run из невыполненных задач исходного run. Копируются только задачи со статусом `!= 'success'` (pending, running, failed). Новый run готов к запуску, не наследуя результаты выполнения. Доступен для любого статуса исходного run.
+
+**Тело запроса:**
+```json
+{
+  "name": "Новое имя",
+  "parallel_limit": 1
+}
+```
+
+- `name` — опционально, до 200 символов; пустая строка после `trim()` заменяется на авто-имя `Run YYYY-MM-DD HH:mm` по времени сервера.
+- `parallel_limit` — опционально, `1..50`; по умолчанию `1` если не передан.
+
+Все новые `run_tasks` получают `status='pending'` и пустые `exit_code`, `log_file_path`, `attempts`, `error_message`, `started_at`, `completed_at`. Создание run и копирование задач выполняется атомарно в транзакции.
+
+**Ответ (201):**
+```json
+{
+  "run_id": "uuid",
+  "tasks_created": 5,
+  "name": "Run 2026-08-22 12:00",
+  "parallel_limit": 1
+}
+```
+
+**Ответ (400):** `{ "error": "No tasks to retry: all tasks succeeded or source run has no tasks" }` — у исходного run нет задач с `status != 'success'`
+**Ответ (404):** `{ "error": "Run not found" }`
+**Ответ (500):** `{ "error": "Internal server error" }` — ошибка БД, частично созданных данных не остаётся
+
+---
+
+### POST /api/runs/:id/duplicate
+
+Создать полный дубликат run. Копируются все задачи исходного run независимо от статуса. Новый `pending` run готов к запуску.
+
+**Тело запроса:**
+```json
+{
+  "name": "Новое имя",
+  "parallel_limit": 1
+}
+```
+
+Параметры и атомарность аналогичны `retry`.
+
+**Ответ (201):**
+```json
+{
+  "run_id": "uuid",
+  "tasks_created": 10,
+  "name": "Run 2026-08-22 12:00",
+  "parallel_limit": 1
+}
+```
+
+**Ответ (400):** `{ "error": "Source run has no tasks to duplicate" }` — у исходного run нет задач
+**Ответ (404):** `{ "error": "Run not found" }`
+**Ответ (500):** `{ "error": "Internal server error" }`
+
+---
+
 ## Internal API (Callback от stAuto0)
 
 ### POST /api/internal/runs/:id/task-status

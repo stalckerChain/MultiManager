@@ -147,6 +147,65 @@ function createRunsRouter(opts = {}) {
     res.json({ status: 'cancelled', run_id: req.params.id });
   });
 
+  function handleClone(req, res, mode) {
+    const sourceRun = getRuns().getById(req.params.id);
+    if (!sourceRun) {
+      return res.status(404).json({ error: 'Run not found' });
+    }
+
+    let pairs;
+    try {
+      if (mode === 'retry') {
+        pairs = getRunTasks().getRetryPairs(req.params.id);
+      } else {
+        pairs = getRunTasks().getAllPairs(req.params.id);
+      }
+    } catch (err) {
+      logger.error({ err: err.message, runId: req.params.id, mode }, 'Failed to fetch source run tasks');
+      return res.status(500).json({ error: 'Internal server error' });
+    }
+
+    if (!pairs || pairs.length === 0) {
+      const errorMsg = mode === 'retry'
+        ? 'No tasks to retry: all tasks succeeded or source run has no tasks'
+        : 'Source run has no tasks to duplicate';
+      return res.status(400).json({ error: errorMsg });
+    }
+
+    let { name, parallel_limit } = req.body || {};
+
+    // Пустое имя после trim трактуется как отсутствие
+    if (typeof name === 'string') {
+      const trimmed = name.trim();
+      name = trimmed.length ? trimmed : undefined;
+    }
+
+    const now = new Date();
+    const pad = (n) => String(n).padStart(2, '0');
+    const dateStr = `${now.getFullYear()}-${pad(now.getMonth() + 1)}-${pad(now.getDate())} ${pad(now.getHours())}:${pad(now.getMinutes())}`;
+    const finalName = name || `Run ${dateStr}`;
+    const finalLimit = parallel_limit != null ? parallel_limit : 1;
+
+    try {
+      const newRun = getRuns().createWithTasks(
+        { name: finalName, parallel_limit: finalLimit },
+        pairs.map(p => ({ project_name: p.project_name, profile_id: p.profile_id }))
+      );
+      return res.status(201).json({
+        run_id: newRun.id,
+        tasks_created: pairs.length,
+        name: newRun.name,
+        parallel_limit: newRun.parallel_limit,
+      });
+    } catch (err) {
+      logger.error({ err: err.message, runId: req.params.id, mode }, 'Failed to clone run');
+      return res.status(500).json({ error: 'Internal server error' });
+    }
+  }
+
+  router.post('/:id/retry', validate(runCreateSchema), (req, res) => handleClone(req, res, 'retry'));
+  router.post('/:id/duplicate', validate(runCreateSchema), (req, res) => handleClone(req, res, 'duplicate'));
+
   return router;
 }
 

@@ -1753,6 +1753,67 @@ Cancel run execution. For each profile with an already running Python process, t
 }
 ```
 
+### POST /api/runs/:id/retry
+
+Create a new `pending` run from unfinished tasks of the source run. Only tasks with `status != 'success'` (pending, running, failed) are copied. The new run is ready to start and does not inherit execution results. Available for any source run status.
+
+**Request Body:**
+```json
+{
+  "name": "New name",
+  "parallel_limit": 1
+}
+```
+
+- `name` — optional, max 200 chars; empty string after `trim()` is replaced with auto name `Run YYYY-MM-DD HH:mm` using server time.
+- `parallel_limit` — optional, `1..50`; default `1` if not provided.
+
+All new `run_tasks` get `status='pending'` and null `exit_code`, `log_file_path`, `attempts`, `error_message`, `started_at`, `completed_at`. Run creation and task copying are performed atomically in a transaction.
+
+**Response (201):**
+```json
+{
+  "run_id": "uuid",
+  "tasks_created": 5,
+  "name": "Run 2026-08-22 12:00",
+  "parallel_limit": 1
+}
+```
+
+**Response (400):** `{ "error": "No tasks to retry: all tasks succeeded or source run has no tasks" }` — source run has no tasks with `status != 'success'`
+**Response (404):** `{ "error": "Run not found" }`
+**Response (500):** `{ "error": "Internal server error" }` — DB error, no partial data remains
+
+---
+
+### POST /api/runs/:id/duplicate
+
+Create a full duplicate of the run. All tasks of the source run are copied regardless of status. New `pending` run is ready to start.
+
+**Request Body:**
+```json
+{
+  "name": "New name",
+  "parallel_limit": 1
+}
+```
+
+Parameters and atomicity are the same as for `retry`.
+
+**Response (201):**
+```json
+{
+  "run_id": "uuid",
+  "tasks_created": 10,
+  "name": "Run 2026-08-22 12:00",
+  "parallel_limit": 1
+}
+```
+
+**Response (400):** `{ "error": "Source run has no tasks to duplicate" }` — source run has no tasks
+**Response (404):** `{ "error": "Run not found" }`
+**Response (500):** `{ "error": "Internal server error" }`
+
 ---
 
 ## Internal API (stAuto0 Callback)

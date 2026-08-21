@@ -215,7 +215,14 @@
     "runsEmpty": "暂无任务。请从矩阵创建。",
     "historyTitle": "历史",
     "historyEmpty": "暂无已完成的任务。",
-    "loadMore": "加载更多"
+    "loadMore": "加载更多",
+    "retry": "重试未完成",
+    "duplicate": "复制",
+    "retryTitle": "重试未完成任务",
+    "duplicateTitle": "复制任务",
+    "retrySuccess": "重试任务已创建",
+    "duplicateSuccess": "副本已创建",
+    "retryEmpty": "没有可重试的任务：所有任务已成功"
   },
   "confirmDelete": {
     "ok": "确定",

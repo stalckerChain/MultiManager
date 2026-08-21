@@ -215,7 +215,14 @@
     "runsEmpty": "Задач пока нет. Создайте из Матрицы.",
     "historyTitle": "История",
     "historyEmpty": "Завершённых задач пока нет.",
-    "loadMore": "Загрузить ещё"
+    "loadMore": "Загрузить ещё",
+    "retry": "Повторить невыполненные",
+    "duplicate": "Дублировать",
+    "retryTitle": "Повторить невыполненные задачи",
+    "duplicateTitle": "Дублировать задачи",
+    "retrySuccess": "Retry создан",
+    "duplicateSuccess": "Дубликат создан",
+    "retryEmpty": "Нет задач для повтора: все задачи уже успешны"
   },
   "confirmDelete": {
     "ok": "OK",

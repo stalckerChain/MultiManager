@@ -215,7 +215,14 @@
     "runsEmpty": "No runs yet. Create one from the Matrix.",
     "historyTitle": "History",
     "historyEmpty": "No completed runs yet.",
-    "loadMore": "Load More"
+    "loadMore": "Load More",
+    "retry": "Retry failed",
+    "duplicate": "Duplicate",
+    "retryTitle": "Retry unfinished tasks",
+    "duplicateTitle": "Duplicate run",
+    "retrySuccess": "Retry run created",
+    "duplicateSuccess": "Duplicate run created",
+    "retryEmpty": "No tasks to retry: all tasks already succeeded"
   },
   "confirmDelete": {
     "ok": "OK",

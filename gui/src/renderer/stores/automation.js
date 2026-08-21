@@ -75,6 +75,16 @@ export const useAutomationStore = defineStore('automation', () => {
     return data;
   }
 
+  async function retryRun(id, data) {
+    const { data: result } = await client.post(`/api/runs/${id}/retry`, data);
+    return result;
+  }
+
+  async function duplicateRun(id, data) {
+    const { data: result } = await client.post(`/api/runs/${id}/duplicate`, data);
+    return result;
+  }
+
   async function fetchProjects() {
     try {
       const { data } = await client.get('/api/projects');
@@ -103,6 +113,6 @@ export const useAutomationStore = defineStore('automation', () => {
   return {
     matrix, projects, profiles, runs, currentRun, loading, error,
     fetchMatrix, updateMatrix, createRun, fetchRuns, fetchRun,
-    startRun, cancelRun, fetchProjects, syncProjects, deleteProject, updateProject,
+    startRun, cancelRun, retryRun, duplicateRun, fetchProjects, syncProjects, deleteProject, updateProject,
   };
 });

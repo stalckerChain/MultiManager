@@ -1689,6 +1689,67 @@ Authorization: Bearer <token>
 }
 ```
 
+### POST /api/runs/:id/retry
+
+从源运行的未完成任务创建新的 `pending` 运行。仅复制 `status != 'success'` 的任务（pending、running、failed）。新运行可直接启动，不继承执行结果。适用于任何源运行状态。
+
+**请求体：**
+```json
+{
+  "name": "新名称",
+  "parallel_limit": 1
+}
+```
+
+- `name` — 可选，最长 200 字符；`trim()` 后为空则替换为自动名称 `Run YYYY-MM-DD HH:mm`（服务器时间）。
+- `parallel_limit` — 可选，`1..50`；未传时默认为 `1`。
+
+所有新 `run_tasks` 状态为 `pending`，`exit_code`、`log_file_path`、`attempts`、`error_message`、`started_at`、`completed_at` 为空。创建运行与复制任务在事务中原子执行。
+
+**响应 (201)：**
+```json
+{
+  "run_id": "uuid",
+  "tasks_created": 5,
+  "name": "Run 2026-08-22 12:00",
+  "parallel_limit": 1
+}
+```
+
+**响应 (400)：** `{ "error": "No tasks to retry: all tasks succeeded or source run has no tasks" }`
+**响应 (404)：** `{ "error": "Run not found" }`
+**响应 (500)：** `{ "error": "Internal server error" }`
+
+---
+
+### POST /api/runs/:id/duplicate
+
+创建运行的完整副本。复制源运行的所有任务，不论状态。新 `pending` 运行可直接启动。
+
+**请求体：**
+```json
+{
+  "name": "新名称",
+  "parallel_limit": 1
+}
+```
+
+参数与原子性同 `retry`。
+
+**响应 (201)：**
+```json
+{
+  "run_id": "uuid",
+  "tasks_created": 10,
+  "name": "Run 2026-08-22 12:00",
+  "parallel_limit": 1
+}
+```
+
+**响应 (400)：** `{ "error": "Source run has no tasks to duplicate" }`
+**响应 (404)：** `{ "error": "Run not found" }`
+**响应 (500)：** `{ "error": "Internal server error" }`
+
 ---
 
 ## 内部 API（stAuto0 回调）

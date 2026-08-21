@@ -1,5 +1,10 @@
 # Changelog
 
+## Unreleased — Retry / Duplicate Runs
+
+- **[Feature] Retry и дублирование runs** — `POST /api/runs/:id/retry` (копирует задачи `status != 'success'`) и `POST /api/runs/:id/duplicate` (копирует все) создают новый `pending` run c `pending` задачами, без `exit_code`/`log_file_path`/`attempts`/`error_message`/`started_at`/`completed_at`. Форма предзаполняется `Run YYYY-MM-DD HH:mm` и `parallel_limit=1` (пустое имя → авто), создание атомарно; пустой набор → `400`, нет исходного → `404`; снимок задач по `project_name`/`profile_id`. GUI `AutomationRuns.vue` — две кнопки на карточке (`@click.stop`, любой статус), единый modal `retry`/`duplicate`, `stores/automation.js` `retryRun`/`duplicateRun`, i18n `automation.retry|duplicate|retryTitle|duplicateTitle|retrySuccess|duplicateSuccess|retryEmpty` (ru/en/zh), доки `docs/API*.md`. Версия не менялась.
+  ✅ `src/db/queries.js` (`createWithTasks`, `getRetryPairs`/`getAllPairs`), `src/api/runs.js`, `gui/src/renderer/stores/automation.js`, `gui/src/renderer/views/AutomationRuns.vue`, `gui/src/renderer/i18n/*.json`, `docs/API.md`, `docs/API.en.md`, `docs/API.zh.md`, `README.md`, `TS.md`
+
 ## v1.5.1
 
 ### Синхронизатор / Zerion Popup

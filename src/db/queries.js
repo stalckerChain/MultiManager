@@ -514,6 +514,10 @@ function createRunQueries(db) {
       failed_tasks = failed_tasks + CASE WHEN ? THEN 0 ELSE 1 END
     WHERE id = ?
   `);
+  const insertTaskStmt = db.prepare(`
+    INSERT INTO run_tasks (run_id, project_name, profile_id, status, exit_code, log_file_path, attempts, started_at, completed_at)
+    VALUES (?, ?, ?, 'pending', NULL, NULL, NULL, NULL, NULL)
+  `);
 
   return {
     create(data) {
@@ -552,6 +556,29 @@ function createRunQueries(db) {
     incrementCompleted(id, success) {
       incrementCompletedStmt.run(success ? 1 : 0, success ? 1 : 0, id);
     },
+
+    createWithTasks(data, pairs) {
+      const tx = db.transaction((runData, taskPairs) => {
+        const id = runData.id || uuidv4();
+        insert.run(
+          id,
+          runData.name || '',
+          'pending',
+          runData.parallel_limit || 1,
+          taskPairs.length,
+          0,
+          0,
+          0,
+          null,
+          null
+        );
+        for (const pair of taskPairs) {
+          insertTaskStmt.run(id, pair.project_name, pair.profile_id);
+        }
+        return getByIdStmt.get(id);
+      });
+      return tx(data, pairs);
+    },
   };
 }
 
@@ -572,6 +599,12 @@ function createRunTaskQueries(db) {
     WHERE id = ?
   `);
   const getByIdStmt = db.prepare('SELECT * FROM run_tasks WHERE id = ?');
+  const getRetryPairsStmt = db.prepare(`
+    SELECT project_name, profile_id FROM run_tasks WHERE run_id = ? AND status != 'success'
+  `);
+  const getAllPairsStmt = db.prepare(`
+    SELECT project_name, profile_id FROM run_tasks WHERE run_id = ?
+  `);
 
   return {
     batchInsert(runId, pairs) {
@@ -596,6 +629,14 @@ function createRunTaskQueries(db) {
 
     getByRunId(runId) {
       return getByRunIdStmt.all(runId);
+    },
+
+    getRetryPairs(runId) {
+      return getRetryPairsStmt.all(runId);
+    },
+
+    getAllPairs(runId) {
+      return getAllPairsStmt.all(runId);
     },
 
     updateStatus(id, status, exitCode = null, logPath = null, attempts = null, errorMessage = null) {

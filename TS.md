@@ -268,6 +268,8 @@ Flow:
 | `/api/runs/:id` | GET | Run + run_tasks (цветная матрица) |
 | `/api/runs/:id/start` | POST | Запустить выполнение |
 | `/api/runs/:id/cancel` | POST | Отменить выполнение |
+| `/api/runs/:id/retry` | POST | Создать retry-run из невыполненных задач (`status != 'success'`), атомарно, `400` при пустом наборе, `404` если нет исходного |
+| `/api/runs/:id/duplicate` | POST | Создать полный дубликат run (все задачи), атомарно, `400` при пустом, `404` если нет исходного |
 | `/api/internal/runs/:id/task-status` | POST | Callback от stAuto0 — обновить статус клетки + error_message |
 
 -------------------------------
