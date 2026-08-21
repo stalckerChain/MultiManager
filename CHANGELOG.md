@@ -1,6 +1,9 @@
 # Changelog
 
-## Unreleased — Retry / Duplicate Runs
+## Unreleased — Retry / Duplicate + Matrix Shift-Selection
+
+- **[Feature] Shift-выделение диапазона в Automation → Matrix** — `gui/src/renderer/views/AutomationMatrix.vue`: `lastSelectedKey`, `handleCellClick($event, record.id, column.projectName)` на обёртке `<span>` вместо `@change` на `a-checkbox`, копирование состояния anchor на прямоугольный диапазон (`filteredProfiles` × активные проекты) с фильтрацией `allowed_profile_ids`, валидация anchor по текущему отображению/поиску, клики по недоступным ячейкам игнорируются. `tests/unit/gui-matrix-selection.test.js` (+12: границы, обратное направление, `allowed_profile_ids`, Shift без anchor, невалидный anchor после фильтрации, массовое выключение копированием). API/БД/версия не менялись.
+  ✅ `gui/src/renderer/views/AutomationMatrix.vue`, `tests/unit/gui-matrix-selection.test.js`, `TASK.md`
 
 - **[Feature] Retry и дублирование runs** — `POST /api/runs/:id/retry` (копирует задачи `status != 'success'`) и `POST /api/runs/:id/duplicate` (копирует все) создают новый `pending` run c `pending` задачами, без `exit_code`/`log_file_path`/`attempts`/`error_message`/`started_at`/`completed_at`. Форма предзаполняется `Run YYYY-MM-DD HH:mm` и `parallel_limit=1` (пустое имя → авто), создание атомарно; пустой набор → `400`, нет исходного → `404`; снимок задач по `project_name`/`profile_id`. GUI `AutomationRuns.vue` — две кнопки на карточке (`@click.stop`, любой статус), единый modal `retry`/`duplicate`, `stores/automation.js` `retryRun`/`duplicateRun`, i18n `automation.retry|duplicate|retryTitle|duplicateTitle|retrySuccess|duplicateSuccess|retryEmpty` (ru/en/zh), доки `docs/API*.md`. Версия не менялась.
   ✅ `src/db/queries.js` (`createWithTasks`, `getRetryPairs`/`getAllPairs`), `src/api/runs.js`, `gui/src/renderer/stores/automation.js`, `gui/src/renderer/views/AutomationRuns.vue`, `gui/src/renderer/i18n/*.json`, `docs/API.md`, `docs/API.en.md`, `docs/API.zh.md`, `README.md`, `TS.md`

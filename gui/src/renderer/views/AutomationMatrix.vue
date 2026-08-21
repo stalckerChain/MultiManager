@@ -54,11 +54,12 @@
           </template>
           <template v-else-if="column.dataIndex.startsWith('proj_')">
             <div class="flex justify-center">
-              <a-checkbox
-                :checked="isChecked(record.id, column.projectName)"
-                :disabled="!isProfileAllowed(record.id, column.allowedProfileIds)"
-                @change="toggleCell(record.id, column.projectName)"
-              />
+              <span @click="handleCellClick($event, record.id, column.projectName)">
+                <a-checkbox
+                  :checked="isChecked(record.id, column.projectName)"
+                  :disabled="!isProfileAllowed(record.id, column.allowedProfileIds)"
+                />
+              </span>
             </div>
           </template>
         </template>
@@ -139,6 +140,7 @@ const filteredProfiles = computed(() => {
 });
 
 const selectedCells = ref({});
+const lastSelectedKey = ref(null);
 
 function getCellKey(profileId, projectName) {
   return `${profileId}::${projectName}`;
@@ -192,6 +194,63 @@ function toggleCell(profileId, projectName) {
 function isProfileAllowed(profileId, allowedProfileIds) {
   if (!allowedProfileIds || allowedProfileIds.length === 0) return true;
   return allowedProfileIds.includes(profileId);
+}
+
+function handleCellClick(event, profileId, projectName) {
+  const activeProjects = store.projects.filter(p => p.is_active);
+  const activeProjectNames = activeProjects.map(p => p.name);
+  const targetProj = activeProjects.find(p => p.name === projectName);
+  const targetAllowedIds = targetProj?.allowed_profile_ids?.length
+    ? targetProj.allowed_profile_ids
+    : store.profiles.map(p => p.id);
+  if (!targetAllowedIds.includes(profileId)) return;
+
+  const key = getCellKey(profileId, projectName);
+
+  if (!event.shiftKey || !lastSelectedKey.value) {
+    toggleCell(profileId, projectName);
+    lastSelectedKey.value = key;
+    return;
+  }
+
+  const [anchorProfileId, anchorProjectName] = lastSelectedKey.value.split('::');
+  const anchorProfileExists = filteredProfiles.value.some(p => p.id === anchorProfileId);
+  const anchorProjectExists = activeProjectNames.includes(anchorProjectName);
+  const targetProfileExists = filteredProfiles.value.some(p => p.id === profileId);
+  const targetProjectExists = activeProjectNames.includes(projectName);
+
+  if (!anchorProfileExists || !anchorProjectExists || !targetProfileExists || !targetProjectExists) {
+    toggleCell(profileId, projectName);
+    lastSelectedKey.value = key;
+    return;
+  }
+
+  const rowIds = filteredProfiles.value.map(p => p.id);
+  const anchorRowIdx = rowIds.indexOf(anchorProfileId);
+  const targetRowIdx = rowIds.indexOf(profileId);
+  const anchorColIdx = activeProjectNames.indexOf(anchorProjectName);
+  const targetColIdx = activeProjectNames.indexOf(projectName);
+
+  const rowStart = Math.min(anchorRowIdx, targetRowIdx);
+  const rowEnd = Math.max(anchorRowIdx, targetRowIdx);
+  const colStart = Math.min(anchorColIdx, targetColIdx);
+  const colEnd = Math.max(anchorColIdx, targetColIdx);
+
+  const anchorEnabled = isChecked(anchorProfileId, anchorProjectName);
+
+  for (let r = rowStart; r <= rowEnd; r++) {
+    const pid = rowIds[r];
+    for (let c = colStart; c <= colEnd; c++) {
+      const pname = activeProjectNames[c];
+      const proj = activeProjects.find(p => p.name === pname);
+      const allowedIds = proj?.allowed_profile_ids?.length
+        ? proj.allowed_profile_ids
+        : store.profiles.map(p => p.id);
+      if (!allowedIds.includes(pid)) continue;
+      const cellKey = getCellKey(pid, pname);
+      selectedCells.value[cellKey] = anchorEnabled;
+    }
+  }
 }
 
 async function handleSyncProjects() {
